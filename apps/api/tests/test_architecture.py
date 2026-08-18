@@ -70,9 +70,9 @@ def _run_import_linter() -> subprocess.CompletedProcess[str]:
 
 def test_contracts_pass_on_a_clean_tree() -> None:
     result = _run_import_linter()
-    assert result.returncode == 0, (
-        f"import-linter failed on an unmodified tree:\n{result.stdout}\n{result.stderr}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"import-linter failed on an unmodified tree:\n{result.stdout}\n{result.stderr}"
     assert "Contracts: 31 kept, 0 broken." in result.stdout
 
 
@@ -145,9 +145,9 @@ def test_domain_layer_rejects_django() -> None:
     finally:
         probe.unlink(missing_ok=True)
 
-    assert result.returncode != 0, (
-        f"import-linter accepted an ORM import inside a domain layer.\n{result.stdout}"
-    )
+    assert (
+        result.returncode != 0
+    ), f"import-linter accepted an ORM import inside a domain layer.\n{result.stdout}"
     assert "domain layers import no ORM, no I/O and no other layer BROKEN" in result.stdout
 
 
@@ -175,7 +175,7 @@ def test_services_never_return_orm_instances(module_name: str) -> None:
 
         try:
             hints = inspect.get_annotations(obj, eval_str=True)
-        except Exception:  # noqa: BLE001 — an unresolvable hint is not this test's business
+        except Exception:  # an unresolvable hint is not this test's business
             continue
 
         returned = hints.get("return")
