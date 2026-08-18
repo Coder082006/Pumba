@@ -94,12 +94,12 @@ def subscribe(event_type: type[E], handler: Callable[[E], None] | None = None) -
     if handler is None:
 
         def register(func: Callable[[E], None]) -> Callable[[E], None]:
-            _subscribers[event_type].append(func)  # type: ignore[arg-type]
+            _subscribers[event_type].append(func)
             return func
 
         return register
 
-    _subscribers[event_type].append(handler)  # type: ignore[arg-type]
+    _subscribers[event_type].append(handler)
     return handler
 
 

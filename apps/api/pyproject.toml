@@ -79,13 +79,33 @@ ignore_missing_imports = true
 warn_unused_configs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
-exclude = ["migrations/"]
+# Tests are excluded: they exercise deliberately wrong types (a float passed
+# to Money, an attribute set on a frozen dataclass) and annotating those to
+# mypy's satisfaction obscures what each test is actually asserting.
+exclude = ["migrations/", "tests/", "conftest.py", "scripts/"]
 
 [[tool.mypy.overrides]]
 # The domain layer is pure and carries the strictest contract (SRS §8.2, §36.2).
-module = ["apps.*.domain.*", "apps.common.money", "apps.common.state_machine", "ports.*"]
+# `disallow_any_explicit` is what stops a money or policy function quietly
+# widening to Any and losing every guarantee the annotations were there for.
+module = [
+    "apps.*.domain.*",
+    "apps.common.money",
+    "apps.common.state_machine",
+    "ports.routing",
+    "ports.payment",
+    "ports.notification",
+    "ports.storage",
+]
 strict = true
 disallow_any_explicit = true
+
+[[tool.mypy.overrides]]
+# The fakes are test doubles that record heterogeneous call arguments, which
+# is a legitimate use of Any. They stay strictly typed otherwise.
+module = ["ports.fakes"]
+strict = true
+disallow_any_explicit = false
 
 [tool.django-stubs]
 django_settings_module = "config.settings.ci"

@@ -25,4 +25,4 @@ CELERY_TASK_EAGER_PROPAGATES = True
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
-LOGGING["root"]["level"] = "WARNING"  # noqa: F405
+LOGGING["root"]["level"] = "WARNING"  # type: ignore[index]  # noqa: F405

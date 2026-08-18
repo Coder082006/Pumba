@@ -96,7 +96,11 @@ def _translate(exc: Exception) -> PlatformError:
         return NotFoundError(str(exc.detail))
 
     if isinstance(exc, drf_exc.Throttled):
-        return RateLimitedError(str(exc.detail), retry_after=exc.wait and int(exc.wait))
+        # `wait` is absent from the DRF stubs but is part of the public API.
+        wait = getattr(exc, "wait", None)
+        return RateLimitedError(
+            str(exc.detail), retry_after=int(wait) if wait is not None else None
+        )
 
     if isinstance(exc, drf_exc.MethodNotAllowed | drf_exc.UnsupportedMediaType):
         err = ValidationError(str(exc.detail))

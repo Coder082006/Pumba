@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 
 from apps.common.errors import ConflictError
 
@@ -37,7 +37,7 @@ class IllegalTransitionError(ConflictError):
 
     code = "ILLEGAL_TRANSITION"
 
-    def __init__(self, machine: str, source: Any, target: Any) -> None:
+    def __init__(self, machine: str, source: object, target: object) -> None:
         super().__init__(f"{machine}: cannot move from {source} to {target}.")
         self.machine = machine
         self.source = source
@@ -49,7 +49,7 @@ class GuardFailedError(ConflictError):
 
     code = "TRANSITION_GUARD_FAILED"
 
-    def __init__(self, machine: str, source: Any, target: Any, guard: str) -> None:
+    def __init__(self, machine: str, source: object, target: object, guard: str) -> None:
         super().__init__(f"{machine}: {source} to {target} is blocked by {guard}.")
         self.machine = machine
         self.source = source
@@ -63,7 +63,7 @@ class Transition(Generic[S]):
 
     source: S
     target: S
-    guard: Callable[[Mapping[str, Any]], bool] | None = None
+    guard: Callable[[Mapping[str, object]], bool] | None = None
     guard_name: str = ""
 
     def __post_init__(self) -> None:
@@ -132,7 +132,7 @@ class StateMachine(Generic[S]):
         """Every state reachable from `source` in one step, ignoring guards."""
         return frozenset(target for (src, target) in self._index if src == source)
 
-    def can(self, source: S, target: S, context: Mapping[str, Any] | None = None) -> bool:
+    def can(self, source: S, target: S, context: Mapping[str, object] | None = None) -> bool:
         """True if the transition is declared and its guard passes."""
         t = self._index.get((source, target))
         if t is None:
@@ -141,7 +141,7 @@ class StateMachine(Generic[S]):
             return True
         return bool(t.guard(context or {}))
 
-    def transition(self, source: S, target: S, context: Mapping[str, Any] | None = None) -> S:
+    def transition(self, source: S, target: S, context: Mapping[str, object] | None = None) -> S:
         """Validate and return the new state.
 
         Raises `IllegalTransitionError` (SRS §32.3 `ILLEGAL_TRANSITION`, 409)

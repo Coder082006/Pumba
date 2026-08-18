@@ -70,7 +70,7 @@ class SoftDeleteQuerySet(models.QuerySet["SoftDeleteModel"]):
     def dead(self) -> SoftDeleteQuerySet:
         return self.filter(deleted_at__isnull=False)
 
-    def delete(self) -> tuple[int, dict[str, int]]:  # type: ignore[override]
+    def delete(self) -> tuple[int, dict[str, int]]:
         count = self.update(deleted_at=timezone.now())
         return count, {}
 
@@ -95,12 +95,12 @@ class SoftDeleteModel(BaseModel):
     deleted_at = models.DateTimeField(null=True, blank=True, default=None, editable=False)
 
     objects: ClassVar[SoftDeleteManager] = SoftDeleteManager()
-    all_objects: ClassVar[models.Manager] = models.Manager()
+    all_objects: ClassVar[models.Manager[SoftDeleteModel]] = models.Manager()
 
     class Meta:
         abstract = True
 
-    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:  # type: ignore[override]
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
         self.deleted_at = timezone.now()
         self.save(update_fields=["deleted_at"])
         return 1, {type(self).__name__: 1}

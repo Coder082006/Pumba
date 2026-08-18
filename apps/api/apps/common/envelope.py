@@ -12,7 +12,8 @@ resource; the renderer wraps it.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, cast
 
 from rest_framework.renderers import JSONRenderer
 
@@ -57,10 +58,10 @@ class EnvelopeJSONRenderer(JSONRenderer):
         self,
         data: Any,
         accepted_media_type: str | None = None,
-        renderer_context: dict[str, Any] | None = None,
+        renderer_context: Mapping[str, Any] | None = None,
     ) -> bytes:
         if isinstance(data, dict) and ("error" in data or "data" in data):
-            return super().render(data, accepted_media_type, renderer_context)
+            return cast(bytes, super().render(data, accepted_media_type, renderer_context))
 
         meta: dict[str, Any] = {}
         # Cursor pagination injects its cursor into meta, not into the body.
@@ -68,6 +69,9 @@ class EnvelopeJSONRenderer(JSONRenderer):
             meta["next_cursor"] = data["next_cursor"]
             data = data["results"]
 
-        return super().render(
-            success_envelope(data, meta or None), accepted_media_type, renderer_context
+        return cast(
+            bytes,
+            super().render(
+                success_envelope(data, meta or None), accepted_media_type, renderer_context
+            ),
         )

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from apps.common.money import Money
 
@@ -85,7 +85,7 @@ class WebhookEvent:
     event_type: str
     psp_reference: str
     status: PaymentIntentStatus
-    raw: dict[str, Any]
+    raw: dict[str, object]
 
 
 @runtime_checkable
