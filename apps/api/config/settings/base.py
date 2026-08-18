@@ -30,6 +30,19 @@ ASGI_APPLICATION = "config.asgi.application"
 # SRS §7.2: primary keys are BIGSERIAL internally.
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# SRS §7.5.1. `identity` owns the user table; Django's own auth tables are
+# not used for authorisation — see apps/common/authz and ADR 0005.
+AUTH_USER_MODEL = "identity.User"
+
+# auth.E003 insists USERNAME_FIELD carry an unconditional UNIQUE. SRS §7.5.1
+# and §7.7 require the opposite: "UNIQUE(email) WHERE deleted_at IS NULL", so
+# that "re-registration after account closure remains possible". An
+# unconditional index would sit alongside the partial one and silently defeat
+# it, so uniqueness is enforced by `user_email_unique_alive` and the check is
+# silenced — which is what the Django documentation prescribes for a partial
+# unique index on the username field.
+SILENCED_SYSTEM_CHECKS = ["auth.E003"]
+
 # ---------------------------------------------------------------------------
 # Applications
 #
