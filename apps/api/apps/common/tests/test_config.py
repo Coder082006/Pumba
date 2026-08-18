@@ -18,8 +18,57 @@ def _clear_provider():
 
 
 class TestRegister:
-    def test_all_thirty_appendix_b_keys_are_declared(self) -> None:
-        assert len(SETTINGS_REGISTER) == 30
+    #: Appendix B verbatim — 19 rows in the first table, 11 in the second.
+    APPENDIX_B = frozenset(
+        {
+            "buffer.arrival_processing_minutes",
+            "buffer.airport_departure_minutes",
+            "buffer.activity_minutes",
+            "quote.ttl_minutes",
+            "payment.window_minutes",
+            "dispatch.lead_hours",
+            "offer.ttl_seconds.scheduled",
+            "offer.ttl_seconds.imminent",
+            "assignment.disclosure_hours",
+            "dispatch.weights",
+            "dispatch.max_radius_m",
+            "geofence.pickup_m",
+            "geofence.approach_m",
+            "wait.airport_minutes",
+            "wait.standard_minutes",
+            "platform_fee_rate",
+            "commission.default_percent",
+            "fx.markup_percent",
+            "settlement_hold_days",
+            "payout.minimum",
+            "refund.auto_approve_limit",
+            "limit.items_per_day",
+            "limit.travel_minutes_per_day",
+            "trip.max_days",
+            "stay.max_nights",
+            "availability.horizon_days",
+            "departures.horizon_days",
+            "location.retention_days",
+            "provider_response_hours",
+            "review.window_days",
+        }
+    )
+
+    def test_every_appendix_b_key_is_declared(self) -> None:
+        """By name rather than by count — a count passes while the wrong
+        thirty keys are present."""
+        assert set(SETTINGS_REGISTER) >= self.APPENDIX_B
+
+    def test_the_extension_beyond_appendix_b_stays_visible(self) -> None:
+        """ADR 0006: the register has deliberately diverged from Appendix B.
+
+        Every added key must be namespaced, so the divergence is legible in
+        the register itself and a stray unprefixed key cannot slip in
+        claiming to be from the appendix.
+        """
+        extension = set(SETTINGS_REGISTER) - self.APPENDIX_B
+        unnamespaced = {k for k in extension if not k.startswith(("auth.", "ratelimit."))}
+        assert not unnamespaced, f"undocumented settings keys: {sorted(unnamespaced)}"
 
     @pytest.mark.parametrize(
         ("key", "expected"),
