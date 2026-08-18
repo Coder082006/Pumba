@@ -12,7 +12,8 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from apps.administration.models import AuditLog
+from apps.common import audit
+from apps.common.audit import AuditRecord
 from apps.common.authz import Role as RoleEnum
 from apps.common.errors import AuthenticationError, ConflictError, ValidationError
 from apps.common.ports_registry import get_breach_port, get_email_port, reset_ports
@@ -38,6 +39,22 @@ def _fresh_ports():
     reset_ports()
 
 
+@pytest.fixture(autouse=True)
+def _recording_audit_sink():
+    """Assert on the audit *port*, not on administration's table.
+
+    identity is L0 and 6.4 gives it no dependency on administration, so
+    reading audit_log from here would break deps-identity — and import-linter
+    caught exactly that. Recording the port's calls tests what this module is
+    actually responsible for: that it emits the events 37.2 requires.
+    """
+    original = audit.get_sink()
+    recorded: list[AuditRecord] = []
+    audit.register_sink(recorded.append)
+    yield recorded
+    audit._sink = original
+
+
 @pytest.fixture
 def email_port():
     return get_email_port()
@@ -58,12 +75,12 @@ def verified_user(email: str = "alice@example.com", password: str = VALID_PASSWO
     return user
 
 
-def audit_actions() -> list[str]:
-    return list(AuditLog.objects.values_list("action", flat=True))
+def audit_actions(recorded: list[AuditRecord]) -> list[str]:
+    return [str(r.action) for r in recorded]
 
 
 class TestTc001Register:
-    def test_creates_a_pending_user_and_a_profile(self) -> None:
+    def test_creates_a_pending_user_and_a_profile(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
         dto = register()
         assert dto.status == UserStatus.PENDING
         assert dto.profile is not None
@@ -82,11 +99,11 @@ class TestTc001Register:
             register()
         assert [m["recipient"] for m in email_port.sent] == ["alice@example.com"]
 
-    def test_writes_an_audit_row(self) -> None:
+    def test_writes_an_audit_row(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
         register()
-        assert "user.register" in audit_actions()
+        assert "user.register" in audit_actions(_recording_audit_sink)
 
-    def test_the_dto_never_carries_a_credential(self) -> None:
+    def test_the_dto_never_carries_a_credential(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
         dto = register()
         assert not hasattr(dto, "password")
         assert not hasattr(dto, "mfa_secret")
@@ -208,14 +225,14 @@ class TestTc010LoginSuccess:
         assert session.is_live
         assert session.ip == "203.0.113.7"
 
-    def test_writes_an_audit_row(self) -> None:
+    def test_writes_an_audit_row(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
         verified_user()
         services.authenticate(email="alice@example.com", password=VALID_PASSWORD)
-        assert "user.login" in audit_actions()
+        assert "user.login" in audit_actions(_recording_audit_sink)
 
 
 class TestTc011WrongPassword:
-    def test_is_refused(self) -> None:
+    def test_is_refused(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
         verified_user()
         with pytest.raises(AuthenticationError) as exc:
             services.authenticate(email="alice@example.com", password="wrong-but-long-enough")
@@ -228,11 +245,11 @@ class TestTc011WrongPassword:
         user.refresh_from_db()
         assert user.failed_login_count == 1
 
-    def test_writes_an_audit_row(self) -> None:
+    def test_writes_an_audit_row(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
         verified_user()
         with pytest.raises(AuthenticationError):
             services.authenticate(email="alice@example.com", password="wrong-but-long-enough")
-        assert "user.login_failed" in audit_actions()
+        assert "user.login_failed" in audit_actions(_recording_audit_sink)
 
 
 class TestTc012Lockout:
@@ -241,7 +258,7 @@ class TestTc012Lockout:
             with pytest.raises(AuthenticationError):
                 services.authenticate(email="alice@example.com", password="wrong-but-long-enough")
 
-    def test_the_tenth_failure_locks_the_account(self) -> None:
+    def test_the_tenth_failure_locks_the_account(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
         user = verified_user()
         self._fail(10)
         user.refresh_from_db()
@@ -272,14 +289,16 @@ class TestTc012Lockout:
             services.authenticate(email="alice@example.com", password=VALID_PASSWORD)
         assert exc.value.details[0]["retry_after_seconds"] > 0
 
-    def test_writes_an_audit_row(self) -> None:
+    def test_writes_an_audit_row(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
         verified_user()
         self._fail(10)
-        assert "user.locked" in audit_actions()
+        assert "user.locked" in audit_actions(_recording_audit_sink)
 
 
 class TestTc013NonEnumeration:
-    def test_an_unknown_email_produces_the_same_error_as_a_wrong_password(self) -> None:
+    def test_an_unknown_email_produces_the_same_error_as_a_wrong_password(
+        self, _recording_audit_sink
+    ) -> None:  # type: ignore[no-untyped-def]
         verified_user()
         with pytest.raises(AuthenticationError) as unknown:
             services.authenticate(email="nobody@example.com", password=VALID_PASSWORD)
@@ -375,14 +394,16 @@ class TestReuseDetection:
             services.refresh_tokens(first.tokens.refresh_token)
         assert any(m["template_id"] == "session_reuse_detected" for m in email_port.sent)
 
-    def test_replay_writes_the_audit_row(self) -> None:
+    def test_replay_writes_the_audit_row(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
         first = self._login()
         services.refresh_tokens(first.tokens.refresh_token)
         with pytest.raises(AuthenticationError):
             services.refresh_tokens(first.tokens.refresh_token)
-        assert "token.reuse_detected" in audit_actions()
+        assert "token.reuse_detected" in audit_actions(_recording_audit_sink)
 
-    def test_a_garbage_token_is_refused_without_revoking_anything(self) -> None:
+    def test_a_garbage_token_is_refused_without_revoking_anything(
+        self, _recording_audit_sink
+    ) -> None:  # type: ignore[no-untyped-def]
         self._login()
         with pytest.raises(AuthenticationError):
             services.refresh_tokens("not-a-jwt")
@@ -477,7 +498,9 @@ class TestMfaEnrolment:
         assert user.mfa_enrolled_at is None
         assert not user.has_mfa
 
-    def test_confirming_with_a_valid_code_completes_it(self) -> None:
+    def test_confirming_with_a_valid_code_completes_it(  # type: ignore[no-untyped-def]
+        self, _recording_audit_sink
+    ) -> None:
         from apps.identity.domain.mfa import base32_to_secret, totp_code
 
         user = verified_user()
@@ -487,7 +510,7 @@ class TestMfaEnrolment:
         services.confirm_mfa_enrolment(principal=self._principal(user), code=code)
         user.refresh_from_db()
         assert user.has_mfa
-        assert "user.mfa_enrolled" in audit_actions()
+        assert "user.mfa_enrolled" in audit_actions(_recording_audit_sink)
 
     def test_confirming_with_a_wrong_code_is_refused(self) -> None:
         user = verified_user()
