@@ -12,17 +12,42 @@ Tanzania. Tourists plan and pay for the whole journey — airport transfer, acco
 activities, transport — before travelling, and receive one confirmed day-by-day itinerary.
 Supply side is verified local drivers, hotels and activity operators.
 
-**Authoritative specification:** `docs/srs/SRS-ZTJOP-001.docx`. Read it. It defines the
-data model, API, state machines and business rules. If this file and the SRS conflict,
-raise it with me rather than picking one.
+**Authoritative specification:**
+`docs/srs/SRS-ZTJOP-001 Zanzibar Tourism Platform SRS v1.0.docx`, **baselined to v1.1**
+— the filename still says v1.0; the revision-history table inside the document is
+authoritative for the version. Read it. It defines the data model, API, state machines
+and business rules. If this file and the SRS conflict, raise it with me rather than
+picking one.
+
+`docs/srs/srs-docx.txt` is a lossless text extraction of that file — regenerate it with
+`scripts/extract_srs.py` after any amendment. Prefer it over `srs.txt` and `srs-raw.txt`,
+which are superseded v1.0 PDF extractions kept only for provenance; `srs.txt` in
+particular column-scrambles every multi-column table.
 
 **Core aggregate:** `Trip → Itinerary → ItineraryItem → Booking`.
 
-## Build order
+## Build order and MVP client scope
 
 Backend API → tourist website (Next.js) → provider portal + admin (Vite SPA) → Flutter
-tourist and driver apps. The API is client-agnostic; adding the mobile clients must
-require zero backend changes.
+driver app. The API is client-agnostic; adding a mobile client must require zero backend
+changes.
+
+**MVP:** backend API, tourist web, provider portal, admin console, Flutter driver app.
+**v1.1:** Flutter tourist app.
+
+Decided in [ADR 0002](adr/0002-web-first-tourist-client.md) and recorded as SRS v1.1.
+Three consequences that bind day-to-day work:
+
+- **The Flutter tourist app is out of scope.** Do not scaffold the §23–24 tourist
+  screens. The driver app is *in* MVP and is not substitutable by mobile web — a
+  90-second offer TTL needs high-priority push, and `ARRIVED`/`COMPLETED` need
+  background location inside a geofence.
+- **The emailed PDF itinerary and calendar export are MVP, not polish.** Under §41.10 as
+  amended they are the web client's entire answer to the offline requirement, so they
+  belong to the trip-confirmation path.
+- **The web client makes no offline guarantee and must not imply one.** No "available
+  offline" copy, no misleading install prompt, no service-worker caching that suggests
+  the itinerary survives a lost connection.
 
 ## Stack
 
