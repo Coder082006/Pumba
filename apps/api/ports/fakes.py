@@ -15,12 +15,15 @@ the same input always yields the same route, in every process, forever.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import math
 from itertools import count
 from typing import Any
 
 from apps.common.errors import ValidationError
 from apps.common.money import Money
+from ports.breach import BreachLookupError
+from ports.crypto import Ciphertext, DecryptionError
 from ports.notification import DeliveryResult, DeliveryStatus
 from ports.payment import (
     PaymentAction,
@@ -40,6 +43,8 @@ __all__ = [
     "FakeEmail",
     "FakeSms",
     "FakeStorage",
+    "FakeCrypto",
+    "FakeBreachedPasswords",
 ]
 
 _EARTH_RADIUS_M = 6_371_000
@@ -297,3 +302,109 @@ class FakeStorage:
 
     def exists(self, key: str) -> bool:
         return key in self.objects
+
+
+class FakeCrypto:
+    """In-memory AEAD stand-in for `CryptoPort`.
+
+    **Not encryption.** It is a reversible encoding with an authentication tag,
+    written so that the *contract* — key ids, aad binding, tamper detection —
+    is exercised faithfully in tests without pulling a crypto library into a
+    phase that has no key management decided (issue D8).
+
+    Named `FakeCrypto` and confined to `ports/fakes.py` precisely so it can
+    never be mistaken for the real adapter. It must not reach an environment
+    holding real passport references or TOTP seeds.
+    """
+
+    def __init__(self, key_id: str = "fake-key-v1") -> None:
+        self._key_id = key_id
+        self.retired_keys: set[str] = set()
+        self.encrypt_calls = 0
+
+    @property
+    def current_key_id(self) -> str:
+        return self._key_id
+
+    def rotate(self, new_key_id: str) -> None:
+        """Simulate the annual rotation of SRS §30.4.
+
+        The old key is retired but still decrypts, which is the behaviour a
+        real KMS has and the behaviour a naive implementation lacks.
+        """
+        self.retired_keys.add(self._key_id)
+        self._key_id = new_key_id
+
+    def _tag(self, key_id: str, nonce: bytes, plaintext: bytes, aad: bytes) -> bytes:
+        return hashlib.sha256(key_id.encode() + nonce + aad + plaintext).digest()[:16]
+
+    def _keystream(self, key_id: str, nonce: bytes, length: int) -> bytes:
+        out = bytearray()
+        counter = 0
+        while len(out) < length:
+            out += hashlib.sha256(key_id.encode() + nonce + counter.to_bytes(4, "big")).digest()
+            counter += 1
+        return bytes(out[:length])
+
+    def encrypt(self, plaintext: bytes, *, aad: bytes = b"") -> Ciphertext:
+        self.encrypt_calls += 1
+        # Deterministic nonce from the call count: reproducible for tests
+        # (principle A7) and still unique per ciphertext.
+        nonce = self.encrypt_calls.to_bytes(12, "big")
+        tag = self._tag(self._key_id, nonce, plaintext, aad)
+        body = bytes(
+            a ^ b
+            for a, b in zip(
+                plaintext, self._keystream(self._key_id, nonce, len(plaintext)), strict=False
+            )
+        )
+        return Ciphertext(key_id=self._key_id, nonce=nonce, body=tag + body)
+
+    def decrypt(self, ciphertext: Ciphertext, *, aad: bytes = b"") -> bytes:
+        if ciphertext.key_id != self._key_id and ciphertext.key_id not in self.retired_keys:
+            raise DecryptionError("unknown key id")
+        if len(ciphertext.body) < 16:
+            raise DecryptionError("ciphertext is truncated")
+        tag, body = ciphertext.body[:16], ciphertext.body[16:]
+        plaintext = bytes(
+            a ^ b
+            for a, b in zip(
+                body, self._keystream(ciphertext.key_id, ciphertext.nonce, len(body)), strict=False
+            )
+        )
+        expected = self._tag(ciphertext.key_id, ciphertext.nonce, plaintext, aad)
+        if not hmac.compare_digest(expected, tag):
+            # One error for a wrong key, a wrong aad and a tampered body:
+            # which it was is a detail an attacker would like to know.
+            raise DecryptionError("authentication failed")
+        return plaintext
+
+
+class FakeBreachedPasswords:
+    """Seeded `BreachedPasswordPort`, with no network.
+
+    CI must never depend on a third party's availability to decide whether a
+    password is acceptable, so the corpus is a literal set of passwords which
+    the fake hashes on construction — the test reads as "password1234 is
+    breached", not as an opaque hash.
+    """
+
+    #: Enough to exercise TC-003, whose password is "password1234".
+    DEFAULT_CORPUS = frozenset(
+        {"password1234", "password", "123456789012", "qwertyuiop12", "letmein12345"}
+    )
+
+    def __init__(self, corpus: frozenset[str] | None = None) -> None:
+        self.corpus = self.DEFAULT_CORPUS if corpus is None else corpus
+        self.unavailable = False
+        self.lookups: list[str] = []
+        self._index: dict[str, set[str]] = {}
+        for password in self.corpus:
+            digest = hashlib.sha1(password.encode(), usedforsecurity=False).hexdigest().upper()
+            self._index.setdefault(digest[:5], set()).add(digest[5:])
+
+    def suffixes_for_prefix(self, prefix: str) -> frozenset[str]:
+        self.lookups.append(prefix)
+        if self.unavailable:
+            raise BreachLookupError("breach corpus unavailable")
+        return frozenset(self._index.get(prefix.upper(), set()))
