@@ -1,0 +1,245 @@
+# CI pipeline — SRS §35.3.
+#
+# Jobs are split so a failure names its own cause: a broken module boundary
+# reports as "Module boundaries", not as one line inside a monolithic "test".
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9.15.4"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  backend-lint:
+    name: Backend lint and types
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen
+      - name: ruff (lint)
+        run: uv run ruff check --output-format=github .
+      - name: ruff (format)
+        run: uv run ruff format --check .
+      - name: mypy
+        run: uv run mypy apps ports config
+
+  # ---------------------------------------------------------------------------
+  module-boundaries:
+    name: Module boundaries
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen
+      # SRS §6.5 rule 2: "a forbidden import fails the build".
+      - name: import-linter
+        run: uv run lint-imports
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.ci
+
+  # ---------------------------------------------------------------------------
+  backend-test:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: pumba
+          POSTGRES_USER: pumba
+          POSTGRES_PASSWORD: pumba
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pumba"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.ci
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen
+
+      # SRS §35.3 coverage gate: 80% overall, 95% domain. The domain gate is a
+      # separate invocation because it is the layer carrying the pricing,
+      # policy and state-machine logic that disputes are resolved against.
+      - name: pytest with overall coverage gate
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+
+      - name: Domain layer coverage gate (95%)
+        run: |
+          uv run coverage report \
+            --include="apps/*/domain/*,apps/common/money.py,apps/common/state_machine.py" \
+            --fail-under=95
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: apps/api/coverage.xml
+
+  # ---------------------------------------------------------------------------
+  openapi-contract:
+    name: OpenAPI is in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen
+        working-directory: apps/api
+
+      # SRS §36.2: the spec is generated, committed and diffed in review. If
+      # regeneration produces a diff, someone changed the API without
+      # committing the contract, and the change is invisible to reviewers.
+      - name: Regenerate the specification
+        working-directory: apps/api
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.ci
+        run: |
+          uv run python manage.py spectacular \
+            --file ../../packages/contracts/openapi/openapi.yaml \
+            --validate --fail-on-warn
+
+      - name: Fail if the committed specification is stale
+        run: |
+          if ! git diff --exit-code -- packages/contracts/openapi/openapi.yaml; then
+            echo "::error::openapi.yaml is out of date. Run 'make openapi' and commit the result."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The generated types must match the committed spec for the same reason
+      # the spec must match the code.
+      - name: Regenerate contract types
+        run: pnpm --filter @pumba/contracts generate
+      - name: Fail if the generated types are stale
+        run: |
+          if ! git diff --exit-code -- packages/contracts/src/schema.d.ts; then
+            echo "::error::schema.d.ts is out of date. Run 'make contracts' and commit the result."
+            exit 1
+          fi
+
+      - run: pnpm -r typecheck
+      - run: pnpm -r lint
+      - run: pnpm -r test
+      - run: pnpm -r build
+
+  # ---------------------------------------------------------------------------
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # SRS §30.9: "A pre-commit secret scanner and a CI scan block accidental
+      # commits."
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --frozen
+        working-directory: apps/api
+
+      # SRS §30.13: static analysis and dependency scanning on every build.
+      - name: Bandit (SAST)
+        working-directory: apps/api
+        run: uv run --with bandit bandit -r apps ports config -ll
+
+      - name: Dependency audit
+        working-directory: apps/api
+        run: uv run --with pip-audit pip-audit --strict || echo "::warning::pip-audit reported findings"
+
+  # ---------------------------------------------------------------------------
+  ci-passed:
+    name: CI passed
+    runs-on: ubuntu-latest
+    needs:
+      - backend-lint
+      - module-boundaries
+      - backend-test
+      - openapi-contract
+      - frontend
+      - security
+    if: always()
+    steps:
+      # A single required status check for branch protection. Evaluated as a
+      # GitHub expression rather than a shell string, because the job results
+      # would otherwise need interpolating into a quoted command.
+      - name: Verify every job succeeded
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "::error::One or more CI jobs did not succeed."
+          exit 1
