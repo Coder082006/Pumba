@@ -124,6 +124,43 @@ SETTINGS_REGISTER: dict[str, Setting] = {
         Setting("location.retention_days", 30, "Raw point retention"),
         Setting("provider_response_hours", 24, "On-request activity response window"),
         Setting("review.window_days", 30, "Review submission window"),
+        # -------------------------------------------------------------------
+        # Appendix B extension — authentication and rate limiting (Phase 2).
+        #
+        # SRS §30.2 specifies the lockout policy and password rules, and §9.6
+        # specifies eight rate limits, but Appendix B — "the practical
+        # expression of NFR-M07" — registers none of them. Brief rule 5
+        # forbids a hard-coded business constant, so they are registered here
+        # with the values those sections state. Recorded as ADR 0006.
+        # -------------------------------------------------------------------
+        # -- Password policy (§30.2, §9.4.1) --
+        Setting("auth.password.min_length", 12, "Minimum password length in characters"),
+        Setting(
+            "auth.password.breach_check_enabled",
+            True,
+            "Whether the breached-credential check runs at all",
+        ),
+        # -- Lockout (§30.2) --
+        Setting("auth.lockout.threshold", 10, "Failed attempts before the account locks"),
+        Setting("auth.lockout.window_minutes", 15, "Rolling window the threshold is counted in"),
+        Setting("auth.lockout.base_minutes", 1, "First lockout duration"),
+        Setting("auth.lockout.max_minutes", 60, "Ceiling on exponential lockout growth"),
+        # -- Sessions and tokens (§30.2) --
+        Setting("auth.access_token_minutes", 15, "Access token lifetime"),
+        Setting("auth.refresh_token_days", 30, "Refresh token lifetime"),
+        Setting("auth.totp_drift_steps", 1, "TOTP steps tolerated either side of now"),
+        Setting("auth.email_verification_ttl_hours", 24, "Verification link validity"),
+        Setting("auth.password_reset_ttl_minutes", 60, "Reset link validity"),
+        # -- Rate limits (§9.6). "N/period/scope", one row per table line. --
+        Setting("ratelimit.catalogue_read", "60/minute/ip", "Unauthenticated catalogue reads"),
+        Setting("ratelimit.auth_login_ip", "10/hour/ip", "POST /auth/login per IP"),
+        Setting("ratelimit.auth_login_email", "5/hour/email", "POST /auth/login per email"),
+        Setting("ratelimit.auth_register", "5/hour/ip", "POST /auth/register, password reset"),
+        Setting("ratelimit.authenticated_read", "300/minute/principal", "Authenticated reads"),
+        Setting("ratelimit.trip_quote", "20/hour/trip", "POST /trips/{id}/quote"),
+        Setting("ratelimit.payment_intent", "10/hour/tourist", "POST /payments/intents"),
+        Setting("ratelimit.driver_location", "120/minute/driver", "POST /driver/location"),
+        Setting("ratelimit.messaging_send", "60/hour/conversation", "Messaging sends"),
     ]
 }
 
