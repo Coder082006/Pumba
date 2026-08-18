@@ -2,18 +2,31 @@
   "name": "pumba",
   "private": true,
   "version": "0.1.0",
-  "description": "Tourism Journey Orchestration Platform — monorepo root",
+  "description": "Tourism Journey Orchestration Platform \u2014 monorepo root",
   "packageManager": "pnpm@9.15.4",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
+    "dev": "docker compose up --build",
+    "down": "docker compose down",
+    "reset": "docker compose down --volumes",
+    "logs": "docker compose logs -f",
+    "install:all": "pnpm install && cd apps/api && uv sync",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run boundaries && pnpm run test",
+    "lint": "pnpm run lint:api && pnpm -r lint",
+    "lint:api": "cd apps/api && uv run ruff check . && uv run ruff format --check .",
+    "typecheck": "pnpm run typecheck:api && pnpm -r typecheck",
+    "typecheck:api": "cd apps/api && uv run mypy apps ports config",
+    "boundaries": "cd apps/api && uv run lint-imports",
+    "test": "pnpm run test:api && pnpm -r test",
+    "test:api": "cd apps/api && uv run pytest",
+    "coverage": "cd apps/api && uv run pytest --cov --cov-report=term-missing --cov-fail-under=80",
+    "format": "cd apps/api && uv run ruff check --fix . && uv run ruff format .",
+    "openapi": "cd apps/api && uv run python manage.py spectacular --file ../../packages/contracts/openapi/openapi.yaml --validate --fail-on-warn",
+    "contracts": "pnpm run openapi && pnpm --filter @pumba/contracts generate",
     "build": "turbo run build",
-    "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
-    "clean": "turbo run clean && rimraf node_modules"
+    "clean": "turbo run clean"
   },
   "devDependencies": {
     "prettier": "3.4.2",
