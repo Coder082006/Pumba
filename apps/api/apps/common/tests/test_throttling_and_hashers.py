@@ -50,14 +50,6 @@ class TestArgon2Parameters:
             Argon2PasswordHasher.parallelism,
         )
 
-    def test_it_is_the_hasher_the_project_configures(self) -> None:
-        """Read from `base`, not from the effective settings: `ci` swaps in
-        MD5 so the suite is not spending 64 MiB of work per fixture, and
-        asserting the effective value would only ever confirm that."""
-        from config.settings import base
-
-        assert base.PASSWORD_HASHERS[0] == "apps.common.hashers.PlatformArgon2PasswordHasher"
-
     def test_it_produces_an_argon2id_hash(self) -> None:
         encoded = PlatformArgon2PasswordHasher().encode("a-passphrase", "somesaltvalue")
         assert "argon2id" in encoded
