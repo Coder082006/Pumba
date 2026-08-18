@@ -1,0 +1,120 @@
+[project]
+name = "pumba-api"
+version = "0.1.0"
+description = "Tourism Journey Orchestration Platform — backend API"
+requires-python = "==3.12.*"
+dependencies = [
+    "django==5.1.*",
+    "djangorestframework==3.15.*",
+    "djangorestframework-simplejwt==5.3.*",
+    "drf-spectacular==0.28.*",
+    "psycopg[binary]==3.2.*",
+    "redis==5.2.*",
+    "django-redis==5.4.*",
+    "celery==5.4.*",
+    "django-celery-beat==2.7.*",
+    "channels==4.2.*",
+    "channels-redis==4.2.*",
+    "daphne==4.1.*",
+    "argon2-cffi==23.1.*",
+    "django-environ==0.11.*",
+    "django-cors-headers==4.6.*",
+]
+
+[dependency-groups]
+dev = [
+    "ruff==0.8.*",
+    "mypy==1.13.*",
+    "django-stubs[compatible-mypy]==5.1.*",
+    "djangorestframework-stubs==3.15.*",
+    "import-linter==2.1.*",
+    "pytest==8.3.*",
+    "pytest-django==4.9.*",
+    "pytest-cov==6.0.*",
+    "factory-boy==3.3.*",
+    "testcontainers[postgres,redis]==4.9.*",
+]
+
+# ---------------------------------------------------------------------------
+# ruff — lint + format
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["."]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "N",        # pep8-naming
+    "UP",       # pyupgrade
+    "B",        # bugbear
+    "C4",       # comprehensions
+    "DTZ",      # flake8-datetimez — enforces SRS §7.2 "never a naive datetime"
+    "T20",      # no print()
+    "SIM",      # simplify
+    "RUF",
+]
+ignore = [
+    "RUF012",   # Django class attrs are legitimately mutable
+    "RUF022",   # __all__ is ordered semantically (e.g. the §8.7 hierarchy), not alphabetically
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*/migrations/*" = ["E501", "N806"]
+"*/tests/*" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config", "ports"]
+
+# ---------------------------------------------------------------------------
+# mypy — strict on the domain layer (brief rule 4)
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main"]
+ignore_missing_imports = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = ["migrations/"]
+
+[[tool.mypy.overrides]]
+# The domain layer is pure and carries the strictest contract (SRS §8.2, §36.2).
+module = ["apps.*.domain.*", "apps.common.money", "apps.common.state_machine", "ports.*"]
+strict = true
+disallow_any_explicit = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.ci"
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.ci"
+python_files = ["test_*.py"]
+testpaths = ["apps", "tests"]
+addopts = "--strict-markers --strict-config"
+markers = [
+    "integration: requires Postgres and Redis (testcontainers)",
+]
+
+# ---------------------------------------------------------------------------
+# coverage — SRS §35.3: 80% overall, 95% domain
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["apps", "ports"]
+omit = ["*/migrations/*", "*/tests/*", "*/__init__.py", "config/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+    "@(abc\\.)?abstractmethod",
+    "class .*\\(Protocol\\):",
+]
