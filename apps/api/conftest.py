@@ -17,9 +17,7 @@ def _docker_available() -> bool:
     return shutil.which("docker") is not None
 
 
-def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item]
-) -> None:
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     if _docker_available():
         return
     skip = pytest.mark.skip(reason="Docker unavailable; integration tests need testcontainers")
