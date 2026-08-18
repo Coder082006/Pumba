@@ -5,7 +5,16 @@
 ; These contracts encode the dependency table of SRS §6.4 and the layer
 ; structure of SRS §8.2. A forbidden import fails CI (SRS §6.5 rule 2).
 ;
-; The dependency table, verbatim from SRS §6.4 (PDF pp. 21-22):
+; PROVENANCE. This table was first transcribed from a `pdftotext` extraction of
+; the SRS. `-layout` column-scrambles multi-column tables, so on 2026-08-18 it
+; was re-derived from the authoritative .docx by reading the OOXML table grid
+; directly (scripts/extract_srs.py). All 42 cells were compared: no
+; transcription error, and the only difference is the deliberate S3 divergence
+; noted below. tests/test_srs_module_catalogue.py now re-derives §6.4 from
+; docs/srs/srs-docx.txt on every run and fails if any contract here drifts from
+; it — so this comment can no longer go stale without CI saying so.
+;
+; The dependency table, verbatim from SRS §6.4 (v1.1, pp. 21-22):
 ;
 ;   identity       -> (none)
 ;   location       -> (none; external port only)
