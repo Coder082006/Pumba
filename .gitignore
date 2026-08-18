@@ -24,6 +24,8 @@ venv/
 .pytest_cache/
 htmlcov/
 .coverage
+# pytest-cov writes one file per process before combining them.
+.coverage.*
 coverage.xml
 
 # Test / build output
@@ -49,3 +51,8 @@ Thumbs.db
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+
+# tests/test_architecture.py writes these into a module, runs import-linter
+# against them and deletes them. An interrupted run leaves one behind, and it
+# must never be committed — it is a deliberate contract violation.
+_arch_probe.py
