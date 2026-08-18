@@ -18,7 +18,7 @@ Phase 2, when the first real tables land. Recorded so it is not forgotten.
 from __future__ import annotations
 
 import uuid
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Generic, TypeVar
 
 from django.db import models
 from django.utils import timezone
@@ -28,6 +28,7 @@ __all__ = [
     "SoftDeleteModel",
     "VersionedModel",
     "TimestampedModel",
+    "IdempotencyRecord",
 ]
 
 
@@ -63,11 +64,14 @@ class BaseModel(TimestampedModel):
         return f"{type(self).__name__}({self.public_id})"
 
 
-class SoftDeleteQuerySet(models.QuerySet["SoftDeleteModel"]):
-    def alive(self) -> SoftDeleteQuerySet:
+_SD = TypeVar("_SD", bound="SoftDeleteModel")
+
+
+class SoftDeleteQuerySet(models.QuerySet[_SD], Generic[_SD]):
+    def alive(self) -> SoftDeleteQuerySet[_SD]:
         return self.filter(deleted_at__isnull=True)
 
-    def dead(self) -> SoftDeleteQuerySet:
+    def dead(self) -> SoftDeleteQuerySet[_SD]:
         return self.filter(deleted_at__isnull=False)
 
     def delete(self) -> tuple[int, dict[str, int]]:
@@ -75,14 +79,15 @@ class SoftDeleteQuerySet(models.QuerySet["SoftDeleteModel"]):
         return count, {}
 
 
-class SoftDeleteManager(models.Manager["SoftDeleteModel"]):
+class SoftDeleteManager(models.Manager[_SD], Generic[_SD]):
     """Default manager excluding soft-deleted rows (SRS §7.2).
 
     `all_objects` is provided alongside for administrative and audit access.
     """
 
-    def get_queryset(self) -> SoftDeleteQuerySet:
-        return SoftDeleteQuerySet(self.model, using=self._db).filter(deleted_at__isnull=True)
+    def get_queryset(self) -> SoftDeleteQuerySet[_SD]:
+        qs: SoftDeleteQuerySet[_SD] = SoftDeleteQuerySet(self.model, using=self._db)
+        return qs.filter(deleted_at__isnull=True)
 
 
 class SoftDeleteModel(BaseModel):
@@ -94,7 +99,7 @@ class SoftDeleteModel(BaseModel):
 
     deleted_at = models.DateTimeField(null=True, blank=True, default=None, editable=False)
 
-    objects: ClassVar[SoftDeleteManager] = SoftDeleteManager()
+    objects: ClassVar[SoftDeleteManager[Any]] = SoftDeleteManager()
     all_objects: ClassVar[models.Manager[SoftDeleteModel]] = models.Manager()
 
     class Meta:
@@ -129,3 +134,14 @@ class VersionedModel(models.Model):
 
     class Meta:
         abstract = True
+
+
+# `IdempotencyRecord` is defined in `idempotency.py`, next to the fingerprint
+# helper it belongs with. Django discovers models by importing `<app>.models`
+# and nothing else, so without this re-export the model is invisible to
+# `makemigrations` and never gets a table — while still importing fine in a
+# test, which is what makes the failure mode quiet.
+#
+# The import sits at the end of the file because `idempotency` imports
+# `TimestampedModel` from here.
+from apps.common.idempotency import IdempotencyRecord  # noqa: E402
