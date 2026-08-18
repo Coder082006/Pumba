@@ -112,6 +112,21 @@ class TestGuards:
         transition = Transition(Status.DRAFT, Status.PRICED, guard=policy_allows)
         assert transition.guard_name == "policy_allows"
 
+    def test_can_evaluates_the_guard_rather_than_ignoring_it(self) -> None:
+        machine = StateMachine(
+            name="booking",
+            initial=Status.CONFIRMED,
+            transitions=[
+                Transition(
+                    Status.CONFIRMED,
+                    Status.CANCELLED,
+                    guard=lambda ctx: bool(ctx.get("policy_permits")),
+                )
+            ],
+        )
+        assert machine.can(Status.CONFIRMED, Status.CANCELLED, {"policy_permits": True})
+        assert not machine.can(Status.CONFIRMED, Status.CANCELLED, {"policy_permits": False})
+
     def test_missing_context_is_treated_as_empty(self) -> None:
         machine = StateMachine(
             name="m",

@@ -131,6 +131,47 @@ class TestRepresentation:
     def test_str_is_human_readable(self) -> None:
         assert str(Money(Decimal("834.75"), "USD")) == "USD 834.75"
 
+    def test_repr_shows_the_unrounded_amount(self) -> None:
+        # repr must not quantize: when debugging a rounding dispute, the full
+        # intermediate precision is the whole point.
+        assert repr(Money(Decimal("39.7500"), "USD")) == "Money(Decimal('39.7500'), 'USD')"
+
+
+class TestComparison:
+    """Used for real thresholds: the refund ceiling of SRS §32.3
+    REFUND_EXCEEDS_CAPTURED and the payout.minimum of Appendix B."""
+
+    def test_orders_by_amount(self) -> None:
+        small = Money(Decimal("49.99"), "USD")
+        large = Money(Decimal("50.00"), "USD")
+
+        assert small < large
+        assert small <= large
+        assert large > small
+        assert large >= small
+
+    def test_equal_amounts_compare_both_ways(self) -> None:
+        a = Money(Decimal("50.00"), "USD")
+        b = Money(Decimal("50.00"), "USD")
+
+        assert a <= b
+        assert a >= b
+        assert not a < b
+        assert not a > b
+
+    def test_trailing_zeros_do_not_affect_ordering(self) -> None:
+        # Decimal("50.0") and Decimal("50.00") differ in representation but
+        # not in value; a payout threshold must not depend on which one the
+        # database happened to return.
+        assert not Money(Decimal("50.0"), "USD") < Money(Decimal("50.00"), "USD")
+
+    @pytest.mark.parametrize("operation", ["lt", "le", "gt", "ge"])
+    def test_every_comparison_refuses_a_currency_mismatch(self, operation: str) -> None:
+        import operator
+
+        with pytest.raises(CurrencyMismatchError):
+            getattr(operator, operation)(Money(Decimal("1"), "USD"), Money(Decimal("1"), "TZS"))
+
 
 class TestPredicates:
     def test_zero_constructor(self) -> None:

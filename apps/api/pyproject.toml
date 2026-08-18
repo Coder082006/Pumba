@@ -127,7 +127,16 @@ markers = [
 # ---------------------------------------------------------------------------
 [tool.coverage.run]
 source = ["apps", "ports"]
-omit = ["*/migrations/*", "*/tests/*", "*/__init__.py", "config/*"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/__init__.py",
+    "config/*",
+    # tests/test_architecture.py writes these, runs import-linter against them
+    # and deletes them. They exist only inside a subprocess and would
+    # otherwise leave unresolvable entries in the coverage data.
+    "*/_arch_probe.py",
+]
 
 [tool.coverage.report]
 exclude_lines = [
