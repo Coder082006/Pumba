@@ -25,6 +25,7 @@ from apps.common.authentication import principal_from_request
 from apps.common.envelope import success_envelope
 from apps.common.errors import AuthenticationError, NotFoundError
 from apps.common.permissions import IsAuthenticatedPrincipal
+from apps.common.throttling import LoginEmailThrottle, LoginIpThrottle, RegistrationThrottle
 from apps.identity import serializers as ser
 from apps.identity import services
 from apps.identity.selectors import list_devices_for_principal
@@ -127,6 +128,8 @@ class _PublicView(APIView):
 class RegisterView(_PublicView):
     """SRS §9.4.1."""
 
+    throttle_classes = [RegistrationThrottle]
+
     @extend_schema(
         request=ser.RegisterSerializer,
         responses={201: ser.UserSerializer},
@@ -153,6 +156,11 @@ class VerifyEmailView(_PublicView):
 
 class LoginView(_PublicView):
     """SRS §9.4.2."""
+
+    # Both halves of the §9.6 limit. The per-IP one alone is defeated by a
+    # thousand addresses attacking one account; the per-email one alone is
+    # defeated by one address attacking a thousand accounts.
+    throttle_classes = [LoginIpThrottle, LoginEmailThrottle]
 
     @extend_schema(request=ser.LoginSerializer, responses={200: ser.TokenPairSerializer})
     def post(self, request: Request) -> Response:
@@ -218,6 +226,8 @@ class LogoutView(APIView):
 class ForgotPasswordView(_PublicView):
     """§24.5: the response is identical whether or not the address exists."""
 
+    throttle_classes = [RegistrationThrottle]
+
     @extend_schema(request=ser.ForgotPasswordSerializer, responses={202: None})
     def post(self, request: Request) -> Response:
         payload = ser.ForgotPasswordSerializer(data=request.data)
@@ -234,6 +244,8 @@ class ForgotPasswordView(_PublicView):
 
 
 class ResetPasswordView(_PublicView):
+    throttle_classes = [RegistrationThrottle]
+
     @extend_schema(request=ser.ResetPasswordSerializer, responses={204: None})
     def post(self, request: Request) -> Response:
         payload = ser.ResetPasswordSerializer(data=request.data)

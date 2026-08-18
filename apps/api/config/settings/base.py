@@ -178,8 +178,10 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 # ---------------------------------------------------------------------------
 # Authentication — Argon2id (SRS §30.2)
 # ---------------------------------------------------------------------------
+# SRS §30.2: "Argon2id (memory 64 MiB, time cost 3, parallelism 4)". Django's
+# defaults are 100 MiB / t=2 / p=8, which is not what the SRS says.
 PASSWORD_HASHERS = [
-    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "apps.common.hashers.PlatformArgon2PasswordHasher",
     "django.contrib.auth.hashers.PBKDF2PasswordHasher",
 ]
 
