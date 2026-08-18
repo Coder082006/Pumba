@@ -1,6 +1,7 @@
 # Implementation Plan — Zanzibar Tourism Journey Orchestration Platform
 
-**Status:** Draft for approval — no application code written yet
+**Status:** Approved and executed. **Phase 1 complete.**
+**Last updated:** 2026-08-18 — see §7 for how the open decisions were resolved
 **Source of truth:** `docs/srs/SRS-ZTJOP-001.pdf` (v1.0, 146 pp., "Approved for Development")
 **Author:** Claude (engineering)
 **Date:** 2026-08-18
@@ -437,26 +438,39 @@ Roughly 12 conventional commits, reviewable independently:
 
 ---
 
-## 7. Decisions I need from you
+## 7. Decisions — status
 
-**Before I write `common/`:**
+Phase 1 was approved and built under the recommendations below. S1, S2, S3, C2
+and C5 are **resolved and implemented**. C1 is **still open** and is the only
+one that blocks anything.
 
-1. **S1** — `get_setting()` in `common/config.py` (recommended) or in
-   `apps/administration/services.py` accepting the cycle?
-2. **S2** — shared `idempotency_record` table owned by `common` (recommended)?
-3. **S3** — encode `payment → {booking, trip, inventory}` now with a comment
-   (recommended), or the strict §6.4 events-only contract and take the Phase 8 CI
-   failure as a forcing function?
+### Resolved during Phase 1
 
-**Before Phase 2 exit:**
+| # | Resolution | Where |
+|---|---|---|
+| **S1** | `get_setting()` lives in `common/config.py`; `administration` keeps the table and the audited write path. Cycle avoided. | [ADR 0003](adr/0003-settings-read-port-in-common.md) |
+| **S2** | `idempotency_record` owned by `common`, scoped by (key, endpoint, principal). | `apps/common/idempotency.py` |
+| **S3** | `payment → {booking, trip, inventory}`, with the §6.4 conflict recorded on the contract itself. Revisit at Phase 8. | `apps/api/.importlinter` |
+| **C2** | Brief's `apps/` + `packages/` layout, with a mapping table back to §36. | [ADR 0001](adr/0001-monorepo-layout.md) |
+| **C5** | MapLibre. No routing provider selected — `RoutingPort` is unimplemented (Appendix D-2). | `ports/routing.py` |
 
-4. **C1** — (a) re-baseline MVP to web, (b) web additional to Flutter, or (c) Flutter
-   first?
+A sixth decision surfaced during the build and was taken the same way:
 
-**Confirm or correct:**
+| # | Resolution | Where |
+|---|---|---|
+| **S8** | PostGIS and GDAL provisioned now; `django.contrib.gis` enabled in Phase 3 when the first geometry column exists. | [ADR 0004](adr/0004-geodjango-deferred-to-phase-3.md) |
 
-5. **C2** — brief's `apps/` + `packages/` layout over §36's literal tree?
-6. **C5** — MapLibre over §34.6's Mapbox recommendation?
+### Still open
+
+**C1 — is the tourist website the v1 tourist client, or additional to Flutter?**
+
+Recorded as [ADR 0002](adr/0002-web-first-tourist-client.md), status *Proposed*.
+Phase 1 was unaffected, but this must land **before Phase 2 exits**, because it
+decides whether the Phase 2 client slice is web only or web plus Flutter, and
+whether §41.10's offline acceptance criterion needs rewriting.
+
+Three options, unchanged from §1 above: **(a)** re-baseline the MVP to web
+*(recommended)*, **(b)** web additional to Flutter, **(c)** Flutter first.
 
 ---
 
@@ -476,4 +490,5 @@ Explicitly not in Phase 2: any catalogue model, any provider model (L1, Phase 3+
 
 ---
 
-**I have not written application code. Awaiting approval of this plan and answers to §7.**
+**Phase 1 is complete.** See the Phase 1 report for what was built, what is
+verified, and what was deviated from. The one outstanding decision is C1.
