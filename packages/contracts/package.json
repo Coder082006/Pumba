@@ -1,0 +1,23 @@
+{
+  "name": "@pumba/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenAPI specification generated from Django, and the TypeScript types derived from it",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./openapi.yaml": "./openapi/openapi.yaml"
+  },
+  "scripts": {
+    "generate": "openapi-typescript ./openapi/openapi.yaml -o ./src/schema.d.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf src/schema.d.ts"
+  },
+  "devDependencies": {
+    "@pumba/config": "workspace:*",
+    "openapi-typescript": "7.4.4",
+    "typescript": "5.7.2"
+  }
+}
