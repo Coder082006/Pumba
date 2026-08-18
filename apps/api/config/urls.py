@@ -1,8 +1,8 @@
 """Root URL configuration.
 
 Every route is mounted under /api/v1 (SRS §9.1). Module routers are added
-here as each module is built; Phase 1 mounts only `common`, which owns the
-health endpoint.
+here as each module is built; Phase 1 mounted only `common`, which owns the
+health endpoint; Phase 2 adds `identity`.
 """
 
 from django.urls import include, path
@@ -10,6 +10,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 api_v1_patterns = [
     path("", include("apps.common.urls")),
+    path("", include("apps.identity.urls")),
 ]
 
 urlpatterns = [

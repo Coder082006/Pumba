@@ -11,14 +11,19 @@ Ownership is a queryset filter — see `apps.common.mixins.ScopedQuerysetMixin`.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from rest_framework.permissions import BasePermission
-from rest_framework.request import Request
-from rest_framework.views import APIView
 
 from apps.common.authentication import principal_from_request
 from apps.common.authz import Permission, Role, mfa_mandatory
+
+if TYPE_CHECKING:
+    # Imported for annotations only. DRF resolves DEFAULT_PERMISSION_CLASSES
+    # while `rest_framework.views` is still initialising, so importing
+    # APIView here at runtime is a circular import.
+    from rest_framework.request import Request
+    from rest_framework.views import APIView
 
 __all__ = [
     "IsAuthenticatedPrincipal",

@@ -102,7 +102,12 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "apps.common.middleware.RequestIdMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # django.contrib.auth.middleware.AuthenticationMiddleware is deliberately
+    # absent. It requires SessionMiddleware, and this API is stateless and
+    # bearer-token only (SRS §30.4: "The mobile apps use bearer tokens and are
+    # not CSRF-exposed"). Authentication is DRF's
+    # apps.common.authentication.PrincipalJWTAuthentication, which attaches
+    # `request.principal`; nothing reads `request.user`.
     "apps.common.middleware.LocaleMiddleware",
     "apps.common.middleware.AuditContextMiddleware",
 ]
@@ -115,7 +120,6 @@ TEMPLATES = [
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
             ],
         },
     },
@@ -199,11 +203,15 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "apps.common.exception_handler.platform_exception_handler",
     "DEFAULT_PAGINATION_CLASS": "apps.common.pagination.CursorPagination",
     "PAGE_SIZE": 20,
+    # Wraps SimpleJWT and attaches `request.principal` — SRS §30.3.
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.common.authentication.PrincipalJWTAuthentication",
     ],
+    # Secure by default: a view that declares no permission classes requires
+    # a principal. Making a route public is then a deliberate, visible act
+    # (`_PublicView`), which is what the URL-conf audit checks for.
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
+        "apps.common.permissions.IsAuthenticatedPrincipal",
     ],
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.URLPathVersioning",
     "DEFAULT_VERSION": "v1",
