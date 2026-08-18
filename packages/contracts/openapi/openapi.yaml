@@ -1,0 +1,60 @@
+openapi: 3.1.0
+info:
+  title: Tourism Journey Orchestration Platform API
+  version: 1.0.0
+  description: Client-agnostic REST API. Consumed by the tourist website, the provider
+    portal, the administration console and (later) the Flutter applications. No client-specific
+    concern may leak into this contract.
+paths:
+  /api/v1/health:
+    get:
+      operationId: health
+      description: Reports process liveness and the reachability of PostgreSQL and
+        Redis. Returns 503 when any dependency is unreachable so that a load balancer
+        removes the instance from rotation.
+      summary: Liveness and readiness probe
+      tags:
+      - system
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthUnavailableResponse'
+          description: ''
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        version:
+          type: string
+        checks:
+          type: object
+          additionalProperties: {}
+      required:
+      - checks
+      - status
+      - version
+    HealthUnavailableResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        version:
+          type: string
+        checks:
+          type: object
+          additionalProperties: {}
+      required:
+      - checks
+      - status
+      - version
