@@ -1,0 +1,844 @@
+; Module boundary contracts — SRS §6.5.
+;
+;   "Discipline that is only documented is not discipline."
+;
+; These contracts encode the dependency table of SRS §6.4 and the layer
+; structure of SRS §8.2. A forbidden import fails CI (SRS §6.5 rule 2).
+;
+; The dependency table, verbatim from SRS §6.4 (PDF pp. 21-22):
+;
+;   identity       -> (none)
+;   location       -> (none; external port only)
+;   notify         -> (none; external ports only)
+;   catalogue      -> location
+;   provider       -> identity
+;   inventory      -> catalogue
+;   transport      -> location, provider
+;   trip           -> catalogue, transport
+;   booking        -> inventory, trip, provider
+;   payment        -> booking            [see PAYMENT NOTE below]
+;   messaging      -> booking
+;   review         -> booking
+;   finance        -> payment, booking
+;   administration -> all (read via interfaces)
+;
+; Dependencies are read STRICTLY and NON-TRANSITIVELY. `inventory` depends on
+; `catalogue`, and `catalogue` depends on `location`, but `inventory` may not
+; import `location` directly — it goes through `catalogue`'s service interface.
+; That is what makes the seams extractable later (SRS §6.2, §44.2).
+;
+; Every module may import `apps.common` and `ports`, which are leaves.
+;
+; PAYMENT NOTE. SRS §6.4 gives payment's dependency as "booking (via events)".
+; That is not implementable as written: §9.4.7 asserts `trip.status` and reads
+; `trip.total_amount` synchronously, and §20.8's confirmation routine commits
+; holds and confirms bookings inside the webhook transaction. The contract
+; below therefore permits booking, trip and inventory. Revisit at Phase 8 —
+; issue S3 in docs/IMPLEMENTATION-PLAN.md.
+
+[importlinter]
+root_packages =
+    apps
+    config
+    ports
+include_external_packages = True
+
+; ---------------------------------------------------------------------------
+; 1. Module dependency contracts — one per module, encoding SRS §6.4.
+; ---------------------------------------------------------------------------
+
+[importlinter:contract:deps-identity]
+name = identity depends on no other module
+type = forbidden
+source_modules =
+    apps.identity
+forbidden_modules =
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-location]
+name = location depends on no other module
+type = forbidden
+source_modules =
+    apps.location
+forbidden_modules =
+    apps.identity
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-notify]
+name = notify depends on no other module
+type = forbidden
+source_modules =
+    apps.notify
+forbidden_modules =
+    apps.identity
+    apps.location
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-catalogue]
+name = catalogue depends only on location
+type = forbidden
+source_modules =
+    apps.catalogue
+forbidden_modules =
+    apps.identity
+    apps.notify
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-provider]
+name = provider depends only on identity
+type = forbidden
+source_modules =
+    apps.provider
+forbidden_modules =
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-inventory]
+name = inventory depends only on catalogue
+type = forbidden
+source_modules =
+    apps.inventory
+forbidden_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.provider
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-transport]
+name = transport depends only on location and provider
+type = forbidden
+source_modules =
+    apps.transport
+forbidden_modules =
+    apps.identity
+    apps.notify
+    apps.catalogue
+    apps.inventory
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-trip]
+name = trip depends only on catalogue and transport
+type = forbidden
+source_modules =
+    apps.trip
+forbidden_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.provider
+    apps.inventory
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-booking]
+name = booking depends only on inventory, trip and provider
+type = forbidden
+source_modules =
+    apps.booking
+forbidden_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.transport
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-payment]
+name = payment depends only on booking, trip and inventory (see PAYMENT NOTE)
+type = forbidden
+source_modules =
+    apps.payment
+forbidden_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.transport
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-messaging]
+name = messaging depends only on booking
+type = forbidden
+source_modules =
+    apps.messaging
+forbidden_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.payment
+    apps.review
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-review]
+name = review depends only on booking
+type = forbidden
+source_modules =
+    apps.review
+forbidden_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.payment
+    apps.messaging
+    apps.finance
+    apps.administration
+
+[importlinter:contract:deps-finance]
+name = finance depends only on payment and booking
+type = forbidden
+source_modules =
+    apps.finance
+forbidden_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.messaging
+    apps.review
+    apps.administration
+
+; administration has no dependency contract: SRS §6.4 grants it "all (read via
+; interfaces)". The privacy contracts below still constrain HOW it reads —
+; through services and dto, never another module's models.
+
+; ---------------------------------------------------------------------------
+; 2. Module internals are private — SRS §6.5 rule 1.
+;
+;   "Cross-module imports are permitted only from apps.<module>.services and
+;    apps.<module>.dto — never from apps.<module>.models."
+;
+; One contract per module, protecting its internals from every other module.
+; Extended beyond `models` to every non-public submodule, because reaching
+; into another module's selectors or domain breaks the seam just as thoroughly.
+; ---------------------------------------------------------------------------
+
+[importlinter:contract:private-identity]
+name = identity internals are private
+type = forbidden
+source_modules =
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.identity.models
+    apps.identity.repositories
+    apps.identity.selectors
+    apps.identity.domain
+    apps.identity.views
+    apps.identity.serializers
+    apps.identity.permissions
+    apps.identity.urls
+    apps.identity.tasks
+    apps.identity.adapters
+
+[importlinter:contract:private-location]
+name = location internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.location.models
+    apps.location.repositories
+    apps.location.selectors
+    apps.location.domain
+    apps.location.views
+    apps.location.serializers
+    apps.location.permissions
+    apps.location.urls
+    apps.location.tasks
+    apps.location.adapters
+
+[importlinter:contract:private-notify]
+name = notify internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.notify.models
+    apps.notify.repositories
+    apps.notify.selectors
+    apps.notify.domain
+    apps.notify.views
+    apps.notify.serializers
+    apps.notify.permissions
+    apps.notify.urls
+    apps.notify.tasks
+    apps.notify.adapters
+
+[importlinter:contract:private-catalogue]
+name = catalogue internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.catalogue.models
+    apps.catalogue.repositories
+    apps.catalogue.selectors
+    apps.catalogue.domain
+    apps.catalogue.views
+    apps.catalogue.serializers
+    apps.catalogue.permissions
+    apps.catalogue.urls
+    apps.catalogue.tasks
+    apps.catalogue.adapters
+
+[importlinter:contract:private-provider]
+name = provider internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.provider.models
+    apps.provider.repositories
+    apps.provider.selectors
+    apps.provider.domain
+    apps.provider.views
+    apps.provider.serializers
+    apps.provider.permissions
+    apps.provider.urls
+    apps.provider.tasks
+    apps.provider.adapters
+
+[importlinter:contract:private-inventory]
+name = inventory internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.inventory.models
+    apps.inventory.repositories
+    apps.inventory.selectors
+    apps.inventory.domain
+    apps.inventory.views
+    apps.inventory.serializers
+    apps.inventory.permissions
+    apps.inventory.urls
+    apps.inventory.tasks
+    apps.inventory.adapters
+
+[importlinter:contract:private-transport]
+name = transport internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.transport.models
+    apps.transport.repositories
+    apps.transport.selectors
+    apps.transport.domain
+    apps.transport.views
+    apps.transport.serializers
+    apps.transport.permissions
+    apps.transport.urls
+    apps.transport.tasks
+    apps.transport.adapters
+
+[importlinter:contract:private-trip]
+name = trip internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.trip.models
+    apps.trip.repositories
+    apps.trip.selectors
+    apps.trip.domain
+    apps.trip.views
+    apps.trip.serializers
+    apps.trip.permissions
+    apps.trip.urls
+    apps.trip.tasks
+    apps.trip.adapters
+
+[importlinter:contract:private-booking]
+name = booking internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.booking.models
+    apps.booking.repositories
+    apps.booking.selectors
+    apps.booking.domain
+    apps.booking.views
+    apps.booking.serializers
+    apps.booking.permissions
+    apps.booking.urls
+    apps.booking.tasks
+    apps.booking.adapters
+
+[importlinter:contract:private-payment]
+name = payment internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.payment.models
+    apps.payment.repositories
+    apps.payment.selectors
+    apps.payment.domain
+    apps.payment.views
+    apps.payment.serializers
+    apps.payment.permissions
+    apps.payment.urls
+    apps.payment.tasks
+    apps.payment.adapters
+
+[importlinter:contract:private-messaging]
+name = messaging internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.review
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.messaging.models
+    apps.messaging.repositories
+    apps.messaging.selectors
+    apps.messaging.domain
+    apps.messaging.views
+    apps.messaging.serializers
+    apps.messaging.permissions
+    apps.messaging.urls
+    apps.messaging.tasks
+    apps.messaging.adapters
+
+[importlinter:contract:private-review]
+name = review internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.finance
+    apps.administration
+forbidden_modules =
+    apps.review.models
+    apps.review.repositories
+    apps.review.selectors
+    apps.review.domain
+    apps.review.views
+    apps.review.serializers
+    apps.review.permissions
+    apps.review.urls
+    apps.review.tasks
+    apps.review.adapters
+
+[importlinter:contract:private-finance]
+name = finance internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.administration
+forbidden_modules =
+    apps.finance.models
+    apps.finance.repositories
+    apps.finance.selectors
+    apps.finance.domain
+    apps.finance.views
+    apps.finance.serializers
+    apps.finance.permissions
+    apps.finance.urls
+    apps.finance.tasks
+    apps.finance.adapters
+
+[importlinter:contract:private-administration]
+name = administration internals are private
+type = forbidden
+source_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+forbidden_modules =
+    apps.administration.models
+    apps.administration.repositories
+    apps.administration.selectors
+    apps.administration.domain
+    apps.administration.views
+    apps.administration.serializers
+    apps.administration.permissions
+    apps.administration.urls
+    apps.administration.tasks
+    apps.administration.adapters
+
+; ---------------------------------------------------------------------------
+; 3. The domain layer is pure — SRS §8.2 layer 3, §36.2.
+;
+;   "backend/apps/*/domain/ holds the pure business logic ... it must contain
+;    no imports from Django's ORM."
+;
+; This is the contract that protects the most audit-sensitive code in the
+; system: pricing, cancellation policy, itinerary validation and state
+; machine guards. Keeping it free of I/O is what makes it testable without a
+; database and reviewable without a debugger.
+; ---------------------------------------------------------------------------
+
+[importlinter:contract:domain-layer-is-pure]
+name = domain layers import no ORM, no I/O and no other layer
+type = forbidden
+source_modules =
+    apps.identity.domain
+    apps.location.domain
+    apps.notify.domain
+    apps.catalogue.domain
+    apps.provider.domain
+    apps.inventory.domain
+    apps.transport.domain
+    apps.trip.domain
+    apps.booking.domain
+    apps.payment.domain
+    apps.messaging.domain
+    apps.review.domain
+    apps.finance.domain
+    apps.administration.domain
+; Django is forbidden wholesale, not merely `django.db`. SRS §36.2 requires
+; "no imports from Django's ORM", but a domain function that reaches for
+; django.core.cache or django.http is no longer pure either, and
+; import-linter cannot address subpackages of external packages. Forbidding
+; the whole framework is both stricter and simpler to reason about: the
+; domain layer is plain Python over value objects.
+forbidden_modules =
+    django
+    rest_framework
+    celery
+    redis
+    requests
+    httpx
+    config
+allow_indirect_imports = False
+
+; ---------------------------------------------------------------------------
+; 4. Vendor SDKs live only in adapters — SRS §36.2, principle A3.
+;
+;   "backend/apps/*/adapters/ is the only place a third-party SDK may be
+;    imported."
+;
+; Enforced negatively: `requests` and `httpx` are the HTTP clients any real
+; adapter will reach for, so an outbound call appearing anywhere else is
+; caught here. Named SDKs are added to this list as adapters are built.
+; ---------------------------------------------------------------------------
+
+[importlinter:contract:no-outbound-http-outside-adapters]
+name = outbound HTTP clients appear only in adapters
+type = forbidden
+source_modules =
+    apps.identity.services
+    apps.location.services
+    apps.notify.services
+    apps.catalogue.services
+    apps.provider.services
+    apps.inventory.services
+    apps.transport.services
+    apps.trip.services
+    apps.booking.services
+    apps.payment.services
+    apps.messaging.services
+    apps.review.services
+    apps.finance.services
+    apps.administration.services
+forbidden_modules =
+    requests
+    httpx
+
+; ---------------------------------------------------------------------------
+; 5. common and ports are leaves.
+;
+; `common` holds the shared kernel (base model, Money, errors, event bus,
+; state machine, settings read port). `ports` holds protocol definitions.
+; Neither may depend on a business module, or the shared kernel becomes a
+; back door through which any module reaches any other.
+; ---------------------------------------------------------------------------
+
+[importlinter:contract:common-is-a-leaf]
+name = common depends on no business module
+type = forbidden
+source_modules =
+    apps.common
+forbidden_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+    config
+
+[importlinter:contract:ports-is-a-leaf]
+name = ports declares protocols and depends on no business module
+type = forbidden
+source_modules =
+    ports
+forbidden_modules =
+    apps.identity
+    apps.location
+    apps.notify
+    apps.catalogue
+    apps.provider
+    apps.inventory
+    apps.transport
+    apps.trip
+    apps.booking
+    apps.payment
+    apps.messaging
+    apps.review
+    apps.finance
+    apps.administration
+    config
