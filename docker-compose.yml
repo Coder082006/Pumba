@@ -1,0 +1,156 @@
+# Local development stack — SRS §37.1: "A new engineer runs the stack locally
+# with one command."
+#
+#     make dev      (or: docker compose up)
+#
+# Business configuration is NOT set here. Thresholds, rates, weights and TTLs
+# are system_setting rows changed at runtime by administrators (NFR-M07,
+# SRS §35.5). Only infrastructure configuration belongs in this file.
+
+name: pumba
+
+services:
+  postgres:
+    # PostGIS 3.4 on PostgreSQL 16 — SRS §7.1. The extension is present from
+    # day one even though GeoDjango is not enabled until Phase 3, so that
+    # enabling it needs no infrastructure change.
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pumba}
+      POSTGRES_USER: ${POSTGRES_USER:-pumba}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pumba}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pumba} -d ${POSTGRES_DB:-pumba}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    # One component serving five needs: cache, distributed locks, rate
+    # limiting, the Celery broker and the Channels layer (SRS §34.4).
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+      target: development
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python -m uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload"
+    environment: &api-env
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-insecure-change-me}
+      DJANGO_DEBUG: "true"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,api
+      POSTGRES_DB: ${POSTGRES_DB:-pumba}
+      POSTGRES_USER: ${POSTGRES_USER:-pumba}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pumba}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CHANNELS_REDIS_URL: redis://redis:6379/3
+    volumes:
+      - ./apps/api:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+      target: development
+    # All five queues in one worker locally. Production runs dedicated workers
+    # per queue class so a notification burst cannot delay payment
+    # verification (SRS §8.8, §35.2).
+    command: >
+      celery -A config worker
+      --loglevel=INFO
+      --queues=default,realtime,notify,payments,finance
+      --concurrency=2
+    environment: *api-env
+    volumes:
+      - ./apps/api:/app
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+
+  beat:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+      target: development
+    # Singleton by construction. SRS §35.2 requires a lock so a duplicated
+    # scheduler cannot double-fire jobs; the DatabaseScheduler provides it.
+    command: celery -A config beat --loglevel=INFO --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment: *api-env
+    volumes:
+      - ./apps/api:/app
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+
+  web-tourist:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+      target: development
+    command: pnpm --filter @pumba/web-tourist dev
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./apps:/workspace/apps
+      - ./packages:/workspace/packages
+      - tourist-next:/workspace/apps/web-tourist/.next
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  web-console:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+      target: development
+    command: pnpm --filter @pumba/web-console dev --host 0.0.0.0
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
+    volumes:
+      - ./apps:/workspace/apps
+      - ./packages:/workspace/packages
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  tourist-next:
