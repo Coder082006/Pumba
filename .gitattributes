@@ -1,0 +1,19 @@
+# Normalise line endings so Windows and Linux contributors produce identical
+# diffs, and so files copied into Linux containers are not CRLF-corrupted.
+* text=auto eol=lf
+
+# Shell scripts and container entrypoints must be LF or they fail to execute.
+*.sh text eol=lf
+Dockerfile text eol=lf
+Makefile text eol=lf
+
+# Binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.woff2 binary
+
+# Generated — collapse in review, but still diffable on request.
+pnpm-lock.yaml linguist-generated=true
+uv.lock linguist-generated=true
+packages/contracts/openapi/*.yaml linguist-generated=true
