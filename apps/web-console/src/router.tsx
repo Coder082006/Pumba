@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom';
 
 import { ConsoleLayout } from './routes/layout';
+import { ConsoleLogin } from './routes/login';
 
 /**
  * Two role-scoped route trees in one application — SRS §34.5, and the brief's
@@ -11,9 +12,11 @@ import { ConsoleLayout } from './routes/layout';
  * this app's one real drawback, so the split is here from the first commit
  * rather than retrofitted once it hurts.
  *
- * These routes render placeholders. The role guards that gate them are Phase 2
- * work (RBAC and the ownership predicate pattern, SRS §37.2) — no guard is
- * stubbed here, because a stub that always allows is worse than none.
+ * The provider and admin trees still render placeholders. Phase 2 adds the
+ * login route and the session module behind it; the route *guards* that
+ * redirect an unauthenticated visitor arrive with the first real console
+ * screen, because a guard with nothing to protect is untestable and a stub
+ * that always allows is worse than none.
  */
 // Annotated explicitly: pnpm's nested store means the inferred router type
 // cannot be named portably (TS2742).
@@ -23,6 +26,8 @@ const routes: RouteObject[] = [
     element: <ConsoleLayout />,
     children: [
       { index: true, element: <Navigate to="/provider" replace /> },
+      // Outside the role-scoped trees: signing in is what produces the role.
+      { path: 'login', element: <ConsoleLogin /> },
       {
         path: 'provider',
         lazy: async () => {
