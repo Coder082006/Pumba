@@ -11,7 +11,7 @@ import uuid
 
 import pytest
 
-from apps.identity.domain.ownership import (
+from apps.common.authz.ownership import (
     OWNERSHIP,
     Filter,
     OwnershipRule,
@@ -19,8 +19,8 @@ from apps.identity.domain.ownership import (
     Scope,
     ownership_filter,
 )
-from apps.identity.domain.principal import Principal
-from apps.identity.domain.roles import Role
+from apps.common.authz.principal import Principal
+from apps.common.authz.roles import Role
 
 
 def principal(*roles: Role, **links: int | None) -> Principal:

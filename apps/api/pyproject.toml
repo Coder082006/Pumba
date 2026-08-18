@@ -90,6 +90,7 @@ exclude = ["migrations/", "tests/", "conftest.py", "scripts/"]
 # widening to Any and losing every guarantee the annotations were there for.
 module = [
     "apps.*.domain.*",
+    "apps.common.authz.*",
     "apps.common.money",
     "apps.common.state_machine",
     "ports.routing",

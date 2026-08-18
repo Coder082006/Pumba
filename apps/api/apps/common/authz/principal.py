@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from apps.identity.domain.roles import Permission, Role, mfa_mandatory, permissions_for
+from apps.common.authz.roles import Permission, Role, mfa_mandatory, permissions_for
 
 __all__ = ["Principal"]
 

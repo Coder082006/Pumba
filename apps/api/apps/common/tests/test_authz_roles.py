@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.identity.domain.roles import (
+from apps.common.authz.roles import (
     MFA_MANDATORY_ROLES,
     ROLE_PERMISSIONS,
     Permission,

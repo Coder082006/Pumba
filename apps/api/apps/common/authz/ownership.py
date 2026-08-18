@@ -46,8 +46,8 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Literal
 
-from apps.identity.domain.principal import Principal
-from apps.identity.domain.roles import Role
+from apps.common.authz.principal import Principal
+from apps.common.authz.roles import Role
 
 __all__ = [
     "Resource",

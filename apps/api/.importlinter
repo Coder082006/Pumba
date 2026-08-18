@@ -750,6 +750,12 @@ source_modules =
     apps.review.domain
     apps.finance.domain
     apps.administration.domain
+; apps.common.authz is a domain layer that happens not to sit under a
+; domain/ path: SRS §30.3 makes authorisation a control every module applies,
+; and §6.4 gives most modules no dependency on `identity`, so the rule table
+; and its decision functions live in the shared kernel instead (ADR 0005).
+; It is held to the same purity contract, because that is what it is.
+    apps.common.authz
 ; Django is forbidden wholesale, not merely `django.db`. SRS §36.2 requires
 ; "no imports from Django's ORM", but a domain function that reaches for
 ; django.core.cache or django.http is no longer pure either, and
