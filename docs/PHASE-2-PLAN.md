@@ -1,6 +1,6 @@
 # Phase 2 — Identity and Authentication
 
-**Status:** Proposed — design gate, awaiting approval before views are written
+**Status:** Approved and executed. All seven questions resolved; see §8.
 **SRS:** §37.2, §5.2, §7.2, §7.5.1–7.5.2, §9.4.1–9.4.2, §9.6, §24.3–24.5, §30.2–30.4
 **Acceptance:** TC-001, 002, 003, 010, 011, 012, 013 + the TC-2xx authorisation matrix
 
@@ -498,3 +498,45 @@ Gates unchanged: ruff, mypy, import-linter 31/31, 80% overall, **95% on `domain/
 No catalogue, provider, listing or booking model (L1+, Phase 3+). No social
 sign-in pending Q3. No `administration` entity other than `AuditLog`. No Flutter
 tourist screens — v1.1 per ADR 0002. No console beyond login.
+
+---
+
+## 8. How the questions were resolved
+
+All seven were approved as recommended on 2026-08-18.
+
+| # | Resolution | Where |
+|---|---|---|
+| **Q1** | Refresh token in the body always; cookie additionally for known web origins; CSRF double-submit only on the cookie path. | [ADR 0008](adr/0008-refresh-token-transport.md) |
+| **Q2** | Audit write port in `apps/common/audit.py`; `administration` owns `AuditLog` and registers the sink. Nothing else of `administration` built. | `apps/common/audit.py` |
+| **Q3** | Social sign-in deferred. No buttons on the Phase 2 screens. | `docs/PHASE-2-PLAN.md` §0 |
+| **Q4** | `role`, `user_role`, `session`, `device`, `one_time_token` designed against §7.2. | [ADR 0007](adr/0007-tables-the-srs-names-but-does-not-specify.md) |
+| **Q5** | Twenty keys added to the settings register; Appendix B and the register have diverged, register is authoritative. | [ADR 0006](adr/0006-appendix-b-extended-for-authentication.md) |
+| **Q6** | `CryptoPort` with envelope encryption and a fake. Proposed as **D8** — blocks launch, not this phase. | `ports/crypto.py` |
+| **Q7** | `BreachedPasswordPort` with k-anonymity; fails closed on registration and reset, open on login. | `ports/breach.py` |
+
+An eighth decision surfaced during the build:
+
+| # | Resolution | Where |
+|---|---|---|
+| **S9** | The authorisation vocabulary and mechanism live in `apps/common/authz`, not in `identity` — §6.4 gives most modules no dependency on `identity`, and `common` is a leaf. | [ADR 0005](adr/0005-authorisation-lives-in-the-shared-kernel.md) |
+
+## 9. What the build found
+
+Three defects that the tests caught rather than review:
+
+1. **Reuse detection revoked nothing.** `refresh_tokens` was one
+   `@transaction.atomic`; the reuse branch revoked the family and then raised,
+   so the raise rolled the revocation back. The control §30.2 exists for was
+   silently doing nothing. Fixed by committing the revocation in its own
+   transaction before raising.
+2. **An unconditional unique index on `user.email`** sat alongside the partial
+   one and defeated it, so a closed account would have kept its address
+   forever against §7.7. Found by applying the migrations to real PostgreSQL
+   rather than reading them.
+3. **`IdempotencyRecord` had never had a migration** — a Phase 1 defect.
+   Django discovers models by importing `<app>.models`, and the class lived in
+   `idempotency.py`, so it imported fine in tests and had no table.
+
+Plus two contract violations caught by import-linter: identity's tests reading
+`administration`'s models, and a `common` test importing `config`.
