@@ -1,0 +1,8 @@
+{
+  "extends": "@pumba/config/tsconfig/vite.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src", "vite.config.ts", "tailwind.config.ts"]
+}
