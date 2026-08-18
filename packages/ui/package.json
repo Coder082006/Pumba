@@ -1,0 +1,42 @@
+{
+  "name": "@pumba/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared React components, Tailwind preset and design tokens",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tailwind-preset": {
+      "types": "./tailwind-preset.d.ts",
+      "default": "./tailwind-preset.js"
+    },
+    "./globals.css": "./src/globals.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "tailwind-merge": "2.6.0"
+  },
+  "devDependencies": {
+    "@pumba/config": "workspace:*",
+    "@types/react": "19.0.2",
+    "eslint": "9.17.0",
+    "react": "19.0.0",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.7.2"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "files": [
+    "src",
+    "tailwind-preset.js",
+    "tailwind-preset.d.ts"
+  ]
+}
