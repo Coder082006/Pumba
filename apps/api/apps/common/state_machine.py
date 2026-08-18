@@ -95,6 +95,12 @@ class StateMachine(Generic[S]):
     transitions: Iterable[Transition[S]]
     terminal: frozenset[S] = field(default_factory=frozenset)
 
+    # Declared as a field rather than assigned ad hoc: `slots=True` leaves the
+    # instance with no __dict__, so an undeclared attribute has nowhere to go.
+    _index: dict[tuple[S, S], Transition[S]] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "transitions", tuple(self.transitions))
         object.__setattr__(self, "terminal", frozenset(self.terminal))
@@ -117,20 +123,18 @@ class StateMachine(Generic[S]):
     @property
     def states(self) -> frozenset[S]:
         out: set[S] = {self.initial, *self.terminal}
-        for t in self.transitions:  # type: ignore[attr-defined]
+        for t in self.transitions:
             out.add(t.source)
             out.add(t.target)
         return frozenset(out)
 
     def allowed_targets(self, source: S) -> frozenset[S]:
         """Every state reachable from `source` in one step, ignoring guards."""
-        idx: dict[tuple[S, S], Transition[S]] = self._index  # type: ignore[attr-defined]
-        return frozenset(target for (src, target) in idx if src == source)
+        return frozenset(target for (src, target) in self._index if src == source)
 
     def can(self, source: S, target: S, context: Mapping[str, Any] | None = None) -> bool:
         """True if the transition is declared and its guard passes."""
-        idx: dict[tuple[S, S], Transition[S]] = self._index  # type: ignore[attr-defined]
-        t = idx.get((source, target))
+        t = self._index.get((source, target))
         if t is None:
             return False
         if t.guard is None:
@@ -144,8 +148,7 @@ class StateMachine(Generic[S]):
         if the edge is not declared, or `GuardFailedError` if a guard rejects
         it. Returns the target so callers can assign the result directly.
         """
-        idx: dict[tuple[S, S], Transition[S]] = self._index  # type: ignore[attr-defined]
-        t = idx.get((source, target))
+        t = self._index.get((source, target))
         if t is None:
             raise IllegalTransitionError(self.name, source, target)
         if t.guard is not None and not t.guard(context or {}):

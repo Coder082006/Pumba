@@ -24,7 +24,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, ClassVar, TypeVar
+from typing import Any, ClassVar, TypeVar, overload
 from uuid import uuid4
 
 from django.db import transaction
@@ -67,12 +67,38 @@ Handler = Callable[[Any], None]
 _subscribers: dict[type[DomainEvent], list[Handler]] = defaultdict(list)
 
 
-def subscribe(event_type: type[E], handler: Callable[[E], None]) -> Callable[[E], None]:
-    """Register a handler. Usable as a decorator.
+@overload
+def subscribe(event_type: type[E], handler: Callable[[E], None]) -> Callable[[E], None]: ...
+
+
+@overload
+def subscribe(event_type: type[E]) -> Callable[[Callable[[E], None]], Callable[[E], None]]: ...
+
+
+def subscribe(event_type: type[E], handler: Callable[[E], None] | None = None) -> Any:
+    """Register a handler for `event_type`.
+
+    Callable directly::
+
+        subscribe(BookingConfirmed, on_booking_confirmed)
+
+    or as a decorator, which is how consumers usually read best::
+
+        @subscribe(BookingConfirmed)
+        def on_booking_confirmed(event: BookingConfirmed) -> None:
+            ...
 
     Handlers should enqueue a Celery task rather than do work inline — the
     publishing request should not pay for a consumer's latency (SRS §8.9).
     """
+    if handler is None:
+
+        def register(func: Callable[[E], None]) -> Callable[[E], None]:
+            _subscribers[event_type].append(func)  # type: ignore[arg-type]
+            return func
+
+        return register
+
     _subscribers[event_type].append(handler)  # type: ignore[arg-type]
     return handler
 
