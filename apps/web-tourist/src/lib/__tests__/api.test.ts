@@ -73,7 +73,11 @@ describe('apiFetch', () => {
   });
 
   it('sends the Idempotency-Key header when one is supplied', async () => {
-    const fetchMock = vi.fn(async () => mockResponse(201, { data: {}, meta: {} }));
+    // Typed as fetch so the recorded call tuple carries (input, init) rather
+    // than the empty tuple an untyped vi.fn() infers.
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      mockResponse(201, { data: {}, meta: {} }),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     // SRS §9.1 requires it on every POST that creates a booking, payment or
@@ -84,7 +88,7 @@ describe('apiFetch', () => {
       idempotencyKey: 'key-1',
     });
 
-    const init = fetchMock.mock.calls[0]![1] as RequestInit;
-    expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe('key-1');
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect((init?.headers as Record<string, string>)['Idempotency-Key']).toBe('key-1');
   });
 });
