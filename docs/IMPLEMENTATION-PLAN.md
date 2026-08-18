@@ -1,8 +1,13 @@
 # Implementation Plan — Zanzibar Tourism Journey Orchestration Platform
 
-**Status:** Approved and executed. **Phase 1 complete.**
-**Last updated:** 2026-08-18 — see §7 for how the open decisions were resolved
-**Source of truth:** `docs/srs/SRS-ZTJOP-001.pdf` (v1.0, 146 pp., "Approved for Development")
+**Status:** Approved and executed. **Phase 1 complete. Phase 2 in progress.**
+**Last updated:** 2026-08-18 — C1 resolved; see §7. The decisions register is closed.
+**Source of truth:** `docs/srs/SRS-ZTJOP-001 Zanzibar Tourism Platform SRS v1.0.docx`
+(**baselined to v1.1** by the C1 decision — the filename retains "v1.0"; the
+revision-history table inside the document is authoritative for the version).
+The `.pdf` and the `srs.txt`/`srs-raw.txt` extractions are the superseded v1.0
+baseline, kept only for provenance. `docs/srs/srs-docx.txt` is the current
+lossless extraction — regenerate with `scripts/extract_srs.py`.
 **Author:** Claude (engineering)
 **Date:** 2026-08-18
 
@@ -38,7 +43,15 @@ The brief says: *"Where this prompt and the SRS disagree, tell me; do not silent
 one."* There are six real disagreements. C1 is the one that needs a decision before I
 write anything.
 
-### C1 — The tourist website is post-MVP in the SRS. The brief makes it the primary v1 client. ⚠️ **BLOCKING**
+### C1 — The tourist website is post-MVP in the SRS. The brief makes it the primary v1 client. ✅ **RESOLVED 2026-08-18**
+
+> **Resolved as (a), with a refinement.** The MVP is re-baselined on the tourist
+> web client; the Flutter *tourist* app moves to v1.1; the Flutter *driver* app
+> **stays in MVP**. §41.10 was amended honestly rather than restated in PWA
+> terms. SRS baselined to **v1.1**. See
+> [ADR 0002](adr/0002-web-first-tourist-client.md) — status *Accepted*.
+>
+> The analysis below is kept as the record of why the decision was needed.
 
 This is not a build-order difference. It is a scope difference.
 
@@ -62,7 +75,7 @@ The brief's build order is defensible — the API is genuinely client-agnostic, 
 faster, and Flutter later costs zero backend change if we hold the line on §6.4. But it
 changes what "v1" means, and §38.1/§41.10 are written against the Flutter app.
 
-**I need you to pick one. I recommend (a).**
+**Options as put to the product owner. (a) was recommended and chosen.**
 
 | Option | What it means |
 |---|---|
@@ -74,6 +87,14 @@ Whichever you choose, **nothing in Phase 1 changes** — the foundation is ident
 way. I can start on your approval of this plan and take the C1 decision in parallel, as
 long as it lands before Phase 2 exit. It only becomes blocking at the point where we
 commit to a v1 launch definition.
+
+**Outcome.** (a), refined: the driver app was carved out of the deferral because
+mobile web cannot serve it — a 90-second offer TTL needs high-priority push, and
+`ARRIVED`/`COMPLETED` need background location inside a geofence. §41.10 was not
+"restated in PWA terms" as option (a) originally proposed; the criteria were left
+intact and scoped to the Flutter client, with an emailed PDF itinerary and calendar
+export standing as the web client's equivalent guarantee. That amendment creates a
+**new MVP obligation on the confirmation path** — see ADR 0002 Consequences.
 
 ### C2 — Repository layout: brief and SRS §36 are structurally different
 
@@ -319,11 +340,14 @@ web phases (SRS 11, 12) move earlier and merge.
 | 9 | Provider Portal + Admin Console | §37.11 + §37.12 | **Merged and moved earlier** — one Vite app per §34.5, and providers must exist before drivers have employers |
 | 10 | Driver System | §37.9 | Driver *API* + admin/provider-side management. Driver *app* deferred |
 | 11 | Real-Time Tracking & Notifications | §37.10 | Channels consumers land here |
-| 12 | Flutter tourist + driver apps | §23–25 | **Moved to end.** Zero backend change is the acceptance test |
+| 12 | Flutter **driver** app | §25 | MVP. Zero backend change is the acceptance test |
 | 13 | Hardening, Testing, UAT | §37.13 | |
 | 14 | Production Deployment & Launch | §37.14 | Gated on Appendix D-3, D-6, D-7 |
 
-If C1 resolves to **(a)**, Phase 12 moves out of v1 entirely and the plan is 13 phases.
+**Updated by the C1 decision (2026-08-18).** Phase 12 was "Flutter tourist +
+driver apps". The Flutter *tourist* app is now v1.1 and leaves the v1 plan
+entirely; the Flutter *driver* app stays in MVP and keeps Phase 12. Phase 2's
+client slice, and every client slice after it, is **web only**.
 
 ---
 
@@ -429,7 +453,8 @@ Roughly 12 conventional commits, reviewable independently:
 
 | # | Risk | Mitigation |
 |---|---|---|
-| R1 | C1 unresolved → v1 launch definition ambiguous | Decide before Phase 2 exit; Phase 1 unaffected |
+| R1 | ~~C1 unresolved → v1 launch definition ambiguous~~ **Closed 2026-08-18** — resolved by ADR 0002; SRS baselined to v1.1 | Replaced by R7 |
+| R7 | §41.10 as amended makes the emailed PDF itinerary + calendar export an MVP obligation, not polish | Schedule with booking confirmation (Phase 7), not late; `EmailPort`/`StoragePort` already exist |
 | R2 | S1/S3 → import-linter contracts get loosened later, eroding the point of having them | Decide S1 now; comment S3's contract with its revisit phase |
 | R3 | 95% domain coverage is easy at zero LOC and hard at Phase 7 | Gate enforced from commit 1 so it is never retrofitted |
 | R4 | Appendix D-1/D-2 lead times (payment, routing) | Start commercial conversations now — D-2 blocks Phase 4 completion |
@@ -441,8 +466,8 @@ Roughly 12 conventional commits, reviewable independently:
 ## 7. Decisions — status
 
 Phase 1 was approved and built under the recommendations below. S1, S2, S3, C2
-and C5 are **resolved and implemented**. C1 is **still open** and is the only
-one that blocks anything.
+and C5 were resolved and implemented during Phase 1. **C1 was resolved at the
+start of Phase 2.** No decision is now outstanding.
 
 ### Resolved during Phase 1
 
@@ -460,17 +485,13 @@ A sixth decision surfaced during the build and was taken the same way:
 |---|---|---|
 | **S8** | PostGIS and GDAL provisioned now; `django.contrib.gis` enabled in Phase 3 when the first geometry column exists. | [ADR 0004](adr/0004-geodjango-deferred-to-phase-3.md) |
 
-### Still open
+### Resolved at the start of Phase 2
 
-**C1 — is the tourist website the v1 tourist client, or additional to Flutter?**
+| # | Resolution | Where |
+|---|---|---|
+| **C1** | MVP re-baselined on the tourist web client. Flutter tourist app → v1.1. Flutter driver app stays in MVP. §41.10 amended, not stretched. SRS baselined **v1.1**. | [ADR 0002](adr/0002-web-first-tourist-client.md) *(Accepted)*; `scripts/amend_srs_v1_1.py` |
 
-Recorded as [ADR 0002](adr/0002-web-first-tourist-client.md), status *Proposed*.
-Phase 1 was unaffected, but this must land **before Phase 2 exits**, because it
-decides whether the Phase 2 client slice is web only or web plus Flutter, and
-whether §41.10's offline acceptance criterion needs rewriting.
-
-Three options, unchanged from §1 above: **(a)** re-baseline the MVP to web
-*(recommended)*, **(b)** web additional to Flutter, **(c)** Flutter first.
+Nothing is outstanding. The decisions register is closed.
 
 ---
 
@@ -491,4 +512,5 @@ Explicitly not in Phase 2: any catalogue model, any provider model (L1, Phase 3+
 ---
 
 **Phase 1 is complete.** See the Phase 1 report for what was built, what is
-verified, and what was deviated from. The one outstanding decision is C1.
+verified, and what was deviated from. **C1 is resolved** (ADR 0002, SRS v1.1) and
+no decision is outstanding.
