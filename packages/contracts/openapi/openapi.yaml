@@ -6,6 +6,205 @@ info:
     portal, the administration console and (later) the Flutter applications. No client-specific
     concern may leak into this contract.
 paths:
+  /api/v1/auth/login:
+    post:
+      operationId: auth_login_create
+      description: SRS §9.4.2.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/logout:
+    post:
+      operationId: auth_logout_create
+      tags:
+      - auth
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/auth/mfa/enrol:
+    post:
+      operationId: auth_mfa_enrol_create
+      description: Authenticated by password, not by MFA — this is how MFA is obtained.
+      tags:
+      - auth
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/auth/mfa/verify:
+    post:
+      operationId: auth_mfa_verify_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaConfirmRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MfaConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MfaConfirmRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/auth/password/forgot:
+    post:
+      operationId: auth_password_forgot_create
+      description: '§24.5: the response is identical whether or not the address exists.'
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '202':
+          description: No response body
+  /api/v1/auth/password/reset:
+    post:
+      operationId: auth_password_reset_create
+      description: Unauthenticated by design. Named so the URL-conf audit can see
+        it.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '204':
+          description: No response body
+  /api/v1/auth/refresh:
+    post:
+      operationId: auth_refresh_create
+      description: 'ADR 0008: the token may arrive in the body or in the cookie.'
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/register:
+    post:
+      operationId: auth_register_create
+      description: SRS §9.4.1.
+      summary: Register a tourist account
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+  /api/v1/auth/verify-email:
+    post:
+      operationId: auth_verify_email_create
+      description: Unauthenticated by design. Named so the URL-conf audit can see
+        it.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
   /api/v1/health:
     get:
       operationId: health
@@ -28,8 +227,148 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthUnavailableResponse'
           description: ''
+  /api/v1/me:
+    get:
+      operationId: me_retrieve
+      description: |-
+        The caller's own account.
+
+        No `ownership_resource`: the row is selected *by* the principal rather
+        than looked up by an identifier the caller supplies, so there is no
+        identifier to get wrong. The URL-conf audit lists it for that reason.
+      tags:
+      - me
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+  /api/v1/me/devices:
+    get:
+      operationId: me_devices_list
+      tags:
+      - me
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Device'
+          description: ''
+    post:
+      operationId: me_devices_create
+      tags:
+      - me
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceRegisterRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceRegisterRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceRegisterRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+          description: ''
+  /api/v1/me/devices/{public_id}:
+    delete:
+      operationId: me_devices_destroy
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - me
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
 components:
   schemas:
+    Device:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        platform:
+          type: string
+          readOnly: true
+        device_name:
+          type: string
+          readOnly: true
+        last_seen_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - device_name
+      - last_seen_at
+      - platform
+      - public_id
+    DeviceRegisterRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        push_token:
+          type: string
+          minLength: 1
+          maxLength: 512
+        device_name:
+          type: string
+          default: ''
+          maxLength: 120
+        app_version:
+          type: string
+          default: ''
+          maxLength: 32
+      required:
+      - platform
+      - push_token
+    ForgotPasswordRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+      required:
+      - email
     HealthResponse:
       type: object
       properties:
@@ -58,3 +397,241 @@ components:
       - checks
       - status
       - version
+    LoginRequest:
+      type: object
+      description: 'SRS §9.4.2: `{ "email", "password", "mfa_code"? }`.'
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        mfa_code:
+          type: string
+          writeOnly: true
+          maxLength: 10
+      required:
+      - email
+      - password
+    MfaConfirmRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 10
+      required:
+      - code
+    PlatformEnum:
+      enum:
+      - IOS
+      - ANDROID
+      - WEB
+      type: string
+      description: |-
+        * `IOS` - IOS
+        * `ANDROID` - ANDROID
+        * `WEB` - WEB
+    RefreshRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+      properties:
+        refresh_token:
+          type: string
+    RegisterRequest:
+      type: object
+      description: SRS §9.4.1.
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        first_name:
+          type: string
+          minLength: 2
+          maxLength: 80
+        last_name:
+          type: string
+          minLength: 2
+          maxLength: 80
+        nationality:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          pattern: ^[A-Za-z]{2}$
+        locale:
+          type: string
+          minLength: 1
+          default: en
+          maxLength: 10
+        preferred_currency:
+          type: string
+          minLength: 1
+          default: USD
+          pattern: ^[A-Za-z]{3}$
+        marketing_opt_in:
+          type: boolean
+          default: false
+      required:
+      - email
+      - first_name
+      - last_name
+      - password
+    ResetPasswordRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 128
+        new_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - new_password
+      - token
+    TokenPair:
+      type: object
+      properties:
+        access_token:
+          type: string
+          readOnly: true
+        refresh_token:
+          type: string
+          readOnly: true
+        token_type:
+          type: string
+          readOnly: true
+        expires_in:
+          type: integer
+          readOnly: true
+      required:
+      - access_token
+      - expires_in
+      - refresh_token
+      - token_type
+    TouristProfile:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        first_name:
+          type: string
+          readOnly: true
+        last_name:
+          type: string
+          readOnly: true
+        nationality:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        locale:
+          type: string
+          readOnly: true
+        preferred_currency:
+          type: string
+          readOnly: true
+        marketing_opt_in:
+          type: boolean
+          readOnly: true
+      required:
+      - first_name
+      - last_name
+      - locale
+      - marketing_opt_in
+      - nationality
+      - preferred_currency
+      - public_id
+    User:
+      type: object
+      description: '§9.1: `public_id` only. Never `id`, never a credential.'
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        email_verified:
+          type: boolean
+          readOnly: true
+        mfa_enrolled:
+          type: boolean
+          readOnly: true
+        roles:
+          type: array
+          items:
+            type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        profile:
+          oneOf:
+          - $ref: '#/components/schemas/TouristProfile'
+          - type: 'null'
+          readOnly: true
+      required:
+      - created_at
+      - email
+      - email_verified
+      - mfa_enrolled
+      - profile
+      - public_id
+      - roles
+      - status
+    VerifyEmailRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+      - token
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from POST /api/v1/auth/login. Valid for 15 minutes;
+        refresh at POST /api/v1/auth/refresh.

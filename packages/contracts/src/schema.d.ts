@@ -4,6 +4,160 @@
  */
 
 export interface paths {
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description SRS §9.4.2. */
+        post: operations["auth_login_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auth_logout_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/enrol": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Authenticated by password, not by MFA — this is how MFA is obtained. */
+        post: operations["auth_mfa_enrol_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auth_mfa_verify_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password/forgot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description §24.5: the response is identical whether or not the address exists. */
+        post: operations["auth_password_forgot_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Unauthenticated by design. Named so the URL-conf audit can see it. */
+        post: operations["auth_password_reset_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description ADR 0008: the token may arrive in the body or in the cookie. */
+        post: operations["auth_refresh_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register a tourist account
+         * @description SRS §9.4.1.
+         */
+        post: operations["auth_register_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Unauthenticated by design. Named so the URL-conf audit can see it. */
+        post: operations["auth_verify_email_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -24,10 +178,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The caller's own account.
+         *
+         *     No `ownership_resource`: the row is selected *by* the principal rather
+         *     than looked up by an identifier the caller supplies, so there is no
+         *     identifier to get wrong. The URL-conf audit lists it for that reason. */
+        get: operations["me_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["me_devices_list"];
+        put?: never;
+        post: operations["me_devices_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/devices/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["me_devices_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Device: {
+            /** Format: uuid */
+            readonly public_id: string;
+            readonly platform: string;
+            readonly device_name: string;
+            /** Format: date-time */
+            readonly last_seen_at: string;
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing. */
+        DeviceRegisterRequest: {
+            platform: components["schemas"]["PlatformEnum"];
+            push_token: string;
+            /** @default  */
+            device_name: string;
+            /** @default  */
+            app_version: string;
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing. */
+        ForgotPasswordRequest: {
+            /** Format: email */
+            email: string;
+        };
         HealthResponse: {
             status: string;
             version: string;
@@ -42,6 +277,94 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description SRS §9.4.2: `{ "email", "password", "mfa_code"? }`. */
+        LoginRequest: {
+            /** Format: email */
+            email: string;
+            password: string;
+            mfa_code?: string;
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing. */
+        MfaConfirmRequest: {
+            code: string;
+        };
+        /**
+         * @description * `IOS` - IOS
+         *     * `ANDROID` - ANDROID
+         *     * `WEB` - WEB
+         * @enum {string}
+         */
+        PlatformEnum: "IOS" | "ANDROID" | "WEB";
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing. */
+        RefreshRequest: {
+            refresh_token?: string;
+        };
+        /** @description SRS §9.4.1. */
+        RegisterRequest: {
+            /** Format: email */
+            email: string;
+            password: string;
+            first_name: string;
+            last_name: string;
+            nationality?: string | null;
+            /** @default en */
+            locale: string;
+            /** @default USD */
+            preferred_currency: string;
+            /** @default false */
+            marketing_opt_in: boolean;
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing. */
+        ResetPasswordRequest: {
+            token: string;
+            new_password: string;
+        };
+        TokenPair: {
+            readonly access_token: string;
+            readonly refresh_token: string;
+            readonly token_type: string;
+            readonly expires_in: number;
+        };
+        TouristProfile: {
+            /** Format: uuid */
+            readonly public_id: string;
+            readonly first_name: string;
+            readonly last_name: string;
+            readonly nationality: string | null;
+            readonly locale: string;
+            readonly preferred_currency: string;
+            readonly marketing_opt_in: boolean;
+        };
+        /** @description §9.1: `public_id` only. Never `id`, never a credential. */
+        User: {
+            /** Format: uuid */
+            readonly public_id: string;
+            /** Format: email */
+            readonly email: string;
+            readonly status: string;
+            readonly email_verified: boolean;
+            readonly mfa_enrolled: boolean;
+            readonly roles: string[];
+            /** Format: date-time */
+            readonly created_at: string;
+            readonly profile: components["schemas"]["TouristProfile"] | null;
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing. */
+        VerifyEmailRequest: {
+            token: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -51,6 +374,214 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    auth_login_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["LoginRequest"];
+                "multipart/form-data": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+        };
+    };
+    auth_logout_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    auth_mfa_enrol_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    auth_mfa_verify_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaConfirmRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["MfaConfirmRequest"];
+                "multipart/form-data": components["schemas"]["MfaConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    auth_password_forgot_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgotPasswordRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ForgotPasswordRequest"];
+                "multipart/form-data": components["schemas"]["ForgotPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description No response body */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    auth_password_reset_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResetPasswordRequest"];
+                "multipart/form-data": components["schemas"]["ResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    auth_refresh_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RefreshRequest"];
+                "multipart/form-data": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+        };
+    };
+    auth_register_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RegisterRequest"];
+                "multipart/form-data": components["schemas"]["RegisterRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    auth_verify_email_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyEmailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["VerifyEmailRequest"];
+                "multipart/form-data": components["schemas"]["VerifyEmailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
     health: {
         parameters: {
             query?: never;
@@ -75,6 +606,89 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HealthUnavailableResponse"];
                 };
+            };
+        };
+    };
+    me_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    me_devices_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Device"][];
+                };
+            };
+        };
+    };
+    me_devices_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceRegisterRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DeviceRegisterRequest"];
+                "multipart/form-data": components["schemas"]["DeviceRegisterRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Device"];
+                };
+            };
+        };
+    };
+    me_devices_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
