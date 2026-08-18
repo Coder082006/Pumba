@@ -1,2 +1,51 @@
-docs/srs/srs.txt
-docs/srs/srs-raw.txt
+# Node
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# Next.js
+.next/
+out/
+
+# Vite
+dist/
+dist-ssr/
+
+# Turborepo
+.turbo/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Test / build output
+coverage/
+playwright-report/
+test-results/
+
+# Environment — never commit secrets (SRS §30.9, §35.5)
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
