@@ -14,6 +14,11 @@ ALLOWED_HOSTS = ["*"]
 # Fast hashing — CI is not testing Argon2's work factor.
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
+# Fail fast rather than hanging for minutes when Postgres is absent: a
+# developer without Docker should see the skip, not a stalled suite.
+DATABASES["default"]["OPTIONS"] = {"connect_timeout": 3}  # noqa: F405
+DATABASES["default"]["CONN_MAX_AGE"] = 0  # noqa: F405
+
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
