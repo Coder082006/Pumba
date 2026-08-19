@@ -56,3 +56,6 @@ Thumbs.db
 # against them and deletes them. An interrupted run leaves one behind, and it
 # must never be committed — it is a deliberate contract violation.
 _arch_probe.py
+
+# Word lock files, created while the SRS is open for review
+~$*
