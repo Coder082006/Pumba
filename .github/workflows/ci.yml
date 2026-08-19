@@ -34,6 +34,14 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock
       - run: uv python install ${{ env.PYTHON_VERSION }}
+      # GeoDjango binds GDAL, GEOS and PROJ through ctypes at import time, so
+      # every job that imports Django settings needs them present — not only the
+      # one that runs a test with geometry in it (ADR 0009). Mirrors
+      # api.Dockerfile, which the runner previously did not match.
+      - name: Geospatial libraries (GDAL, GEOS, PROJ)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             gdal-bin libgdal-dev libgeos-dev libproj-dev
       - run: uv sync --frozen
       - name: ruff (lint)
         run: uv run ruff check --output-format=github .
@@ -56,6 +64,14 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock
       - run: uv python install ${{ env.PYTHON_VERSION }}
+      # GeoDjango binds GDAL, GEOS and PROJ through ctypes at import time, so
+      # every job that imports Django settings needs them present — not only the
+      # one that runs a test with geometry in it (ADR 0009). Mirrors
+      # api.Dockerfile, which the runner previously did not match.
+      - name: Geospatial libraries (GDAL, GEOS, PROJ)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             gdal-bin libgdal-dev libgeos-dev libproj-dev
       - run: uv sync --frozen
       # SRS §6.5 rule 2: "a forbidden import fails the build".
       - name: import-linter
@@ -103,6 +119,14 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock
       - run: uv python install ${{ env.PYTHON_VERSION }}
+      # GeoDjango binds GDAL, GEOS and PROJ through ctypes at import time, so
+      # every job that imports Django settings needs them present — not only the
+      # one that runs a test with geometry in it (ADR 0009). Mirrors
+      # api.Dockerfile, which the runner previously did not match.
+      - name: Geospatial libraries (GDAL, GEOS, PROJ)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             gdal-bin libgdal-dev libgeos-dev libproj-dev
       - run: uv sync --frozen
 
       # SRS §35.3 coverage gate: 80% overall, 95% domain. The domain gate is a
@@ -134,6 +158,14 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/api/uv.lock
       - run: uv python install ${{ env.PYTHON_VERSION }}
+      # GeoDjango binds GDAL, GEOS and PROJ through ctypes at import time, so
+      # every job that imports Django settings needs them present — not only the
+      # one that runs a test with geometry in it (ADR 0009). Mirrors
+      # api.Dockerfile, which the runner previously did not match.
+      - name: Geospatial libraries (GDAL, GEOS, PROJ)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             gdal-bin libgdal-dev libgeos-dev libproj-dev
       - run: uv sync --frozen
         working-directory: apps/api
 
