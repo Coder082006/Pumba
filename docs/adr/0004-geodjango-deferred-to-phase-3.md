@@ -1,6 +1,7 @@
 # ADR 0004 — PostGIS is provisioned now, GeoDjango is enabled in Phase 3
 
-**Status:** Accepted · **Date:** 2026-08-18 · **Phase:** 1
+**Status:** Accepted, superseded in part by [ADR 0009](0009-geodjango-requires-a-containerised-test-run.md)
+**Date:** 2026-08-18 · **Phase:** 1
 
 ## Context
 
@@ -26,6 +27,13 @@ fields — and the brief also says not to scaffold for later phases.
 Phase 3 enables GeoDjango by changing two settings lines. No infrastructure,
 image or Compose change is required.
 
+> **Corrected in Phase 3.** The settings change is indeed two lines and the
+> image and database needed no change — but the test suite does not run in
+> that image. Neither the developer host nor the CI runner had GDAL, so
+> enabling GeoDjango also required an `apt-get` step in three CI jobs and
+> moving the backend suite into the `api` container. See
+> [ADR 0009](0009-geodjango-requires-a-containerised-test-run.md).
+
 ## Consequences
 
 Phase 1 runs on any machine with Docker without a host GDAL install, and CI
@@ -36,3 +44,7 @@ container base — are already correct.
 The risk is that "GeoDjango enabled" is ticked off as done when it is not. It
 is recorded here and in the Phase 1 report as an explicit deviation, and Phase 3
 cannot start its first model without hitting it.
+
+That last paragraph held: Phase 3 could not write its first model without
+hitting it. What it did not anticipate is *where* the cost landed — see ADR
+0009.
