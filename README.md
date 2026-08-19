@@ -23,7 +23,8 @@ The architectural centre of the system is the itinerary orchestration layer:
 
 **Prerequisites:** Docker Desktop, Node 20, [pnpm](https://pnpm.io) 9,
 [uv](https://docs.astral.sh/uv/). Python 3.12 is installed by `uv` — you do not
-need it on your PATH.
+need it on your PATH, and you do **not** need GDAL: the backend test suite runs
+in the `api` container, which carries it.
 
 ```bash
 git clone <repo> && cd Pumba
@@ -63,7 +64,8 @@ on Windows by default.
 | `make lint` | `pnpm lint` | ruff + eslint |
 | `make typecheck` | `pnpm typecheck` | mypy + tsc |
 | `make boundaries` | `pnpm boundaries` | Module dependency contracts |
-| `make test` | `pnpm test` | Backend and frontend suites |
+| `make test` | `pnpm test` | Backend (in the `api` container) and frontend suites |
+| `make test-host` | `pnpm test:api:host` | Backend suite on the host — needs GDAL locally |
 | `make coverage` | `pnpm coverage` | Tests with both coverage gates |
 | `make contracts` | `pnpm contracts` | Regenerate OpenAPI **and** the TS types |
 | `make format` | `pnpm format` | Apply formatting |
@@ -204,9 +206,20 @@ Coverage gates: **80% overall, 95% on the domain layer.** The domain gate is
 higher because that code decides prices and refunds, and disputes are resolved
 against it.
 
+**The backend suite runs inside the `api` container.** GeoDjango binds GDAL,
+GEOS and PROJ as native libraries, and the image has carried them since Phase 1;
+the host generally has not. Running there also gives the suite parity with the
+runtime on Python version, system libraries and PostGIS version, which is worth
+keeping independently of GDAL. See
+[ADR 0009](docs/adr/0009-geodjango-requires-a-containerised-test-run.md).
+
+`make test-host` runs it on the host instead, for the fast inner loop on the
+domain layer. It needs GDAL, GEOS and PROJ installed locally, so it will fail on
+a machine without them — that is the expected outcome, not a broken checkout.
+
 Tests needing PostgreSQL and Redis are marked `@pytest.mark.integration` and
 are **skipped automatically when Docker is unavailable**, so the pure-domain
-suite runs everywhere. Run them with Docker up.
+suite runs everywhere.
 
 ---
 
@@ -226,8 +239,8 @@ Honest list, current as of the end of Phase 1.
 
 | Gap | Detail |
 |---|---|
-| **Compose stack unverified** | Written but never executed — Docker is not installed on the machine Phase 1 was built on. YAML structure is validated; the stack has not been brought up. |
-| **GeoDjango not enabled** | PostGIS and GDAL are provisioned; `django.contrib.gis` waits for Phase 3's first geometry column. [ADR 0004](docs/adr/0004-geodjango-deferred-to-phase-3.md). |
+| ~~**Compose stack unverified**~~ | **Closed in Phase 3.** The stack is built and the backend suite runs inside it. Bringing it up also exposed a defect: the `./apps/api:/app` bind mount hid the image's virtualenv, so `PATH=/app/.venv/bin` pointed at nothing. A named volume now masks it, as `tourist-next` already did for `.next`. |
+| ~~**GeoDjango not enabled**~~ | **Closed in Phase 3.** [ADR 0009](docs/adr/0009-geodjango-requires-a-containerised-test-run.md) records what it actually cost. |
 | **Tourist website is a scope change** | SRS section 38.2 puts it after the MVP. Needs a product decision. [ADR 0002](docs/adr/0002-web-first-tourist-client.md). |
 | **`AUTH_USER_MODEL` not set** | Phase 2 introduces `identity.User`. The local database must be recreated when it lands. |
 | **`updated_at` maintained in Python** | SRS section 7.2 specifies a database trigger, which also covers raw SQL and bulk updates. Phase 2 migration task. |

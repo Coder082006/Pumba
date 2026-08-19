@@ -2,7 +2,7 @@
   "name": "pumba",
   "private": true,
   "version": "0.1.0",
-  "description": "Tourism Journey Orchestration Platform \u2014 monorepo root",
+  "description": "Tourism Journey Orchestration Platform — monorepo root",
   "packageManager": "pnpm@9.15.4",
   "engines": {
     "node": ">=20"
@@ -20,13 +20,14 @@
     "typecheck:api": "cd apps/api && uv run mypy apps ports config",
     "boundaries": "cd apps/api && uv run lint-imports",
     "test": "pnpm run test:api && pnpm -r test",
-    "test:api": "cd apps/api && uv run pytest",
-    "coverage": "cd apps/api && uv run pytest --cov --cov-report=term-missing --cov-fail-under=80",
+    "test:api": "docker compose run --rm api pytest",
+    "coverage": "docker compose run --rm api pytest --cov --cov-report=term-missing --cov-fail-under=80",
     "format": "cd apps/api && uv run ruff check --fix . && uv run ruff format .",
     "openapi": "cd apps/api && uv run python manage.py spectacular --file ../../packages/contracts/openapi/openapi.yaml --validate --fail-on-warn",
     "contracts": "pnpm run openapi && pnpm --filter @pumba/contracts generate",
     "build": "turbo run build",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "test:api:host": "cd apps/api && uv run pytest"
   },
   "devDependencies": {
     "prettier": "3.4.2",

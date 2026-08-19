@@ -70,6 +70,10 @@ services:
       CHANNELS_REDIS_URL: redis://redis:6379/3
     volumes:
       - ./apps/api:/app
+      # The bind mount above would otherwise hide the image's virtualenv, and
+      # PATH points at /app/.venv/bin. On a Windows host it would be masked by
+      # a venv with Scripts/ rather than bin/, which is worse than empty.
+      - api-venv:/app/.venv
     ports:
       - "8000:8000"
     depends_on:
@@ -93,6 +97,7 @@ services:
     environment: *api-env
     volumes:
       - ./apps/api:/app
+      - api-venv:/app/.venv
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -109,6 +114,7 @@ services:
     environment: *api-env
     volumes:
       - ./apps/api:/app
+      - api-venv:/app/.venv
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -154,3 +160,4 @@ volumes:
   postgres-data:
   redis-data:
   tourist-next:
+  api-venv:

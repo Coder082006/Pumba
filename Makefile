@@ -77,15 +77,23 @@ typecheck: ## mypy + tsc
 boundaries: ## Verify the SRS §6.4 module dependency contracts
 	$(API) uv run lint-imports
 
+# The backend suite runs inside the api container: GeoDjango binds GDAL, GEOS
+# and PROJ natively and the image already carries them (ADR 0009). It also
+# gives the suite parity with the runtime, which is worth keeping even once a
+# host GDAL install is routine.
 .PHONY: test
-test: ## Run the backend and frontend suites
-	$(API) uv run pytest
+test: ## Run the backend (in the api container) and frontend suites
+	$(COMPOSE) run --rm api pytest
 	pnpm -r test
+
+.PHONY: test-host
+test-host: ## Run the backend suite on the host (needs GDAL, GEOS and PROJ locally)
+	$(API) uv run pytest
 
 .PHONY: coverage
 coverage: ## Backend tests with both SRS §35.3 coverage gates
-	$(API) uv run pytest --cov --cov-report=term-missing --cov-fail-under=80
-	$(API) uv run coverage report \
+	$(COMPOSE) run --rm api pytest --cov --cov-report=term-missing --cov-fail-under=80
+	$(COMPOSE) run --rm api coverage report \
 		--include="apps/*/domain/*,apps/common/money.py,apps/common/state_machine.py" \
 		--fail-under=95
 
