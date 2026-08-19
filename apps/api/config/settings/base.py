@@ -50,10 +50,14 @@ SILENCED_SYSTEM_CHECKS = ["auth.E003"]
 # layer structure exist so the import-linter contracts are real, but only
 # `common` contains implementation.
 #
-# `django.contrib.gis` is deliberately absent — see docs/adr/0004.
+# `django.contrib.gis` is enabled from Phase 3, when the first
+# `geography(Point, 4326)` column lands (SRS §7.2, §13.1). It binds GDAL,
+# GEOS and PROJ natively, so it also decides where the test suite can run —
+# see docs/adr/0004 and docs/adr/0009.
 # ---------------------------------------------------------------------------
 DJANGO_APPS = [
     "django.contrib.contenttypes",
+    "django.contrib.gis",
     "django.contrib.auth",
     "django.contrib.staticfiles",
 ]
@@ -130,7 +134,10 @@ TEMPLATES = [
 # ---------------------------------------------------------------------------
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
+        # PostGIS rather than plain postgresql: SRS §13.1 requires
+        # ST_Distance on the geography type, "never planar
+        # approximations", which the stock backend cannot express.
+        "ENGINE": "django.contrib.gis.db.backends.postgis",
         "NAME": env("POSTGRES_DB", default="pumba"),
         "USER": env("POSTGRES_USER", default="pumba"),
         "PASSWORD": env("POSTGRES_PASSWORD", default="pumba"),
