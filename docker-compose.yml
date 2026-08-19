@@ -74,6 +74,11 @@ services:
       # PATH points at /app/.venv/bin. On a Windows host it would be masked by
       # a venv with Scripts/ rather than bin/, which is worse than empty.
       - api-venv:/app/.venv
+      # tests/test_srs_module_catalogue.py re-derives the SRS 6.4 dependency
+      # table from the committed extraction and diffs it against .importlinter,
+      # so the suite needs the specification even though the application does
+      # not. Read-only: nothing in the container may amend the baseline.
+      - ./docs/srs:/docs/srs:ro
     ports:
       - "8000:8000"
     depends_on:

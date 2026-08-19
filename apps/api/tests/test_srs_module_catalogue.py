@@ -29,9 +29,26 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-SRS_TEXT = REPO_ROOT / "docs" / "srs" / "srs-docx.txt"
-IMPORTLINTER = REPO_ROOT / "apps" / "api" / ".importlinter"
+
+#: The suite runs in two places with different layouts: on the host, where the
+#: repo root is three levels up, and inside the api container, where only
+#: `apps/api` is mounted at /app and `docs/` arrives through its own read-only
+#: mount (ADR 0009). Searching for the file beats a fixed depth, and a miss
+#: raises at import rather than skipping — a silently skipped derivation of the
+#: 31 module contracts would be worse than a red build.
+def _find(*candidates: str) -> Path:
+    here = Path(__file__).resolve()
+    roots = (*here.parents, Path("/"))
+    for relative in candidates:
+        for root in roots:
+            found = root / relative
+            if found.exists():
+                return found
+    raise RuntimeError(f"cannot locate any of {candidates} from {here}")
+
+
+SRS_TEXT = _find("docs/srs/srs-docx.txt")
+IMPORTLINTER = _find("apps/api/.importlinter", ".importlinter")
 
 #: §6.4 names this module `admin`; the codebase calls it `administration` (C3).
 SRS_TO_CODE = {"admin": "administration"}
