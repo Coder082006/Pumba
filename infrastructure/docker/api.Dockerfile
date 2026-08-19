@@ -25,7 +25,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
+# uv comes from PyPI rather than ghcr.io/astral-sh/uv. ghcr.io does not resolve
+# from the development environment, and an image that only builds on CI's
+# network is one nobody can debug locally (ADR 0010). PyPI is already the source
+# of every other Python dependency here, so this removes a registry from the
+# supply chain rather than adding one. Pinned exactly; upgrading is a commit.
+ARG UV_VERSION=0.5.11
+RUN pip install --no-cache-dir --root-user-action=ignore "uv==${UV_VERSION}"
 
 WORKDIR /app
 
