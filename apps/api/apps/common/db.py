@@ -11,10 +11,17 @@ from django.db import migrations
 
 __all__ = ["UPDATED_AT_FUNCTION_SQL", "DROP_UPDATED_AT_FUNCTION_SQL", "attach_updated_at_trigger"]
 
+#: `clock_timestamp()`, not `now()`. `now()` is the *transaction* start time,
+#: and `created_at` is set from Python at the moment of the write, so a row
+#: inserted and then updated inside one transaction comes back with
+#: `updated_at` earlier than `created_at` - a timeline that reads as though
+#: the row was modified before it existed. `clock_timestamp()` is the wall
+#: clock at statement execution, which is the same clock `timezone.now()`
+#: reads and the only one that keeps the two columns comparable.
 UPDATED_AT_FUNCTION_SQL = """
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger AS $$
 BEGIN
-    NEW.updated_at = now();
+    NEW.updated_at = clock_timestamp();
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
