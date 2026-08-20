@@ -60,17 +60,40 @@ on Windows by default.
 | `make dev` | `pnpm dev` | Start the whole stack |
 | `make down` | `pnpm down` | Stop it |
 | `make reset` | `pnpm reset` | Stop it and **drop the local database** |
-| `make check` | `pnpm check` | Everything CI runs |
+| `make check` | `pnpm check` | The edit loop: lint, types, boundaries, both suites, both web builds |
+| **`make verify`** | **`pnpm verify`** | **Everything CI runs, in CI's order. Run before pushing.** |
 | `make lint` | `pnpm lint` | ruff + eslint |
-| `make typecheck` | `pnpm typecheck` | mypy + tsc |
+| `make typecheck` | `pnpm typecheck` | mypy (in the `api` container) + tsc |
 | `make boundaries` | `pnpm boundaries` | Module dependency contracts |
-| `make test` | `pnpm test` | Backend (in the `api` container) and frontend suites |
+| `make test` | `pnpm test` | Backend suite (in the `api` container), frontend suites, both web builds |
 | `make test-host` | `pnpm test:api:host` | Backend suite on the host — needs GDAL locally |
+| `make build` | `pnpm build` | Build both web apps |
 | `make coverage` | `pnpm coverage` | Tests with both coverage gates |
 | `make contracts` | `pnpm contracts` | Regenerate OpenAPI **and** the TS types |
 | `make format` | `pnpm format` | Apply formatting |
 
-`make check` runs exactly what CI runs, so a CI failure reproduces locally.
+### Which one to run
+
+**`pnpm verify` before every push.** It runs each CI job's command verbatim —
+ruff, mypy, import-linter, pytest with both coverage thresholds, the OpenAPI
+and contract-type staleness diffs, `pnpm -r typecheck lint test build`, and
+bandit — so a CI failure is something you have already seen.
+
+`pnpm check` is the faster inner loop. It skips the coverage thresholds, the
+two staleness diffs and the SAST pass.
+
+Two parity gaps closed in Phase 3, both of which had CI failing against a green
+working tree:
+
+- **`next build` is now a local gate.** It type-checks route modules against
+  Next's Page contract, and `tsc --noEmit` does not. A `page.tsx` that exports
+  anything beyond its default component and Next's own fields is valid
+  TypeScript and an invalid route, and one sat on `main` for a phase because no
+  local command would have said so.
+- **mypy and `spectacular` run in the `api` container.** GeoDjango binds GDAL,
+  GEOS and PROJ through ctypes at import time (ADR 0009), and a host without
+  them fails both — locally only. `ruff` and `import-linter` read source
+  without executing it, so they stay on the host and stay fast.
 
 ---
 

@@ -79,6 +79,10 @@ services:
       # so the suite needs the specification even though the application does
       # not. Read-only: nothing in the container may amend the baseline.
       - ./docs/srs:/docs/srs:ro
+      # `make openapi` runs spectacular in here, because GeoDjango needs GDAL
+      # at import time and the host does not have it (ADR 0009). Writable: the
+      # generated specification is committed from the host afterwards.
+      - ./packages/contracts:/contracts
     ports:
       - "8000:8000"
     depends_on:

@@ -143,7 +143,10 @@ def _own(principal_attr: str, row_field: str) -> OwnershipRule:
 
 def _administered(resource: Resource) -> dict[tuple[Role, Resource], OwnershipRule]:
     """§27.8: the catalogue console writes; support reads; nobody else."""
-    rules = dict.fromkeys(Role, _NONE)
+    # Spelled out rather than `dict.fromkeys(Role, ...)`: `Role` is a StrEnum,
+    # so that widens the key type to `str` and the map stops being total over
+    # `Role x Resource` as far as the type checker is concerned.
+    rules: dict[Role, OwnershipRule] = {role: _NONE for role in Role}
     rules[Role.CATALOGUE_ADMIN] = _GLOBAL
     rules[Role.SUPER_ADMIN] = _GLOBAL
     rules[Role.SUPPORT_AGENT] = _GLOBAL_READ
