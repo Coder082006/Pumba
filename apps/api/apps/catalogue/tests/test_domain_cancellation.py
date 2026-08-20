@@ -14,6 +14,7 @@ import pytest
 from apps.catalogue.domain.cancellation import (
     CancellationPolicyError,
     Tier,
+    parse_tiers,
     refund_percent_at,
     validate_tiers,
 )
@@ -140,6 +141,78 @@ class TestTierValidation:
 
     def test_validation_returns_a_tuple_so_it_cannot_be_mutated_afterwards(self) -> None:
         assert isinstance(validate_tiers([Tier(48, Decimal(100))]), tuple)
+
+
+class TestParsingTheJsonbColumn:
+    """`cancellation_policy.tiers` is administrator-supplied JSON."""
+
+    def test_the_seed_shaped_policy_parses(self) -> None:
+        tiers = parse_tiers(
+            [
+                {"hours_before": 168, "refund_percent": 100},
+                {"hours_before": 48, "refund_percent": 50},
+            ]
+        )
+        assert tiers == (
+            Tier(hours_before=168, refund_percent=Decimal(100)),
+            Tier(hours_before=48, refund_percent=Decimal(50)),
+        )
+
+    def test_an_empty_list_is_a_policy_that_refunds_nothing(self) -> None:
+        assert parse_tiers([]) == ()
+        assert refund_percent_at(parse_tiers([]), hours_before=Decimal(1000)) == Decimal(0)
+
+    def test_null_is_read_as_no_tiers(self) -> None:
+        assert parse_tiers(None) == ()
+
+    def test_a_percentage_arriving_as_a_float_becomes_an_exact_decimal(self) -> None:
+        """psycopg hands back a bare JSON number as a float. §18.5: never a
+        float, anywhere, for any reason - and 50.1 is not representable."""
+        (tier,) = parse_tiers([{"hours_before": 48, "refund_percent": 50.1}])
+        assert tier.refund_percent == Decimal("50.1")
+
+    def test_a_string_percentage_is_accepted(self) -> None:
+        (tier,) = parse_tiers([{"hours_before": 48, "refund_percent": "50.00"}])
+        assert tier.refund_percent == Decimal("50.00")
+
+    def test_an_unknown_key_is_rejected_rather_than_ignored(self) -> None:
+        """A policy carrying `refund_pct` is a policy somebody believes says
+        something it does not."""
+        with pytest.raises(CancellationPolicyError, match="unknown keys"):
+            parse_tiers([{"hours_before": 48, "refund_percent": 50, "refund_pct": 90}])
+
+    def test_a_missing_key_is_rejected(self) -> None:
+        with pytest.raises(CancellationPolicyError, match="missing"):
+            parse_tiers([{"hours_before": 48}])
+
+    def test_a_non_list_is_rejected(self) -> None:
+        with pytest.raises(CancellationPolicyError, match="must be a list"):
+            parse_tiers({"hours_before": 48, "refund_percent": 50})
+
+    def test_a_non_object_tier_is_rejected(self) -> None:
+        with pytest.raises(CancellationPolicyError, match="must be an object"):
+            parse_tiers([[48, 50]])
+
+    def test_a_boolean_is_not_a_number_of_hours(self) -> None:
+        with pytest.raises(CancellationPolicyError, match="whole number"):
+            parse_tiers([{"hours_before": True, "refund_percent": 50}])
+
+    def test_a_fractional_hours_before_is_rejected(self) -> None:
+        with pytest.raises(CancellationPolicyError, match="whole number"):
+            parse_tiers([{"hours_before": 47.5, "refund_percent": 50}])
+
+    def test_an_unparseable_percentage_is_rejected(self) -> None:
+        with pytest.raises(CancellationPolicyError, match="not a number"):
+            parse_tiers([{"hours_before": 48, "refund_percent": "half"}])
+
+    def test_the_ordering_rules_still_apply_after_parsing(self) -> None:
+        with pytest.raises(CancellationPolicyError, match="descending"):
+            parse_tiers(
+                [
+                    {"hours_before": 48, "refund_percent": 50},
+                    {"hours_before": 168, "refund_percent": 100},
+                ]
+            )
 
 
 class TestNoPolicyNamesAppearInCode:

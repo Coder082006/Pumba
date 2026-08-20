@@ -20,12 +20,13 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 
-from apps.catalogue.domain import hierarchy
+from apps.catalogue.domain import cancellation, hierarchy
 
 __all__ = [
     "validate_iana_timezone",
     "validate_iso_country_code",
     "validate_iso_currency_code",
+    "validate_cancellation_tiers",
 ]
 
 
@@ -51,3 +52,22 @@ def validate_iso_currency_code(value: str) -> None:
         hierarchy.validate_currency_code(value)
     except hierarchy.HierarchyError as exc:
         raise ValidationError(str(exc), code="invalid_currency_code") from exc
+
+
+def validate_cancellation_tiers(value: object) -> None:
+    """§14.6's ordered `{hours_before, refund_percent}` list.
+
+    `domain.cancellation.validate_tiers` rejects rather than repairs: tiers out
+    of order, duplicated, or with a refund that rises as the cancellation gets
+    later. A repaired policy is a policy nobody wrote, and the tourist is
+    refunded by it.
+
+    The JSONB column can only be CHECKed as far as "is an array". The shape
+    inside it is checked here, on the write path an administrator uses.
+    """
+    if not isinstance(value, list):
+        raise ValidationError("cancellation tiers must be a list", code="invalid_tiers")
+    try:
+        cancellation.parse_tiers(value)
+    except cancellation.CancellationPolicyError as exc:
+        raise ValidationError(str(exc), code="invalid_tiers") from exc

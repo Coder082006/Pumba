@@ -12,14 +12,34 @@ sit in East Africa fails here.
 
 from __future__ import annotations
 
+from datetime import time
 from decimal import Decimal
 from typing import Any
 
 from django.contrib.gis.geos import Point
 
-from apps.catalogue.models import Attraction, Country, Destination, Region, Tag
+from apps.catalogue.models import (
+    Accommodation,
+    Attraction,
+    CancellationPolicy,
+    Country,
+    Destination,
+    PropertyType,
+    Region,
+    RoomType,
+    Tag,
+)
 
-__all__ = ["make_country", "make_region", "make_destination", "make_tag", "make_attraction"]
+__all__ = [
+    "make_country",
+    "make_region",
+    "make_destination",
+    "make_tag",
+    "make_attraction",
+    "make_cancellation_policy",
+    "make_accommodation",
+    "make_room_type",
+]
 
 #: Two zones that disagree with each other and with UTC for most of the day.
 DEFAULT_ZONE = "Pacific/Auckland"
@@ -79,3 +99,49 @@ def make_attraction(destination: Destination | None = None, **overrides: Any) ->
     }
     values.update(overrides)
     return Attraction.objects.create(**values)
+
+
+def make_cancellation_policy(**overrides: Any) -> CancellationPolicy:
+    values: dict[str, Any] = {
+        "code": "MODERATE_7D",
+        "name": "Moderate",
+        # §14.6, as data: full refund beyond 7 days, half between 7 days and
+        # 48 hours, nothing thereafter.
+        "tiers": [
+            {"hours_before": 168, "refund_percent": 100},
+            {"hours_before": 48, "refund_percent": 50},
+        ],
+    }
+    values.update(overrides)
+    return CancellationPolicy.objects.create(**values)
+
+
+def make_accommodation(destination: Destination | None = None, **overrides: Any) -> Accommodation:
+    values: dict[str, Any] = {
+        "destination": destination or make_destination(),
+        "name": "The Harbour Lodge",
+        "slug": "the-harbour-lodge",
+        "property_type": PropertyType.LODGE,
+        "coordinates": Point(174.07, -35.27, srid=4326),
+        "address_line": "1 Quay Street",
+        "star_rating": 4,
+        "check_in_time": time(14, 0),
+        "check_out_time": time(10, 0),
+    }
+    values.update(overrides)
+    return Accommodation.objects.create(**values)
+
+
+def make_room_type(accommodation: Accommodation | None = None, **overrides: Any) -> RoomType:
+    values: dict[str, Any] = {
+        "accommodation": accommodation or make_accommodation(),
+        "name": "Harbour View Double",
+        "max_adults": 2,
+        "max_children": 1,
+        "bed_configuration": "1 queen",
+        "base_rate": Decimal("180.00"),
+        "currency": "NZD",
+        "total_rooms": 8,
+    }
+    values.update(overrides)
+    return RoomType.objects.create(**values)

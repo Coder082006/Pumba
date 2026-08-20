@@ -38,11 +38,17 @@ one must be rejected at the form, not discovered during a refund.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
-__all__ = ["Tier", "CancellationPolicyError", "validate_tiers", "refund_percent_at"]
+__all__ = [
+    "Tier",
+    "CancellationPolicyError",
+    "validate_tiers",
+    "parse_tiers",
+    "refund_percent_at",
+]
 
 
 class CancellationPolicyError(ValueError):
@@ -111,3 +117,46 @@ def refund_percent_at(tiers: Sequence[Tier], *, hours_before: Decimal) -> Decima
         if hours_before > tier.hours_before:
             return tier.refund_percent
     return Decimal(0)
+
+
+_TIER_KEYS = frozenset({"hours_before", "refund_percent"})
+
+
+def parse_tiers(raw: object) -> tuple[Tier, ...]:
+    """Read the `cancellation_policy.tiers` JSONB column.
+
+    The column is administrator-supplied JSON, so every assumption about it is
+    checked here rather than at the point a refund is calculated. Unknown keys
+    are rejected rather than ignored: a policy carrying `refund_pct` alongside
+    `refund_percent` is a policy somebody believes says something it does not.
+
+    `refund_percent` is read through `str()` before `Decimal`, because JSON
+    numbers arrive from `psycopg` as `float` for a bare literal, and a float
+    percentage multiplied into a refund is the §18.5 prohibition exactly.
+    """
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise CancellationPolicyError(f"tiers must be a list, got {type(raw).__name__}")
+
+    parsed: list[Tier] = []
+    for index, entry in enumerate(raw):
+        if not isinstance(entry, Mapping):
+            raise CancellationPolicyError(f"tier {index} must be an object")
+        unknown = set(entry) - _TIER_KEYS
+        if unknown:
+            raise CancellationPolicyError(f"tier {index} has unknown keys {sorted(unknown)}")
+        missing = _TIER_KEYS - set(entry)
+        if missing:
+            raise CancellationPolicyError(f"tier {index} is missing {sorted(missing)}")
+
+        hours = entry["hours_before"]
+        if isinstance(hours, bool) or not isinstance(hours, int):
+            raise CancellationPolicyError(f"tier {index} hours_before must be a whole number")
+        try:
+            percent = Decimal(str(entry["refund_percent"]))
+        except (InvalidOperation, TypeError) as exc:
+            raise CancellationPolicyError(f"tier {index} refund_percent is not a number") from exc
+        parsed.append(Tier(hours_before=hours, refund_percent=percent))
+
+    return validate_tiers(parsed)
