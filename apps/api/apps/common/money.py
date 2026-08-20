@@ -121,6 +121,17 @@ class Money:
     # -- invariants --------------------------------------------------------
 
     def _check(self, other: Money) -> None:
+        if not isinstance(other, Money):
+            # Not pedantry: anything carrying `.amount` and `.currency` would
+            # otherwise add here by duck typing and come back out a `Money`.
+            # `apps.common.display_money.IndicativeAmount` carries both by
+            # design, and §18.4 forbids a display conversion becoming an input
+            # to a total. An explicit type check is what stops a figure from a
+            # page turning into a figure on an invoice.
+            raise TypeError(
+                f"only Money is money; {type(other).__name__} cannot take part in "
+                "money arithmetic"
+            )
         if self.currency != other.currency:
             raise CurrencyMismatchError(self.currency, other.currency)
 

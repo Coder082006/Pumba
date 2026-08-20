@@ -17,13 +17,16 @@ from __future__ import annotations
 import hashlib
 import hmac
 import math
+from datetime import UTC, datetime
+from decimal import Decimal
 from itertools import count
-from typing import Any
+from typing import Any, ClassVar
 
 from apps.common.errors import ValidationError
 from apps.common.money import Money
 from ports.breach import BreachLookupError
 from ports.crypto import Ciphertext, DecryptionError
+from ports.exchange_rate import IndicativeRate
 from ports.notification import DeliveryResult, DeliveryStatus
 from ports.payment import (
     PaymentAction,
@@ -38,6 +41,7 @@ from ports.storage import PresignedUpload, StoredObject
 
 __all__ = [
     "FakeRouting",
+    "FakeExchangeRates",
     "FakePaymentGateway",
     "FakePush",
     "FakeEmail",
@@ -408,3 +412,55 @@ class FakeBreachedPasswords:
         if self.unavailable:
             raise BreachLookupError("breach corpus unavailable")
         return frozenset(self._index.get(prefix.upper(), set()))
+
+
+class FakeExchangeRates:
+    """Deterministic indicative rates. Same pair, same rate, always.
+
+    The table is a small fixed cross-rate set through USD, chosen so that tests
+    can assert exact figures. It is *not* a market snapshot and is not meant to
+    resemble one: nothing in the platform prices from these, and a fake that
+    drifted with the market would make every display assertion flaky for no
+    gain.
+
+    `as_of` is fixed too, for the same reason TC-902 wants byte-identical
+    responses: a timestamp that moved would make the same request return
+    different bytes.
+    """
+
+    #: Units of the currency per 1 USD.
+    PER_USD: ClassVar[dict[str, Decimal]] = {
+        "USD": Decimal("1"),
+        "EUR": Decimal("0.92"),
+        "GBP": Decimal("0.79"),
+        "TZS": Decimal("2500"),
+        "KES": Decimal("129"),
+        "NZD": Decimal("1.64"),
+        "CLP": Decimal("950"),
+        "ZAR": Decimal("18.30"),
+    }
+
+    AS_OF: ClassVar[datetime] = datetime(2027, 1, 1, tzinfo=UTC)
+    SOURCE: ClassVar[str] = "fake"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def indicative_rate(self, *, base: str, quote: str) -> IndicativeRate | None:
+        base, quote = base.upper(), quote.upper()
+        self.calls.append((base, quote))
+        if base == quote:
+            # Not an error and not a rate: the caller already has the figure in
+            # the currency asked for, and `None` is what says so.
+            return None
+        if base not in self.PER_USD or quote not in self.PER_USD:
+            return None
+        return IndicativeRate(
+            base=base,
+            quote=quote,
+            # Cross through USD, at full precision. Rounding belongs at the
+            # point of display, once, in the target currency's minor unit.
+            rate=self.PER_USD[quote] / self.PER_USD[base],
+            as_of=self.AS_OF,
+            source=self.SOURCE,
+        )

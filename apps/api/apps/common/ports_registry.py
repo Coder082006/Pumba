@@ -31,6 +31,7 @@ from django.utils.module_loading import import_string
 
 from ports.breach import BreachedPasswordPort
 from ports.crypto import CryptoPort
+from ports.exchange_rate import ExchangeRatePort
 from ports.notification import EmailPort, PushPort, SmsPort
 from ports.storage import StoragePort
 
@@ -43,6 +44,7 @@ __all__ = [
     "get_crypto_port",
     "get_breach_port",
     "get_storage_port",
+    "get_exchange_rate_port",
     "reset_ports",
 ]
 
@@ -54,6 +56,7 @@ _FAKES = {
     "crypto": "ports.fakes.FakeCrypto",
     "breach": "ports.fakes.FakeBreachedPasswords",
     "storage": "ports.fakes.FakeStorage",
+    "exchange_rate": "ports.fakes.FakeExchangeRates",
 }
 
 
@@ -96,3 +99,8 @@ def get_breach_port() -> BreachedPasswordPort:
 
 def get_storage_port() -> StoragePort:
     return _resolve("storage")  # type: ignore[no-any-return]
+
+
+def get_exchange_rate_port() -> ExchangeRatePort:
+    """Indicative rates for display only. Never the §18.4 pricing path."""
+    return _resolve("exchange_rate")  # type: ignore[no-any-return]
