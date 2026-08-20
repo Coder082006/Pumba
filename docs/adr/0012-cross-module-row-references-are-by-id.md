@@ -62,7 +62,45 @@ references that genuinely cross a §6.4 module boundary. Within a module a
 `ForeignKey` remains the right tool, and `catalogue.attraction.destination_id`
 stays a real one.
 
-Contrast with [ADR 0011](0011-inventory-owns-the-availability-tables.md), where
-the reference runs `inventory -> catalogue` — a direction §6.4 permits — and a
-real `ForeignKey` is therefore correct. The rule is about the direction of the
-edge in the DAG, not about crossing a module boundary as such.
+## Correction, made the same day
+
+The paragraph originally here said the rule was about the *direction* of the
+edge: that `inventory -> catalogue` is a direction §6.4 permits, so a real
+`ForeignKey` was correct there. Writing `inventory.models` proved that wrong,
+and import-linter said so in one line:
+
+```
+catalogue internals are private
+apps.inventory is not allowed to import apps.catalogue.models
+```
+
+The contract forbids `apps.catalogue.models` to *every* other module, in either
+direction, and it is right to. §6.4's dependency is on a module's **service
+interface**, not on its tables, and §6.2 and §44.2 want each module extractable
+behind that interface. A `ForeignKey` needs the import, installs a relation in
+both directions, and would have to be unpicked to extract the seam.
+
+So the rule has no direction clause. **A row owned by another module is
+referenced by id, whichever way the DAG edge runs.** `inventory`'s
+`room_type_id`, `activity_id` and `schedule_id` are plain indexed integers for
+the same reason `accommodation.provider_id` is.
+
+The referential integrity is not lost, and here it does not even have to wait:
+`inventory`'s own migration adds the constraints, because a migration
+dependency is a string and not an import.
+
+```sql
+ALTER TABLE room_availability
+    ADD CONSTRAINT room_availability_room_type_fk
+    FOREIGN KEY (room_type_id) REFERENCES room_type(id);
+```
+
+That combination — id in the model, `FOREIGN KEY` in the migration — is the
+general shape. The database keeps its integrity; the module keeps its seam.
+
+It also settles Q2's guard more firmly than the planned test would have. With no
+import, no relation and no reverse accessor, `catalogue` cannot read a capacity
+counter at all, let alone mutate one. Contract `private-catalogue` and
+`apps.get_model` between them mean even the *tests* do not reach through: the
+inventory suite builds its catalogue parent rows through Django's model
+registry, which is what migrations use for exactly this reason.

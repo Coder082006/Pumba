@@ -38,9 +38,11 @@ bespoke, which is a better outcome than the test that was planned.
 ## Decision
 
 `room_availability` and `activity_departure` are created in `apps/inventory/`,
-with foreign keys to `catalogue.room_type` and `catalogue.activity`. That is the
-permitted direction: contract C6 allows `inventory -> catalogue` and forbids
-`catalogue -> inventory`.
+referencing `catalogue.room_type` and `catalogue.activity` by id, with the
+`FOREIGN KEY` added in SQL by inventory's own migration. The reference is by id
+rather than by `ForeignKey` per [ADR
+0012](0012-cross-module-row-references-are-by-id.md), whose correction note
+records why the permitted DAG direction does not license the import.
 
 Three consequences follow, and all three are wanted.
 
