@@ -23,9 +23,13 @@ rejects a name Python would accept - the conservative direction, and loud.
 
 from __future__ import annotations
 
+from typing import Any
+
+from django.contrib.postgres.operations import CreateExtension
 from django.db import migrations
 
 __all__ = [
+    "PostgisExtension",
     "IANA_TIMEZONE_FUNCTION_SQL",
     "DROP_IANA_TIMEZONE_FUNCTION_SQL",
     "attach_timezone_check",
@@ -33,6 +37,31 @@ __all__ = [
     "DROP_KNOWN_TAGS_FUNCTION_SQL",
     "attach_known_tags_check",
 ]
+
+
+class PostgisExtension(CreateExtension):
+    """`CREATE EXTENSION postgis`, with no reverse.
+
+    `CreateExtension` drops the extension when the migration is reversed, and
+    that fails here: the `postgis/postgis` image installs `postgis_topology`
+    and `postgis_tiger_geocoder` on top of it, so `migrate catalogue zero`
+    stops with "cannot drop extension postgis because other objects depend on
+    it".
+
+    Reversing it would be the wrong thing even if it worked. `DROP EXTENSION
+    ... CASCADE` takes every geography column with it, and the extension is
+    infrastructure this migration found rather than property it owns.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("postgis")
+
+    def database_backwards(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+    def describe(self) -> str:
+        return "Create extension postgis (not dropped on reverse)"
+
 
 #: The column is passed as a trigger argument rather than named here, so one
 #: function serves `country.default_timezone` and `destination.timezone` and

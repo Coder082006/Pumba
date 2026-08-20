@@ -36,16 +36,19 @@ from zoneinfo import ZoneInfo
 from django.contrib.gis.db import models as gis_models
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import GinIndex, GistIndex
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.catalogue.domain.hierarchy import GatewayType
+from apps.catalogue.domain.requirements import RequirementsError, parse_requirements
 from apps.catalogue.validators import (
+    validate_activity_requirements,
     validate_cancellation_tiers,
     validate_iana_timezone,
     validate_iso_country_code,
     validate_iso_currency_code,
 )
-from apps.common.models import SoftDeleteModel
+from apps.common.models import SoftDeleteModel, TimestampedModel
 
 __all__ = [
     "GatewayTypeChoices",
@@ -58,6 +61,11 @@ __all__ = [
     "PropertyType",
     "Accommodation",
     "RoomType",
+    "ConfirmationMode",
+    "Activity",
+    "ActivitySchedule",
+    "MediaOwnerType",
+    "Media",
 ]
 
 
@@ -597,3 +605,331 @@ class RoomType(SoftDeleteModel):
 
     def __str__(self) -> str:
         return f"{self.accommodation_id}/{self.name}"
+
+
+class ConfirmationMode(models.TextChoices):
+    """§16.6: INSTANT or ON_REQUEST.
+
+    INSTANT means capacity is authoritative and the booking confirms on
+    payment. ON_REQUEST means the booking enters AWAITING_PROVIDER and the
+    provider must accept within `provider_response_hours` or it auto-cancels
+    with a full refund. §16.6 requires the catalogue to display the mode
+    clearly, which is why it is a catalogue column and not a booking one.
+    """
+
+    INSTANT = "INSTANT", "Confirms immediately"
+    ON_REQUEST = "ON_REQUEST", "Confirmed by the provider"
+
+
+class Activity(SoftDeleteModel):
+    """SRS §16.1 and §7.5.9.
+
+    §16.1 is unambiguous: activities are entirely database-driven, and no
+    activity type, category or name appears in application code. Snorkelling,
+    spice farms and dhow cruises are rows.
+
+    §15.4 makes `attraction` optional. An open-water excursion anchors on its
+    own coordinates; a heritage walk anchors on the attraction it visits.
+    """
+
+    #: ADR 0012, as on `accommodation`.
+    provider_id = models.BigIntegerField(null=True, blank=True, default=None, db_index=True)
+
+    destination = models.ForeignKey(
+        Destination, on_delete=models.PROTECT, related_name="activities"
+    )
+    #: §15.4: null for an activity with no fixed site.
+    attraction = models.ForeignKey(
+        Attraction,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        default=None,
+        related_name="activities",
+    )
+
+    name = models.CharField(max_length=140)
+    slug = models.SlugField(max_length=140)
+    summary = models.TextField(null=True, blank=True, default=None)
+    description = models.TextField(blank=True, default="")
+
+    coordinates = gis_models.PointField(geography=True, srid=4326)
+    meeting_point_text = models.CharField(max_length=255, blank=True, default="")
+
+    duration_minutes = models.SmallIntegerField()
+
+    #: §18.5: Decimal, never a float, paired with a currency per §7.2. The
+    #: group price wins where both exist - see `domain.pricing`.
+    price_per_person = models.DecimalField(max_digits=14, decimal_places=2)
+    price_per_group = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True, default=None
+    )
+    currency = models.CharField(max_length=3, validators=[validate_iso_currency_code])
+
+    min_pax = models.SmallIntegerField(default=1)
+    max_pax = models.SmallIntegerField()
+
+    #: §7.5.9 keeps this as a column and §16.4 also carries `min_age` inside
+    #: `requirements`. The column is what the booking guard reads; the JSONB is
+    #: what VR-15 explains to the tourist. A validator keeps them agreeing.
+    min_age = models.SmallIntegerField(null=True, blank=True, default=None)
+
+    #: §16.4: structured, machine-checkable restrictions feeding VR-15.
+    requirements = models.JSONField(
+        default=dict, blank=True, validators=[validate_activity_requirements]
+    )
+    inclusions = models.JSONField(default=list, blank=True)
+    exclusions = models.JSONField(default=list, blank=True)
+
+    #: Slugs from `tag`, kept honest by the same trigger as `attraction.tags`.
+    tags = ArrayField(models.SlugField(max_length=64), default=list, blank=True)
+
+    cancellation_policy = models.ForeignKey(
+        CancellationPolicy,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        default=None,
+        related_name="activities",
+    )
+
+    #: §16.6.
+    booking_cutoff_hours = models.SmallIntegerField(default=24)
+    confirmation_mode = models.CharField(
+        max_length=20, choices=ConfirmationMode.choices, default=ConfirmationMode.INSTANT
+    )
+
+    #: §16.5 ranks on these. `review` owns the truth; this is its projection.
+    rating_avg = models.DecimalField(max_digits=3, decimal_places=2, default=Decimal("0.00"))
+    rating_count = models.IntegerField(default=0)
+
+    feature_rank = models.SmallIntegerField(default=100)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "activity"
+        ordering = ["feature_rank", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="activity_slug_unique_alive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(price_per_person__gte=0), name="activity_price_non_negative"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(price_per_group__isnull=True) | models.Q(price_per_group__gte=0),
+                name="activity_group_price_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(duration_minutes__gt=0), name="activity_duration_positive"
+            ),
+            # §16.3's bookable predicate is `min_pax <= pax <= max_pax`. An
+            # inverted pair makes it unsatisfiable, so the activity is listed
+            # and can never be booked - visible and inert, which is worse than
+            # absent.
+            models.CheckConstraint(
+                condition=models.Q(min_pax__gte=1, max_pax__gte=1)
+                & models.Q(min_pax__lte=models.F("max_pax")),
+                name="activity_pax_range_is_satisfiable",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(min_age__isnull=True) | models.Q(min_age__gte=0),
+                name="activity_min_age_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(booking_cutoff_hours__gte=0),
+                name="activity_booking_cutoff_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(rating_avg__gte=0, rating_avg__lte=5),
+                name="activity_rating_avg_in_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(rating_count__gte=0), name="activity_rating_count_non_negative"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(feature_rank__gte=1), name="activity_feature_rank_positive"
+            ),
+        ]
+        indexes = [
+            GistIndex(fields=["coordinates"], name="activity_coordinates_gist"),
+            GinIndex(fields=["tags"], name="activity_tags_gin"),
+            # The leading edge of the §16.5 ordering: destination match, then
+            # curation. `price_per_person` trails so the index also serves the
+            # price_asc sort without a second scan.
+            models.Index(
+                fields=["destination", "is_active", "feature_rank", "price_per_person"],
+                name="activity_dest_active_rank",
+            ),
+            models.Index(fields=["attraction"], name="activity_attraction_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return self.slug
+
+    def clean(self) -> None:
+        """Keep the `min_age` column and the §16.4 JSONB from disagreeing.
+
+        Both exist because §7.5.9 lists the column and §16.4 lists the key. The
+        column is what a booking guard reads; the JSONB is what VR-15 explains
+        to the tourist. Two sources for one safety control is one too many, so
+        the console refuses to save them saying different things rather than
+        letting a booking be admitted that the listing says it forbids.
+        """
+        super().clean()
+        try:
+            parsed = parse_requirements(self.requirements or {})
+        except RequirementsError:
+            # `full_clean` runs `clean()` even when `clean_fields()` has
+            # already rejected something, accumulating errors rather than
+            # stopping. The field validator has reported this one; raising it
+            # again here would replace a field-scoped message with an
+            # unhandled exception.
+            return
+        disagree = (
+            parsed.min_age is not None
+            and self.min_age is not None
+            and parsed.min_age != self.min_age
+        )
+        if disagree:
+            raise ValidationError(
+                {
+                    "min_age": (
+                        f"min_age is {self.min_age} but requirements say "
+                        f"{parsed.min_age}; they must agree"
+                    )
+                }
+            )
+
+
+class ActivitySchedule(SoftDeleteModel):
+    """SRS §16.2: a recurring rule, not a sellable thing.
+
+    §16.2 separates the two deliberately. This row says "Monday to Saturday at
+    08:30, capacity 12, during 2027"; `inventory.activity_departure` says
+    "08:30 on 12 August, six sold". The nightly materialisation that turns one
+    into the other is Phase 5 and lives in `inventory` (ADR 0011).
+
+    `weekday_mask` has bit 0 as Monday, matching `date.weekday()` - see
+    `domain.schedules`, which owns the arithmetic.
+    """
+
+    activity = models.ForeignKey(Activity, on_delete=models.PROTECT, related_name="schedules")
+
+    weekday_mask = models.SmallIntegerField()
+    start_time = models.TimeField()
+
+    #: Capacity for departures generated from this rule. The generated
+    #: departure carries its own counters; changing this changes what future
+    #: materialisation produces, never what a sold departure holds.
+    capacity = models.SmallIntegerField()
+
+    valid_from = models.DateField()
+    valid_to = models.DateField(null=True, blank=True, default=None)
+
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "activity_schedule"
+        ordering = ["activity", "start_time", "id"]
+        constraints = [
+            # A mask of zero recurs on no day at all: a rule that looks like a
+            # schedule and generates nothing, forever.
+            models.CheckConstraint(
+                condition=models.Q(weekday_mask__gte=1, weekday_mask__lte=0b1111111),
+                name="activity_schedule_weekday_mask_in_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(capacity__gt=0), name="activity_schedule_capacity_positive"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(valid_to__isnull=True)
+                | models.Q(valid_to__gte=models.F("valid_from")),
+                name="activity_schedule_window_is_ordered",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["activity", "is_active"], name="activity_schedule_active_idx")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.activity_id}@{self.start_time}"
+
+
+class MediaOwnerType(models.TextChoices):
+    """What a `media` row hangs off.
+
+    Stored as the owning table's name rather than a Django content type: §7.3
+    models `media` as a plain polymorphic pair, and `django.contrib.contenttypes`
+    would put a second registry of models into the schema and a join into every
+    gallery query.
+    """
+
+    DESTINATION = "destination", "Destination"
+    ATTRACTION = "attraction", "Attraction"
+    ACTIVITY = "activity", "Activity"
+    ACCOMMODATION = "accommodation", "Accommodation"
+    ROOM_TYPE = "room_type", "Room type"
+
+
+class Media(TimestampedModel):
+    """SRS §7.3 and §35.7.
+
+    Polymorphic by `(owner_type, owner_id)`. Ordering is primary first, then
+    `sort_order`, then `id` - `domain.media` owns that and the reason: a gallery
+    whose second and third images swap between page loads shifts under the
+    reader, which is a Lighthouse CLS failure as well as an irritation.
+
+    `width` and `height` are stored because `next/image` needs explicit
+    dimensions to reserve space before the image loads. A row without them is a
+    row the console should not have accepted, and the §24 CLS budget is what
+    pays for it.
+
+    Not soft-deleted: a removed image is removed. There is no re-registration
+    case, and §7.7's uniqueness argument does not apply.
+    """
+
+    owner_type = models.CharField(max_length=20, choices=MediaOwnerType.choices)
+    owner_id = models.BigIntegerField()
+
+    #: §35.7: content-hashed, so a variant URL is a pure function of
+    #: (key, width, format) and the CDN can cache it for a year.
+    file_key = models.CharField(max_length=255)
+    alt_text = models.CharField(max_length=255, blank=True, default="")
+    width = models.IntegerField(null=True, blank=True, default=None)
+    height = models.IntegerField(null=True, blank=True, default=None)
+
+    sort_order = models.SmallIntegerField(default=0)
+    is_primary = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "media"
+        ordering = ["owner_type", "owner_id", "-is_primary", "sort_order", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(width__isnull=True) | models.Q(width__gt=0),
+                name="media_width_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(height__isnull=True) | models.Q(height__gt=0),
+                name="media_height_positive",
+            ),
+            # One hero per owner. `domain.media.order_media` survives two
+            # primaries deterministically rather than raising, because a
+            # gallery that refuses to render is worse than one that picks the
+            # lower id - but the schema should not let it happen in the first
+            # place.
+            models.UniqueConstraint(
+                fields=["owner_type", "owner_id"],
+                condition=models.Q(is_primary=True),
+                name="media_one_primary_per_owner",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["owner_type", "owner_id"], name="media_owner_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.owner_type}:{self.owner_id}/{self.file_key}"

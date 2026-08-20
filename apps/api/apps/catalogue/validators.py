@@ -20,13 +20,14 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 
-from apps.catalogue.domain import cancellation, hierarchy
+from apps.catalogue.domain import cancellation, hierarchy, requirements
 
 __all__ = [
     "validate_iana_timezone",
     "validate_iso_country_code",
     "validate_iso_currency_code",
     "validate_cancellation_tiers",
+    "validate_activity_requirements",
 ]
 
 
@@ -71,3 +72,21 @@ def validate_cancellation_tiers(value: object) -> None:
         cancellation.parse_tiers(value)
     except cancellation.CancellationPolicyError as exc:
         raise ValidationError(str(exc), code="invalid_tiers") from exc
+
+
+def validate_activity_requirements(value: object) -> None:
+    """§16.4's structured restrictions.
+
+    These are safety controls before they are copy: `min_age` and
+    `swimming_ability_required` feed VR-15 and the booking guards. An unknown
+    key is rejected rather than ignored, because typing `minimum_age` would
+    otherwise create a listing whose age restriction silently does not exist.
+    """
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise ValidationError("requirements must be an object", code="invalid_requirements")
+    try:
+        requirements.parse_requirements(value)
+    except requirements.RequirementsError as exc:
+        raise ValidationError(str(exc), code="invalid_requirements") from exc

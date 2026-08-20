@@ -12,7 +12,7 @@ sit in East Africa fails here.
 
 from __future__ import annotations
 
-from datetime import time
+from datetime import date, time
 from decimal import Decimal
 from typing import Any
 
@@ -20,10 +20,13 @@ from django.contrib.gis.geos import Point
 
 from apps.catalogue.models import (
     Accommodation,
+    Activity,
+    ActivitySchedule,
     Attraction,
     CancellationPolicy,
     Country,
     Destination,
+    Media,
     PropertyType,
     Region,
     RoomType,
@@ -39,6 +42,9 @@ __all__ = [
     "make_cancellation_policy",
     "make_accommodation",
     "make_room_type",
+    "make_activity",
+    "make_activity_schedule",
+    "make_media",
 ]
 
 #: Two zones that disagree with each other and with UTC for most of the day.
@@ -145,3 +151,48 @@ def make_room_type(accommodation: Accommodation | None = None, **overrides: Any)
     }
     values.update(overrides)
     return RoomType.objects.create(**values)
+
+
+def make_activity(destination: Destination | None = None, **overrides: Any) -> Activity:
+    values: dict[str, Any] = {
+        "destination": destination or make_destination(),
+        "name": "Harbour Kayak Tour",
+        "slug": "harbour-kayak-tour",
+        "coordinates": Point(174.08, -35.26, srid=4326),
+        "meeting_point_text": "The end of the wharf",
+        "duration_minutes": 180,
+        "price_per_person": Decimal("95.00"),
+        "currency": "NZD",
+        "min_pax": 2,
+        "max_pax": 12,
+    }
+    values.update(overrides)
+    return Activity.objects.create(**values)
+
+
+def make_activity_schedule(activity: Activity | None = None, **overrides: Any) -> ActivitySchedule:
+    values: dict[str, Any] = {
+        "activity": activity or make_activity(),
+        # Monday to Saturday: bit 0 is Monday, matching `date.weekday()`.
+        "weekday_mask": 0b0111111,
+        "start_time": time(8, 30),
+        "capacity": 12,
+        "valid_from": date(2027, 1, 1),
+        "valid_to": date(2027, 12, 31),
+    }
+    values.update(overrides)
+    return ActivitySchedule.objects.create(**values)
+
+
+def make_media(owner: Any = None, **overrides: Any) -> Media:
+    owner = owner if owner is not None else make_destination()
+    values: dict[str, Any] = {
+        "owner_type": owner._meta.db_table,
+        "owner_id": owner.pk,
+        "file_key": "img/9f8e7d6c",
+        "alt_text": "A view of the bay",
+        "width": 1920,
+        "height": 1080,
+    }
+    values.update(overrides)
+    return Media.objects.create(**values)

@@ -14,13 +14,13 @@ import django.contrib.gis.db.models.fields
 import django.contrib.postgres.indexes
 import django.db.models.deletion
 import django.utils.timezone
-from django.contrib.postgres.operations import CreateExtension
 from django.db import migrations, models
 
 import apps.catalogue.validators
 from apps.catalogue.db import (
     DROP_IANA_TIMEZONE_FUNCTION_SQL,
     IANA_TIMEZONE_FUNCTION_SQL,
+    PostgisExtension,
     attach_timezone_check,
 )
 from apps.common.db import attach_updated_at_trigger
@@ -37,7 +37,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        CreateExtension("postgis"),
+        PostgisExtension(),
         migrations.CreateModel(
             name="Country",
             fields=[
