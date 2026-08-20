@@ -386,7 +386,9 @@ is unique among gateways).
 
 ## 2. Data model
 
-Thirteen tables, all in `catalogue`. Every one carries `public_id UUID`,
+Thirteen tables. Eleven are `catalogue`'s; `room_availability` and
+`activity_departure` turned out to belong to `inventory` (ADR 0011), and
+`provider_id` turned out not to be a foreign key (ADR 0012). Every one carries `public_id UUID`,
 `created_at`, `updated_at` (trigger from §7.2), and `deleted_at` where soft
 deletion applies.
 
@@ -400,10 +402,10 @@ deletion applies.
 | `cancellation_policy` | `code`, `name`, `tiers` JSONB (ordered `{hours_before, refund_percent}`) |
 | `accommodation` | §7.5.7 — `provider_id`, `destination_id`, `property_type`, `coordinates`, `address_line`, `star_rating`, `amenities` JSONB, `check_in_time`, `check_out_time`, `cancellation_policy_id`, `child_policy` JSONB, `rating_avg`, `rating_count` |
 | `room_type` | §7.5.7 — `max_adults`, `max_children`, `bed_configuration`, `size_sqm`, `base_rate`, `currency`, `total_rooms`, `amenities` JSONB, `min_nights` |
-| `room_availability` | Q2 option B: `room_type_id`, `stay_date`, `rooms_open`, `rooms_held`, `rooms_sold`, `rate_override`, `is_closed`. **Read-only this phase.** |
+| ~~`room_availability`~~ | **Moved to `inventory` — see [ADR 0011](adr/0011-inventory-owns-the-availability-tables.md).** SRS §6.4 gives the table to `inventory`, which depends on `catalogue`; putting it here inverted the edge. Still Q2 option B, still read-only this phase. |
 | `activity` | §16.1 — `provider_id`, `destination_id`, `attraction_id` NULL, `coordinates`, `meeting_point`, `duration_minutes`, `price_per_person`, `price_per_group`, `currency`, `min_pax`, `max_pax`, `requirements` JSONB, `inclusions`/`exclusions` JSONB, `tags text[]`, `cancellation_policy_id`, `booking_cutoff_hours`, `confirmation_mode`, `rating_avg`, `rating_count`, `feature_rank` |
 | `activity_schedule` | §16.2 — `weekday_mask`, `start_time`, `capacity`, `valid_from`, `valid_to`. Model only. |
-| `activity_departure` | §16.2 — `departs_at`, `capacity_total/held/sold`, `price_override`, `status`. Model + read only; materialisation is Phase 5. |
+| ~~`activity_departure`~~ | **Moved to `inventory` — see [ADR 0011](adr/0011-inventory-owns-the-availability-tables.md)**, for the same reason. Model + read only; materialisation is Phase 5. |
 | `media` | polymorphic `owner_type`/`owner_id`, `file_key`, `sort_order`, `is_primary`, `width`/`height`/`alt_text` |
 
 **Indexes** per §7.6 plus what the ranking and search need:
