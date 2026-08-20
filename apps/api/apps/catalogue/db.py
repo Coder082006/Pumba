@@ -4,7 +4,8 @@ Migration modules are named `0001_...`, which is not an importable identifier,
 so anything two migrations share has to live outside them. That is the whole
 reason this module exists, exactly as `apps.common.db` does.
 
-What it holds is one trigger, and the reason is worth stating.
+What it holds is triggers, and each one is here for the same reason: the rule
+it enforces has a path that no validator sits on.
 
 `Destination.timezone` and `Country.default_timezone` carry an IANA zone name.
 A field validator refuses a bad one on the console and the API path, which is
@@ -28,6 +29,9 @@ __all__ = [
     "IANA_TIMEZONE_FUNCTION_SQL",
     "DROP_IANA_TIMEZONE_FUNCTION_SQL",
     "attach_timezone_check",
+    "KNOWN_TAGS_FUNCTION_SQL",
+    "DROP_KNOWN_TAGS_FUNCTION_SQL",
+    "attach_known_tags_check",
 ]
 
 #: The column is passed as a trigger argument rather than named here, so one
@@ -63,6 +67,49 @@ def attach_timezone_check(table: str, column: str) -> migrations.RunSQL:
             f'DROP TRIGGER IF EXISTS {name} ON "{table}";\n'
             f'CREATE TRIGGER {name} BEFORE INSERT OR UPDATE OF "{column}" ON "{table}"\n'
             f"FOR EACH ROW EXECUTE FUNCTION assert_iana_timezone('{column}');"
+        ),
+        reverse_sql=f'DROP TRIGGER IF EXISTS {name} ON "{table}";',
+    )
+
+
+#: The tag vocabulary is a table (Q7), and `attraction.tags` / `activity.tags`
+#: are `text[]` because §16.5 filters with the `&&` overlap operator, which
+#: wants an array and not a join. An array is not a foreign key, so nothing in
+#: the schema otherwise stops a typo: a misspelt slug produces a row that no
+#: chip ever matches, and the failure is invisible - the attraction simply
+#: never appears under the filter somebody expected it under.
+#:
+#: The column is named `tags` on both tables, so the function names it directly.
+KNOWN_TAGS_FUNCTION_SQL = """
+CREATE OR REPLACE FUNCTION assert_known_tags() RETURNS trigger AS $$
+DECLARE
+    unknown text[];
+BEGIN
+    SELECT array_agg(candidate) INTO unknown
+    FROM unnest(NEW.tags) AS candidate
+    WHERE NOT EXISTS (
+        SELECT 1 FROM tag WHERE tag.slug = candidate AND tag.deleted_at IS NULL
+    );
+    IF unknown IS NOT NULL THEN
+        RAISE EXCEPTION 'unknown tag slugs: %', unknown
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+"""
+
+DROP_KNOWN_TAGS_FUNCTION_SQL = "DROP FUNCTION IF EXISTS assert_known_tags() CASCADE;"
+
+
+def attach_known_tags_check(table: str) -> migrations.RunSQL:
+    """Refuse a tag slug that is not in the vocabulary, on insert and update."""
+    name = f"{table}_tags_are_known"
+    return migrations.RunSQL(
+        sql=(
+            f'DROP TRIGGER IF EXISTS {name} ON "{table}";\n'
+            f'CREATE TRIGGER {name} BEFORE INSERT OR UPDATE OF "tags" ON "{table}"\n'
+            f"FOR EACH ROW EXECUTE FUNCTION assert_known_tags();"
         ),
         reverse_sql=f'DROP TRIGGER IF EXISTS {name} ON "{table}";',
     )

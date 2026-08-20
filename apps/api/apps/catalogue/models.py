@@ -33,7 +33,8 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from django.contrib.gis.db import models as gis_models
-from django.contrib.postgres.indexes import GistIndex
+from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex, GistIndex
 from django.db import models
 
 from apps.catalogue.domain.hierarchy import GatewayType
@@ -44,7 +45,7 @@ from apps.catalogue.validators import (
 )
 from apps.common.models import SoftDeleteModel
 
-__all__ = ["GatewayTypeChoices", "Country", "Region", "Destination"]
+__all__ = ["GatewayTypeChoices", "Country", "Region", "Destination", "Tag", "Attraction"]
 
 
 class GatewayTypeChoices(models.TextChoices):
@@ -211,3 +212,141 @@ class Destination(SoftDeleteModel):
         most of a day late in Auckland.
         """
         return datetime.now(tz=ZoneInfo(self.timezone)).date()
+
+
+class Tag(SoftDeleteModel):
+    """The §24.7 category chips, as rows.
+
+    §24.7 names them: beaches, heritage, water sports, nature, culture. Those
+    are Zanzibar-shaped words, and §4.2 prohibits them appearing in application
+    code, so the vocabulary is administrator-managed data. Adding "diving" is a
+    row, and it reaches the chip strip with no deployment.
+
+    `attraction.tags` and `activity.tags` reference this by slug in a `text[]`
+    rather than through a join table, because §16.5 filters with the `&&`
+    overlap operator. The array is not a foreign key, so a trigger keeps the
+    vocabulary closed - see `apps.catalogue.db`.
+    """
+
+    slug = models.SlugField(max_length=64)
+    label = models.CharField(max_length=80)
+    #: The chip strip is ordered by a curator, not alphabetically: the order
+    #: is editorial, and §16.5's determinism applies to it as much as to
+    #: results. `id` breaks ties.
+    sort_order = models.SmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "tag"
+        ordering = ["sort_order", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="tag_slug_unique_alive",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.slug
+
+
+class Attraction(SoftDeleteModel):
+    """SRS §15.1.
+
+    A place of interest, not a bookable product: it exists to help a tourist
+    decide where to go, and to give the itinerary a geographic anchor. Where an
+    attraction can be visited commercially, a provider publishes an `activity`
+    against it (§15.4) - which is why there is no price, no capacity and no
+    provider here.
+    """
+
+    destination = models.ForeignKey(
+        Destination, on_delete=models.PROTECT, related_name="attractions"
+    )
+    name = models.CharField(max_length=140)
+    slug = models.SlugField(max_length=140)
+    summary = models.TextField(null=True, blank=True, default=None)
+    description = models.TextField(blank=True, default="")
+
+    #: §13.1: geography, so `ST_Distance` returns geodesic metres.
+    coordinates = gis_models.PointField(geography=True, srid=4326)
+
+    #: §15.2's fixed JSONB schema, parsed by `domain.opening_hours` and
+    #: **evaluated in `destination.timezone`**, never the server's. Null means
+    #: "hours not published", which is not the same as closed and is rendered
+    #: differently.
+    opening_hours = models.JSONField(null=True, blank=True, default=None)
+
+    #: §15.3: informational in V1. The tourist pays this on site, and it is
+    #: excluded from the trip total with that exclusion stated explicitly on
+    #: the cost breakdown. Never an input to any subtotal.
+    entrance_fee = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    #: §7.2: "Never store money without its currency." The CHECK below makes
+    #: the pair all-or-nothing rather than trusting the writer.
+    fee_currency = models.CharField(
+        max_length=3, null=True, blank=True, default=None, validators=[validate_iso_currency_code]
+    )
+
+    #: §15.1 "recommended visit duration"; §15.5 spends it in the itinerary.
+    visit_minutes = models.SmallIntegerField(null=True, blank=True, default=None)
+
+    #: Slugs from `tag`. `text[]` rather than a join table because §16.5
+    #: filters with `tags && :interest_tags`; a trigger keeps them known.
+    tags = ArrayField(models.SlugField(max_length=64), default=list, blank=True)
+
+    accessibility_notes = models.TextField(blank=True, default="")
+    feature_rank = models.SmallIntegerField(default=100)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "attraction"
+        ordering = ["feature_rank", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="attraction_slug_unique_alive",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(entrance_fee__isnull=True, fee_currency__isnull=True)
+                    | models.Q(entrance_fee__isnull=False, fee_currency__isnull=False)
+                ),
+                name="attraction_fee_has_a_currency",
+            ),
+            # A free attraction is 0.00, not -1. §15.3 shows this figure to a
+            # tourist as an on-site cost.
+            models.CheckConstraint(
+                condition=models.Q(entrance_fee__isnull=True) | models.Q(entrance_fee__gte=0),
+                name="attraction_fee_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(visit_minutes__isnull=True) | models.Q(visit_minutes__gt=0),
+                name="attraction_visit_minutes_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(feature_rank__gte=1),
+                name="attraction_feature_rank_positive",
+            ),
+        ]
+        indexes = [
+            GistIndex(fields=["coordinates"], name="attraction_coordinates_gist"),
+            GinIndex(fields=["tags"], name="attraction_tags_gin"),
+            models.Index(
+                fields=["destination", "is_active", "feature_rank"],
+                name="attraction_dest_active_rank",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.slug
+
+    @property
+    def timezone(self) -> str:
+        """The zone §15.2 says opening hours are evaluated in.
+
+        Read from the destination rather than stored here, so a destination
+        that corrects its zone corrects every attraction in it at once.
+        """
+        return self.destination.timezone
