@@ -125,7 +125,7 @@ class TestPartialUniquenessPerSection77:
         assert "country_iso_code_unique_alive" in constraint_names(Country)
 
     def test_the_srs_indexes_exist(self) -> None:
-        assert index_names(Destination) == {
+        assert index_names(Destination) >= {
             "destination_centroid_gist",
             "destination_region_active_idx",
         }

@@ -36,6 +36,7 @@ from zoneinfo import ZoneInfo
 from django.contrib.gis.db import models as gis_models
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import GinIndex, GistIndex
+from django.contrib.postgres.search import SearchVector, SearchVectorField
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -181,6 +182,26 @@ class Destination(SoftDeleteModel):
     #: mistake to fall in.
     is_active = models.BooleanField(default=False)
 
+    #: §7.6: `GIN(to_tsvector(name || description))`.
+    #:
+    #: A **generated stored column**, not a trigger and not application code.
+    #: `to_tsvector(regconfig, text)` is immutable, so PostgreSQL maintains it
+    #: on every write; there is no code path that can forget to update it and
+    #: no window in which a row and its index disagree.
+    #:
+    #: The dictionary is fixed at `english`, which is a real limitation rather
+    #: than a §4.2 violation: it is a stemming rule, not destination logic, and
+    #: it is what makes "beaches" find "beach". A market whose catalogue copy is
+    #: not in English wants a per-row `regconfig`, which a generated column can
+    #: take as long as the config is a column of that type. That is a schema
+    #: change and a re-index, and it belongs to the phase that opens such a
+    #: market rather than to a guess made now.
+    search_vector = models.GeneratedField(
+        expression=SearchVector("name", "summary", "description", config="english"),
+        output_field=SearchVectorField(),
+        db_persist=True,
+    )
+
     class Meta:
         db_table = "destination"
         ordering = ["feature_rank", "name"]
@@ -219,6 +240,7 @@ class Destination(SoftDeleteModel):
             # §7.5.6: "GIST(centroid); INDEX(region_id, is_active)".
             GistIndex(fields=["centroid"], name="destination_centroid_gist"),
             models.Index(fields=["region", "is_active"], name="destination_region_active_idx"),
+            GinIndex(fields=["search_vector"], name="destination_search_gin"),
         ]
 
     def __str__(self) -> str:
@@ -320,6 +342,12 @@ class Attraction(SoftDeleteModel):
     feature_rank = models.SmallIntegerField(default=100)
     is_active = models.BooleanField(default=True)
 
+    search_vector = models.GeneratedField(
+        expression=SearchVector("name", "summary", "description", config="english"),
+        output_field=SearchVectorField(),
+        db_persist=True,
+    )
+
     class Meta:
         db_table = "attraction"
         ordering = ["feature_rank", "name"]
@@ -358,6 +386,7 @@ class Attraction(SoftDeleteModel):
                 fields=["destination", "is_active", "feature_rank"],
                 name="attraction_dest_active_rank",
             ),
+            GinIndex(fields=["search_vector"], name="attraction_search_gin"),
         ]
 
     def __str__(self) -> str:
@@ -491,6 +520,12 @@ class Accommodation(SoftDeleteModel):
     feature_rank = models.SmallIntegerField(default=100)
     is_active = models.BooleanField(default=True)
 
+    search_vector = models.GeneratedField(
+        expression=SearchVector("name", "summary", "description", config="english"),
+        output_field=SearchVectorField(),
+        db_persist=True,
+    )
+
     class Meta:
         db_table = "accommodation"
         ordering = ["feature_rank", "name"]
@@ -529,6 +564,7 @@ class Accommodation(SoftDeleteModel):
                 fields=["destination", "is_active", "feature_rank"],
                 name="accommodation_dest_active_rank",
             ),
+            GinIndex(fields=["search_vector"], name="accommodation_search_gin"),
         ]
 
     def __str__(self) -> str:
@@ -706,6 +742,12 @@ class Activity(SoftDeleteModel):
     feature_rank = models.SmallIntegerField(default=100)
     is_active = models.BooleanField(default=True)
 
+    search_vector = models.GeneratedField(
+        expression=SearchVector("name", "summary", "description", config="english"),
+        output_field=SearchVectorField(),
+        db_persist=True,
+    )
+
     class Meta:
         db_table = "activity"
         ordering = ["feature_rank", "name"]
@@ -764,6 +806,7 @@ class Activity(SoftDeleteModel):
                 name="activity_dest_active_rank",
             ),
             models.Index(fields=["attraction"], name="activity_attraction_idx"),
+            GinIndex(fields=["search_vector"], name="activity_search_gin"),
         ]
 
     def __str__(self) -> str:
