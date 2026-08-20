@@ -191,3 +191,112 @@ class TestPrincipalAttrIsRestricted:
     def test_anything_else_is_rejected(self, name: str) -> None:
         with pytest.raises(ValueError, match="not a linkable"):
             principal(Role.TOURIST).attr(name)
+
+
+CATALOGUE_RESOURCES = (
+    Resource.COUNTRY,
+    Resource.REGION,
+    Resource.DESTINATION,
+    Resource.TAG,
+    Resource.ATTRACTION,
+    Resource.CANCELLATION_POLICY,
+    Resource.ACCOMMODATION,
+    Resource.ROOM_TYPE,
+    Resource.ROOM_AVAILABILITY,
+    Resource.ACTIVITY,
+    Resource.ACTIVITY_SCHEDULE,
+    Resource.ACTIVITY_DEPARTURE,
+    Resource.MEDIA,
+)
+
+PROVIDER_LISTED = (
+    Resource.ACCOMMODATION,
+    Resource.ROOM_TYPE,
+    Resource.ROOM_AVAILABILITY,
+    Resource.ACTIVITY,
+    Resource.ACTIVITY_SCHEDULE,
+    Resource.ACTIVITY_DEPARTURE,
+)
+
+
+class TestCatalogueIsAdministered:
+    """§27.8 and §5.2, for the thirteen Phase 3 resources."""
+
+    @pytest.mark.parametrize("resource", CATALOGUE_RESOURCES)
+    def test_the_catalogue_admin_reaches_everything(self, resource: Resource) -> None:
+        allowed = ownership_filter(principal(Role.CATALOGUE_ADMIN), resource, write=True)
+        assert allowed.kind == "ALLOW_ALL"
+
+    @pytest.mark.parametrize("resource", CATALOGUE_RESOURCES)
+    def test_support_reads_but_does_not_write(self, resource: Resource) -> None:
+        who = principal(Role.SUPPORT_AGENT)
+        assert ownership_filter(who, resource).kind == "ALLOW_ALL"
+        assert ownership_filter(who, resource, write=True).is_deny_all
+
+    @pytest.mark.parametrize("resource", CATALOGUE_RESOURCES)
+    def test_a_tourist_reaches_nothing(self, resource: Resource) -> None:
+        """Not an oversight. The §9.3.2 public endpoints are unauthenticated
+        and filtered by `domain.visibility`; a tourist never asks this table.
+        A read here would be a second, weaker answer to the same question."""
+        assert ownership_filter(principal(Role.TOURIST, tourist_id=7), resource).is_deny_all
+
+    @pytest.mark.parametrize("resource", CATALOGUE_RESOURCES)
+    def test_a_driver_reaches_nothing(self, resource: Resource) -> None:
+        assert ownership_filter(principal(Role.DRIVER, driver_id=3), resource).is_deny_all
+
+    @pytest.mark.parametrize("resource", CATALOGUE_RESOURCES)
+    def test_finance_reaches_nothing(self, resource: Resource) -> None:
+        assert ownership_filter(principal(Role.FINANCE_OFFICER), resource).is_deny_all
+
+
+class TestProviderListingsAreScopedByProvider:
+    """§5.2. Unused in Phase 3 — the portal is Phase 11 — and stated anyway,
+    because a cell left at NONE is a lie the totality test cannot catch."""
+
+    @pytest.mark.parametrize("resource", PROVIDER_LISTED)
+    def test_a_provider_reaches_only_its_own(self, resource: Resource) -> None:
+        allowed = ownership_filter(principal(Role.PROVIDER_OWNER, provider_id=42), resource)
+        assert allowed.kind == "EQUALS"
+        assert allowed.value == 42
+
+    @pytest.mark.parametrize("resource", PROVIDER_LISTED)
+    def test_staff_are_scoped_the_same_way_as_owners(self, resource: Resource) -> None:
+        owner = ownership_filter(principal(Role.PROVIDER_OWNER, provider_id=42), resource)
+        staff = ownership_filter(principal(Role.PROVIDER_STAFF, provider_id=42), resource)
+        assert owner == staff
+
+    def test_a_child_row_is_scoped_through_its_parent(self) -> None:
+        """`room_type` has no `provider_id` of its own; the path is what makes
+        the rule expressible without denormalising the column."""
+        allowed = ownership_filter(
+            principal(Role.PROVIDER_OWNER, provider_id=42), Resource.ROOM_TYPE
+        )
+        assert allowed.row_field == "accommodation__provider_id"
+
+    def test_a_capacity_row_is_scoped_two_levels_up(self) -> None:
+        allowed = ownership_filter(
+            principal(Role.PROVIDER_OWNER, provider_id=42), Resource.ROOM_AVAILABILITY
+        )
+        assert allowed.row_field == "room_type__accommodation__provider_id"
+
+    def test_a_provider_with_no_provider_row_reaches_nothing(self) -> None:
+        """A user granted PROVIDER_OWNER before their provider record exists."""
+        who = principal(Role.PROVIDER_OWNER, provider_id=None)
+        assert ownership_filter(who, Resource.ACCOMMODATION).is_deny_all
+
+    @pytest.mark.parametrize(
+        "resource",
+        [
+            Resource.COUNTRY,
+            Resource.REGION,
+            Resource.DESTINATION,
+            Resource.TAG,
+            Resource.ATTRACTION,
+            Resource.CANCELLATION_POLICY,
+        ],
+    )
+    def test_a_provider_does_not_reach_geography_or_vocabulary(self, resource: Resource) -> None:
+        """A provider does not get to create the destination it sells in, or
+        edit a §14.6 policy every other property also references."""
+        who = principal(Role.PROVIDER_OWNER, provider_id=42)
+        assert ownership_filter(who, resource).is_deny_all

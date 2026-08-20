@@ -68,6 +68,21 @@ class Resource(StrEnum):
     SESSION = "SESSION"
     DEVICE = "DEVICE"
 
+    # Phase 3 - catalogue (§27.8) and the capacity counters it does not own.
+    COUNTRY = "COUNTRY"
+    REGION = "REGION"
+    DESTINATION = "DESTINATION"
+    TAG = "TAG"
+    ATTRACTION = "ATTRACTION"
+    CANCELLATION_POLICY = "CANCELLATION_POLICY"
+    ACCOMMODATION = "ACCOMMODATION"
+    ROOM_TYPE = "ROOM_TYPE"
+    ROOM_AVAILABILITY = "ROOM_AVAILABILITY"
+    ACTIVITY = "ACTIVITY"
+    ACTIVITY_SCHEDULE = "ACTIVITY_SCHEDULE"
+    ACTIVITY_DEPARTURE = "ACTIVITY_DEPARTURE"
+    MEDIA = "MEDIA"
+
 
 class Scope(StrEnum):
     OWNED = "OWNED"
@@ -106,6 +121,50 @@ _GLOBAL_READ = OwnershipRule(Scope.GLOBAL_READ)
 
 def _own(principal_attr: str, row_field: str) -> OwnershipRule:
     return OwnershipRule(Scope.OWNED, principal_attr=principal_attr, row_field=row_field)
+
+
+#: Catalogue rows are administered, not owned by the people who read them.
+#: §27.8 gives CATALOGUE_ADMIN the console; §5.2 gives SUPPORT_AGENT global
+#: read and nobody else anything.
+#:
+#: Written as a builder rather than as nine explicit lines per resource for a
+#: reason that matters more than brevity: thirteen resources times nine roles
+#: is a hundred and seventeen near-identical entries, and the two interesting
+#: rows - the provider-owned ones - would be invisible inside them. The
+#: builder is exhaustive over `Role` by construction, so the totality test
+#: still holds and a role added to §5.2 still fails the build until placed.
+#:
+#: Tourists and drivers appear as NONE, which is not an oversight. The public
+#: catalogue endpoints of §9.3.2 are unauthenticated: they are filtered by
+#: `domain.visibility`, not by ownership, so a tourist never asks this table
+#: anything. Granting them a read here would be a second, weaker answer to
+#: "what may the public see".
+
+
+def _administered(resource: Resource) -> dict[tuple[Role, Resource], OwnershipRule]:
+    """§27.8: the catalogue console writes; support reads; nobody else."""
+    rules = dict.fromkeys(Role, _NONE)
+    rules[Role.CATALOGUE_ADMIN] = _GLOBAL
+    rules[Role.SUPER_ADMIN] = _GLOBAL
+    rules[Role.SUPPORT_AGENT] = _GLOBAL_READ
+    return {(role, resource): rule for role, rule in rules.items()}
+
+
+def _provider_listed(
+    resource: Resource, row_field: str
+) -> dict[tuple[Role, Resource], OwnershipRule]:
+    """As `_administered`, plus the provider's own listings.
+
+    §5.2 scopes a provider to `provider_id`. No endpoint uses this path in
+    Phase 3 - the portal is Phase 11, and until then administrators create
+    listings - but the rule belongs where §5.2 puts it. Leaving the cell at
+    NONE would be a lie the totality test cannot catch, and the first person
+    to build the portal would have to work out the intent from scratch.
+    """
+    rules = _administered(resource)
+    for role in (Role.PROVIDER_OWNER, Role.PROVIDER_STAFF):
+        rules[(role, resource)] = _own("provider_id", row_field)
+    return rules
 
 
 #: Every (role, resource) pair, stated. See the totality test.
@@ -157,6 +216,33 @@ OWNERSHIP: Mapping[tuple[Role, Resource], OwnershipRule] = MappingProxyType(
         (Role.CATALOGUE_ADMIN, Resource.DEVICE): _own("user_id", "user_id"),
         (Role.COMPLIANCE_ADMIN, Resource.DEVICE): _NONE,
         (Role.SUPER_ADMIN, Resource.DEVICE): _GLOBAL,
+        # --- catalogue -------------------------------------------------------
+        # Geography and vocabulary: administered, never provider-owned. A
+        # provider does not get to create the destination it sells in.
+        **_administered(Resource.COUNTRY),
+        **_administered(Resource.REGION),
+        **_administered(Resource.DESTINATION),
+        **_administered(Resource.TAG),
+        **_administered(Resource.ATTRACTION),
+        # §14.6 policies are referenced by properties and activities across
+        # every market. A provider choosing one is not a provider editing one.
+        **_administered(Resource.CANCELLATION_POLICY),
+        # --- provider-supplied listings --------------------------------------
+        **_provider_listed(Resource.ACCOMMODATION, "provider_id"),
+        **_provider_listed(Resource.ROOM_TYPE, "accommodation__provider_id"),
+        **_provider_listed(Resource.ACTIVITY, "provider_id"),
+        **_provider_listed(Resource.ACTIVITY_SCHEDULE, "activity__provider_id"),
+        # --- capacity counters (inventory) ------------------------------------
+        # The rows live in `inventory` (ADR 0011) and nothing writes them in
+        # Phase 3. The rule is stated now because §5.2 states it: a provider
+        # publishes `rooms_open` for its own room types and nobody else's.
+        **_provider_listed(Resource.ROOM_AVAILABILITY, "room_type__accommodation__provider_id"),
+        **_provider_listed(Resource.ACTIVITY_DEPARTURE, "activity__provider_id"),
+        # --- media -------------------------------------------------------------
+        # Polymorphic, so there is no single column to scope by: the owner of a
+        # `media` row is whatever `(owner_type, owner_id)` points at.
+        # Administered until Phase 11 gives the portal a resolved rule.
+        **_administered(Resource.MEDIA),
     }
 )
 
