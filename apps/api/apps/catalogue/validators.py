@@ -1,0 +1,53 @@
+"""Model-layer validators for the geography hierarchy — SRS §4.1, §7.5.6.
+
+`apps.catalogue.domain.hierarchy` already refuses an incoherent country code,
+currency or IANA zone, and every service path goes through it. That is not
+enough on its own: §27.8 requires an administrator to create a destination
+"with no code change and no deployment", and the console writes through
+`Model.full_clean`, not through a service. A validator on the field is what
+puts the domain rule on that path.
+
+The zone matters more than the other two. `Africa/Zanzibar` looks exactly like
+an IANA name and is not one; a regex passes it, the row saves, and the failure
+surfaces later as a broken opening-hours table in every attraction in that
+destination — far from the console field that caused it.
+
+Validators are `ValidationError`-raising wrappers and nothing more. The rule
+itself stays in `domain/`, which owns it and is covered to 95%.
+"""
+
+from __future__ import annotations
+
+from django.core.exceptions import ValidationError
+
+from apps.catalogue.domain import hierarchy
+
+__all__ = [
+    "validate_iana_timezone",
+    "validate_iso_country_code",
+    "validate_iso_currency_code",
+]
+
+
+def validate_iana_timezone(value: str) -> None:
+    """The zone must exist in the running system's tz database."""
+    try:
+        hierarchy.validate_timezone(value)
+    except hierarchy.HierarchyError as exc:
+        raise ValidationError(str(exc), code="invalid_timezone") from exc
+
+
+def validate_iso_country_code(value: str) -> None:
+    """ISO 3166-1 alpha-2, structurally. §7.5.6 stores `CHAR(2)`."""
+    try:
+        hierarchy.validate_country_code(value)
+    except hierarchy.HierarchyError as exc:
+        raise ValidationError(str(exc), code="invalid_country_code") from exc
+
+
+def validate_iso_currency_code(value: str) -> None:
+    """ISO 4217 alpha-3, structurally. §7.2 pairs it with every money column."""
+    try:
+        hierarchy.validate_currency_code(value)
+    except hierarchy.HierarchyError as exc:
+        raise ValidationError(str(exc), code="invalid_currency_code") from exc

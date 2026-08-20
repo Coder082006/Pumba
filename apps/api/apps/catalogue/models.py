@@ -1,8 +1,213 @@
-"""Data-access layer (SRS §8.2 layer 4).
+"""catalogue module — SRS §6.4.
 
-    Owns:
-        country, region, destination, attraction, activity, activity_schedule,
-        accommodation, room_type, media
+    Owns:       country, region, destination, attraction, activity,
+                activity_schedule, accommodation, room_type, media
+    Interface:  search_activities(), get_destination(), list_room_types()
+    Depends on: location
+    Layer:      L1
 
-Phase 1: skeleton only.
+Data-access layer (SRS §8.2 layer 4).
+
+The geography hierarchy is `country 1..* region 1..* destination`, per the §7.3
+ERD and relationship R6 (RESTRICT). `destination` follows §7.5.6 column for
+column; `country` and `region` exist only as boxes in the ERD and are designed
+here against the §7.2 conventions.
+
+Two things are worth stating outright, because they are what §4.2 asks of this
+table set and what §41.12 measures:
+
+**Nothing here knows a destination by name.** Behaviour comes from flags:
+`is_gateway`, `timezone`, `default_currency`, `feature_rank`, `is_active`, so
+adding Arusha is three console forms and no deployment.
+
+**Coherence is enforced by the database, not by convention.** The gateway
+columns are non-null if and only if `is_gateway`; `feature_rank` is positive;
+the timezone is a zone the server can actually resolve. Each of those is one
+mistyped console field away, and each breaks something far from where it was
+typed.
 """
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
+from django.contrib.gis.db import models as gis_models
+from django.contrib.postgres.indexes import GistIndex
+from django.db import models
+
+from apps.catalogue.domain.hierarchy import GatewayType
+from apps.catalogue.validators import (
+    validate_iana_timezone,
+    validate_iso_country_code,
+    validate_iso_currency_code,
+)
+from apps.common.models import SoftDeleteModel
+
+__all__ = ["GatewayTypeChoices", "Country", "Region", "Destination"]
+
+
+class GatewayTypeChoices(models.TextChoices):
+    """§7.5.6: AIRPORT, SEAPORT or LAND_BORDER.
+
+    Built from the domain enum rather than restating it, so the column and
+    `hierarchy.validate_gateway` cannot drift apart.
+    """
+
+    AIRPORT = GatewayType.AIRPORT.value, "Airport"
+    SEAPORT = GatewayType.SEAPORT.value, "Seaport"
+    LAND_BORDER = GatewayType.LAND_BORDER.value, "Land border"
+
+
+class Country(SoftDeleteModel):
+    """§7.3 ERD: iso_code (unique), name, currency, timezone, is_active.
+
+    The currency and timezone here are defaults a destination may override.
+    §4.2 requires currency to be resolved from `destination.country`, and a
+    country large enough to span zones has destinations that disagree with it.
+    """
+
+    iso_code = models.CharField(max_length=2, validators=[validate_iso_country_code])
+    name = models.CharField(max_length=80)
+    default_currency = models.CharField(max_length=3, validators=[validate_iso_currency_code])
+    default_timezone = models.CharField(max_length=60, validators=[validate_iana_timezone])
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "country"
+        ordering = ["name"]
+        constraints = [
+            # Partial, per §7.7: a soft-deleted country must not hold its ISO
+            # code hostage against that market being re-opened later.
+            models.UniqueConstraint(
+                fields=["iso_code"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="country_iso_code_unique_alive",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.iso_code
+
+
+class Region(SoftDeleteModel):
+    """§7.3 ERD: country_id, name, is_active. R6 is 1 : 1..* RESTRICT."""
+
+    country = models.ForeignKey(Country, on_delete=models.PROTECT, related_name="regions")
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=140)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "region"
+        ordering = ["country__iso_code", "name"]
+        constraints = [
+            # Scoped to the country rather than global: two countries may each
+            # have a northern region, and neither should block the other.
+            models.UniqueConstraint(
+                fields=["country", "slug"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="region_slug_unique_alive_per_country",
+            ),
+        ]
+        indexes = [models.Index(fields=["country", "is_active"], name="region_country_active_idx")]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Destination(SoftDeleteModel):
+    """SRS §7.5.6, in full."""
+
+    region = models.ForeignKey(Region, on_delete=models.PROTECT, related_name="destinations")
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=140)
+
+    #: §7.5.6 "Catalogue copy": the one-line blurb on a card, and the source of
+    #: the `generateMetadata` description.
+    summary = models.TextField(null=True, blank=True, default=None)
+    #: §24.8 puts a description on the page beneath the hero. A card blurb and
+    #: a page body are different lengths for different places, and collapsing
+    #: them into one column means one of the two always reads badly.
+    description = models.TextField(blank=True, default="")
+
+    #: §13.1 forbids planar approximations, so this is `geography`, not
+    #: `geometry`: `ST_Distance` then returns geodesic metres.
+    centroid = gis_models.PointField(geography=True, srid=4326)
+
+    is_gateway = models.BooleanField(default=False)
+    gateway_type = models.CharField(
+        max_length=20, choices=GatewayTypeChoices.choices, null=True, blank=True, default=None
+    )
+    gateway_code = models.CharField(max_length=10, null=True, blank=True, default=None)
+
+    #: An IANA name, never a UTC offset: an offset loses the DST rules, and
+    #: §15.2 evaluates opening hours in this zone.
+    timezone = models.CharField(max_length=60, validators=[validate_iana_timezone])
+    default_currency = models.CharField(max_length=3, validators=[validate_iso_currency_code])
+
+    #: §7.5.6 "Visibility gate". Null means no gate; `domain.visibility` treats
+    #: the launch day itself as visible.
+    launch_date = models.DateField(null=True, blank=True, default=None)
+
+    #: §16.5 sorts this ASCENDING, so 1 is the most featured. Constrained
+    #: positive because 0 would outrank every curated destination, silently.
+    feature_rank = models.SmallIntegerField(default=100)
+
+    #: §7.5.6 defaults this to false. A destination stays invisible until
+    #: somebody decides it is ready, which is the safer direction for the
+    #: mistake to fall in.
+    is_active = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "destination"
+        ordering = ["feature_rank", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="destination_slug_unique_alive",
+            ),
+            # §7.5.6: "partial UNIQUE(gateway_code) WHERE is_gateway".
+            models.UniqueConstraint(
+                fields=["gateway_code"],
+                condition=models.Q(is_gateway=True, deleted_at__isnull=True),
+                name="destination_gateway_code_unique_alive",
+            ),
+            # If and only if, in both directions. A `gateway_code` on a row
+            # with `is_gateway = false` sits outside the partial index above,
+            # so a later gateway can claim the same code.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        is_gateway=True, gateway_type__isnull=False, gateway_code__isnull=False
+                    )
+                    | models.Q(
+                        is_gateway=False, gateway_type__isnull=True, gateway_code__isnull=True
+                    )
+                ),
+                name="destination_gateway_columns_coherent",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(feature_rank__gte=1),
+                name="destination_feature_rank_positive",
+            ),
+        ]
+        indexes = [
+            # §7.5.6: "GIST(centroid); INDEX(region_id, is_active)".
+            GistIndex(fields=["centroid"], name="destination_centroid_gist"),
+            models.Index(fields=["region", "is_active"], name="destination_region_active_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return self.slug
+
+    @property
+    def today_local(self) -> date:
+        """The current date where the destination is, not where the server is.
+
+        A destination launching on 1 September launches at midnight local. A
+        server reasoning in UTC opens it three hours early in East Africa and
+        most of a day late in Auckland.
+        """
+        return datetime.now(tz=ZoneInfo(self.timezone)).date()
