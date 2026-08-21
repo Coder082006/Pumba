@@ -1,9 +1,23 @@
 # Phase 3 — Zanzibar Tourism Catalogue
 
-**Status:** Proposed. Awaiting the design gate before any API wiring.
+**Status:** In progress.
 **SRS:** §37.3, §4.1–4.3, §6.4, §7.5.6–7.5.7, §7.6, §14, §15, §16, §9.3.2 (API-02),
-§24.7–24.13, §27.8, §29 (NFR-P01), §41.12, Appendix C
-**Acceptance:** TC-020, TC-021, TC-902, §41.12 destination independence, Lighthouse gates
+§24.7–24.13, §27.8, §29 (NFR-P01), §41.12, Appendix C — **as amended to v1.2**
+**Acceptance:** ~~TC-020~~, TC-021, TC-902, §41.12 destination independence, Lighthouse gates
+
+> **Amended 2026-08-21 — [ADR 0013](adr/0013-accommodation-is-a-location-reference-in-v1.md).**
+> Accommodation is no longer a bookable product. It is a curated location
+> reference, and a STAY itinerary item is a *stay anchor*: location and dates,
+> no provider, no price, no booking, no inventory. `room_type` and
+> `room_availability` are v2 and have left the v1 schema.
+>
+> This partly reverses **Q2** below, which brought `room_availability` forward
+> so TC-020 could pass. TC-020 is void in v1 and is amended in the SRS rather
+> than deleted; it returns with v2. Q2 is left in place, struck through, because
+> the reasoning that produced ADR 0011 and ADR 0012 came out of it.
+>
+> The sections below are amended in place. Where a deliverable is deferred it is
+> marked, not deleted, so the commit numbering keeps resolving.
 
 ---
 
@@ -50,7 +64,15 @@ platform-specific, which §37.1's "one command" promise does not survive.
 This supersedes the closing paragraph of ADR 0004, so ADR 0004 gets a
 superseded-in-part note and ADR 0009 records the real cost.
 
-### Q2 — TC-020 cannot pass without `room_availability` ⚠️ **decision needed**
+### ~~Q2 — TC-020 cannot pass without `room_availability`~~ — **superseded by ADR 0013**
+
+**Resolved by removing the question.** TC-020 is void in v1: there is no
+accommodation search with availability, because there is no availability. Option
+B was taken and then partly reversed — `room_availability` shipped in commit 19
+and left again in `inventory/0002`. The reasoning was not wasted: it produced
+ADR 0011 (inventory owns the counter tables) and ADR 0012 (cross-module
+references are ids), both of which still hold and both of which now govern
+`activity_departure` alone. The original question follows.
 
 Your scope says accommodation is "models and reads only — `room_availability`,
 holds and the authoritative availability check are Phase 5". Your acceptance
@@ -386,9 +408,10 @@ is unique among gateways).
 
 ## 2. Data model
 
-Thirteen tables. Eleven are `catalogue`'s; `room_availability` and
-`activity_departure` turned out to belong to `inventory` (ADR 0011), and
-`provider_id` turned out not to be a foreign key (ADR 0012). Every one carries `public_id UUID`,
+Eleven tables. Ten are `catalogue`'s; `activity_departure` turned out to belong
+to `inventory` (ADR 0011), `provider_id` turned out not to be a foreign key
+(ADR 0012), and `room_type` and `room_availability` turned out not to be v1 at
+all (ADR 0013). Every one carries `public_id UUID`,
 `created_at`, `updated_at` (trigger from §7.2), and `deleted_at` where soft
 deletion applies.
 
@@ -400,9 +423,9 @@ deletion applies.
 | `tag` | `slug`, `label`, `sort_order`, `is_active` — the §24.7 chips |
 | `attraction` | §15.1 — `coordinates`, `opening_hours` JSONB, `entrance_fee` + `fee_currency`, `visit_minutes`, `tags text[]`, `accessibility_notes`, `feature_rank`, `is_active` |
 | `cancellation_policy` | `code`, `name`, `tiers` JSONB (ordered `{hours_before, refund_percent}`) |
-| `accommodation` | §7.5.7 — `provider_id`, `destination_id`, `property_type`, `coordinates`, `address_line`, `star_rating`, `amenities` JSONB, `check_in_time`, `check_out_time`, `cancellation_policy_id`, `child_policy` JSONB, `rating_avg`, `rating_count` |
-| `room_type` | §7.5.7 — `max_adults`, `max_children`, `bed_configuration`, `size_sqm`, `base_rate`, `currency`, `total_rooms`, `amenities` JSONB, `min_nights` |
-| ~~`room_availability`~~ | **Moved to `inventory` — see [ADR 0011](adr/0011-inventory-owns-the-availability-tables.md).** SRS §6.4 gives the table to `inventory`, which depends on `catalogue`; putting it here inverted the edge. Still Q2 option B, still read-only this phase. |
+| `accommodation` | §7.5.7 **as amended** — a location record: `destination_id`, `name`, `slug`, `property_type`, `coordinates`, `address_line`, `check_in_time`, `check_out_time`, `feature_rank`, `is_active`. No provider, no rate, no policy, no rating ([ADR 0013](adr/0013-accommodation-is-a-location-reference-in-v1.md)) |
+| ~~`room_type`~~ | **v2 — [ADR 0013](adr/0013-accommodation-is-a-location-reference-in-v1.md).** Shipped in commit 19 and dropped by `catalogue/0006`. |
+| ~~`room_availability`~~ | **v2 — [ADR 0013](adr/0013-accommodation-is-a-location-reference-in-v1.md).** Moved to `inventory` by [ADR 0011](adr/0011-inventory-owns-the-availability-tables.md), then dropped by `inventory/0002`. |
 | `activity` | §16.1 — `provider_id`, `destination_id`, `attraction_id` NULL, `coordinates`, `meeting_point`, `duration_minutes`, `price_per_person`, `price_per_group`, `currency`, `min_pax`, `max_pax`, `requirements` JSONB, `inclusions`/`exclusions` JSONB, `tags text[]`, `cancellation_policy_id`, `booking_cutoff_hours`, `confirmation_mode`, `rating_avg`, `rating_count`, `feature_rank` |
 | `activity_schedule` | §16.2 — `weekday_mask`, `start_time`, `capacity`, `valid_from`, `valid_to`. Model only. |
 | ~~`activity_departure`~~ | **Moved to `inventory` — see [ADR 0011](adr/0011-inventory-owns-the-availability-tables.md)**, for the same reason. Model + read only; materialisation is Phase 5. |
@@ -413,9 +436,8 @@ deletion applies.
 ```
 GIST(destination.centroid), GIST(attraction.coordinates),
 GIST(accommodation.coordinates), GIST(activity.coordinates)
-GIN(accommodation.amenities), GIN(attraction.tags), GIN(activity.tags)
+GIN(attraction.tags), GIN(activity.tags)      — accommodation.amenities: v2
 GIN(search_vector) on destination, attraction, activity, accommodation
-UNIQUE(room_availability.room_type_id, stay_date)
 UNIQUE(activity_departure.activity_id, departs_at)
 INDEX(destination.region_id, is_active); UNIQUE(destination.slug)
 partial UNIQUE(destination.gateway_code) WHERE is_gateway
@@ -452,11 +474,12 @@ mechanism working as designed.
 
 - `CATALOGUE_ADMIN`, `SUPER_ADMIN` → `GLOBAL` (this is §27.8)
 - `SUPPORT_AGENT` → `GLOBAL_READ`
-- `PROVIDER_OWNER`, `PROVIDER_STAFF` → `OWNED` on `accommodation`, `room_type`,
-  `activity` and their children, scoped by `provider_id`. No endpoint uses this
-  path in Phase 3 — the provider portal is Phase 11 — but the rule is where §5.2
-  puts it, and leaving the cell at `DENY_ALL` would be a lie the totality test
-  cannot catch.
+- `PROVIDER_OWNER`, `PROVIDER_STAFF` → `OWNED` on `activity` and its children,
+  scoped by `provider_id`. No endpoint uses this path in Phase 3 — the provider
+  portal is Phase 11 — but the rule is where §5.2 puts it, and leaving the cell
+  at `DENY_ALL` would be a lie the totality test cannot catch. `accommodation`
+  is **administered**, not provider-listed: a location record has no provider
+  owner (ADR 0013), so it is scoped like `attraction`.
 - Everyone else → `DENY_ALL`.
 
 Public catalogue reads are **unauthenticated** (§9.3.2 shows `—` for auth), so
@@ -480,9 +503,9 @@ GET /attractions/{public_id}            + opening hours for the coming week, fee
 GET /activities                         ?destination=&date=&pax=&tags=&max_price=&sort=
 GET /activities/{public_id}
 GET /activities/{public_id}/departures  ?from=&to=&pax=
-GET /accommodations                     ?destination=&check_in=&check_out=&adults=&children=&rooms=&amenities=&sort=
+GET /accommodations                     ?destination=&q=&sort=      curated location records
 GET /accommodations/{public_id}
-GET /accommodations/{public_id}/room-types  ?check_in=&check_out=&adults=&children=
+                                        room-types: v2 (ADR 0013)
 GET /search                             ?q=&kind=&destination=
 GET /tags                               the §24.7 chip vocabulary
 ```
@@ -499,9 +522,13 @@ carries it in the payload, not in prose:
 description states the §14.3/BR-104 two-check rule verbatim so a consumer reading
 the contract cannot conclude otherwise.
 
-`GET /accommodations/{id}/room-types` is the SRS's `roomtypes` path written
-correctly; §9.3.2's rendering splits it across a line break and §24.13 writes it
-hyphenated.
+`GET /accommodations/{id}/room-types` is **v2** (ADR 0013). When it returns it
+is the SRS's `roomtypes` path written correctly: §9.3.2's rendering splits it
+across a line break and §24.13 writes it hyphenated.
+
+`GET /accommodations` returns location records only — name, property type,
+coordinates, address, check-in and check-out times. No price, no availability,
+no `basis` field, because there is nothing indicative about a coordinate.
 
 **No N+1.** Every list endpoint is written with `select_related` /
 `prefetch_related` and pinned by `assertNumQueries` at a constant that does not
@@ -683,39 +710,50 @@ Empty departures shows the next available date; sold-out renders disabled with
 "Full"; the departures panel retries on its own (§24.10). JSON-LD `Product` with
 an `Offer` carrying `price`, `priceCurrency` and `availability`.
 
-### 7.5 Accommodation search — `/stays` (§24.11)
+### 7.5 Where are you staying — `/trip/[id]/stay` (§24.11 as amended)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Where  [ Nungwi ▾ ]  In [12 Aug] Out [16 Aug]  Guests [2·0] │
-│  Rooms [1]                                    [ List | Map ] │
+│  Where are you staying?          In [12 Aug]  Out [16 Aug]   │
 ├───────────────┬──────────────────────────────────────────────┤
-│  Price        │  9 stays in Nungwi · 4 nights                │
-│  ▭▭▭▭▭▭▭      │  ┌──────────────────────────────────────────┐│
-│  Type         │  │[img] Kilindi Zanzibar          ★★★★★     ││
-│  ☐ Hotel      │  │      Beachfront · pool · spa             ││
-│  ☐ Resort     │  │      Free cancellation to 10 Aug         ││
-│  Stars ★★★☆   │  │                          $1,240 total    ││
-│  Amenities    │  │                          $310 avg/night  ││
-│  ☐ Pool ☐ Wifi│  └──────────────────────────────────────────┘│
+│               │  Search Nungwi properties…                   │
+│    [ map ]    │  ┌──────────────────────────────────────────┐│
+│      📍       │  │ Kilindi Zanzibar          Resort · Nungwi││
+│               │  │ Kendwa Rocks              Hotel  · Kendwa││
+│  confirm pin  │  └──────────────────────────────────────────┘│
+│               │  Can't find it?  [ Enter any hotel or address ]│
+│               │  ☐ I haven't booked anywhere yet             │
 └───────────────┴──────────────────────────────────────────────┘
 ```
 
-The **total for the stay is the headline number and the nightly average is
-beneath it** (§24.11: "so comparison is honest"). Check-out before check-in is a
-client-side block *and* a 422 `INVALID_DATE_RANGE` from the server — TC-021 is
-asserted at the API, not at the form. No-results offers to widen dates or relax
-filters.
+One screen, no prices, no availability, no room types. Two ways in:
 
-### 7.6 Accommodation detail — `/stays/[slug]` (§24.12, §24.13)
+- **Curated property** — pick from the destination's seeded accommodation
+  records. The coordinate is exact, so the transfer either side quotes to the
+  metre.
+- **Free entry** — any hotel name or address, resolved through the §13.2
+  geocoding path and shown as a pin the tourist confirms. **An unconfirmed
+  geocode is never silently persisted**: no confirmation, no anchor.
 
-Gallery, description, amenity grid, map, house rules, check-in/check-out times,
-cancellation policy, reviews summary, and the room-type list with occupancy, bed
-configuration, per-night rate, **stay total**, and an availability indicator.
-Fewer than three reviews renders "New on the platform" rather than a misleading
-average (§24.12). Unavailable room types render greyed with the reason, which
-§24.13 says is more useful than hiding them. JSON-LD `Hotel` with
-`amenityFeature` and `checkinTime`/`checkoutTime`.
+"I haven't booked anywhere yet" skips the anchor and leaves VR-16's warning
+standing, which is honest rather than obstructive — a trip still quotes with an
+uncovered night, it just cannot plan transfers around it.
+
+Check-out before check-in is a client-side block *and* a 422
+`INVALID_DATE_RANGE` from the server, bounded by `stay.max_nights`; TC-021 is
+asserted at the API, not at the form. `domain.pricing.stay_nights` is what both
+sides use.
+
+Where a Booking.com affiliate deep link is configured (§38.2, Appendix D10) a
+property card may offer "book this stay". It leaves the Platform, it is never
+part of the basket, and nothing in the booking, pricing or itinerary path
+depends on it.
+
+### ~~7.6 Accommodation detail — `/stays/[slug]`~~ — v2 (§24.12, §24.13)
+
+Deferred with the subsystem (ADR 0013). §24.11 in its amended form is the whole
+of the accommodation experience in v1. Numbering retained so the commit list and
+the §24 cross-references keep resolving.
 
 ### 7.7 Cross-cutting web deliverables
 
@@ -738,7 +776,8 @@ average (§24.12). Unavailable room types render greyed with the reason, which
 |---|---|
 | Ten destinations browsable, searchable, filterable | Integration test over the seeded set per endpoint |
 | **TC-902 determinism** | Same request 50×, assert byte-identical serialised bodies; plus the `rank_key` injectivity property test |
-| **TC-020** | Per Q2 — full under option B, split under option A |
+| ~~**TC-020**~~ | Void in v1 (ADR 0013); amended in the SRS, not deleted, and returns with v2 |
+| **Stay anchoring** | A curated property and a free-entry address each produce a STAY item with coordinates and dates and no price; an unconfirmed geocode produces none (§13.2); §41.4 as amended |
 | **TC-021** | 422 `INVALID_DATE_RANGE`, asserted at the API and in the domain |
 | **§41.12 Arusha** | Backend test creating country/region/destination/attraction **only through the admin API**, then asserting presence in `/destinations`, `/attractions`, `/search` and the sitemap payload; plus a Next.js render test. Written **first**, in the first third of the phase, per your instruction |
 | Timezone | The same opening-hours JSON evaluated in three zones, asserting different answers |
@@ -775,9 +814,12 @@ Roughly 34 commits, each one logical change, each pushed.
 17. Models and migrations: geography hierarchy
 18. Models and migrations: attraction, tag
 19. Models and migrations: accommodation, room_type, room_availability
+    — ~~room_type~~ and ~~room_availability~~ removed again in 22a/22b (ADR 0013)
 20. Models and migrations: activity, schedule, departure, media, cancellation policy
 21. `search_vector` generated columns and the GIN indexes
 22. Authorisation resources and the extended `OWNERSHIP` map
+22a. ADR 0013 + SRS v1.2; `room_availability` and `room_type` leave the schema;
+     accommodation reduced to a location record; domain functions marked v2
 23. Repositories and selectors — the visibility filter and the ranking translation
 24. **§41.12 Arusha acceptance test** (fails until 25–27 land — deliberately, and early)
 25. Admin catalogue write API + audit
@@ -788,7 +830,9 @@ Roughly 34 commits, each one logical change, each pushed.
 30. Web: shell and shared components (Money, LocalTime, Map, gallery)
 31. Web: Explore + Destination
 32. Web: Attraction + Activity
-33. Web: Stays search + detail
+33. Web: "Where are you staying" (§24.11 as amended) — curated list, free
+    entry with a confirmed map pin, check-in and check-out. ~~Stays detail and
+    room selection~~ are v2 (§24.12, §24.13)
 34. `sitemap.ts`, `robots.ts`, JSON-LD, Lighthouse CI job
 
 ---
