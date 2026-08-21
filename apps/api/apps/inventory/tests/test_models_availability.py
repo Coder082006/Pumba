@@ -1,4 +1,4 @@
-"""The capacity counters — SRS §7.5.8, §7.5.9, §14.3, §16.3, §17.1, and Q2.
+"""The capacity counter — SRS §7.5.9, §16.3, §17.1, and Q2.
 
 Two things are being proved here, and only one of them is about columns.
 
@@ -9,7 +9,7 @@ when Phase 5 adds the first `UPDATE`, the invariant it must respect is already
 there and already tested.
 
 **`catalogue` has no path to these rows.** Q2 asked for a test asserting the
-catalogue module exposes no mutation of `room_availability`. ADR 0011 put the
+catalogue module exposes no mutation of a capacity counter. ADR 0011 put the
 table in its §6.4 home and ADR 0012 made the references ids rather than
 `ForeignKey`s, which finished the job: there is no reverse accessor, no
 relation and no import, so catalogue cannot read a capacity counter at all, let
@@ -19,36 +19,24 @@ tempted to "fix".
 
 The parent rows come from `catalogue_rows`, which uses `apps.get_model` rather
 than an import - the contract is not relaxed for tests.
+
+`room_availability` was the second counter table until ADR 0013 made
+accommodation a location reference. Its absence is asserted below rather than
+left implicit: a dropped table that nothing checks for is a table somebody
+reintroduces by copying a v2 branch.
 """
 
 from __future__ import annotations
 
 import datetime as dt
-from decimal import Decimal
 
 import pytest
 from django.apps import apps as django_apps
-from django.db import IntegrityError, models
+from django.db import IntegrityError, connection, models
 from django.utils import timezone
 
-from apps.inventory.models import ActivityDeparture, DepartureStatus, RoomAvailability
-from apps.inventory.tests.catalogue_rows import (
-    make_activity_id,
-    make_activity_schedule_id,
-    make_room_type_id,
-)
-
-NIGHT = dt.date(2027, 8, 12)
-
-
-def _availability(**overrides: object) -> RoomAvailability:
-    values: dict[str, object] = {
-        "room_type_id": overrides.pop("room_type_id", None) or make_room_type_id().pk,
-        "stay_date": NIGHT,
-        "rooms_open": 5,
-    }
-    values.update(overrides)
-    return RoomAvailability.objects.create(**values)  # type: ignore[arg-type]
+from apps.inventory.models import ActivityDeparture, DepartureStatus
+from apps.inventory.tests.catalogue_rows import make_activity_id, make_activity_schedule_id
 
 
 def _departure(**overrides: object) -> ActivityDeparture:
@@ -64,15 +52,8 @@ def _departure(**overrides: object) -> ActivityDeparture:
 class TestCatalogueHasNoPathToTheseRows:
     """Q2's guard, and the reason ADRs 0011 and 0012 exist."""
 
-    def test_the_tables_belong_to_inventory(self) -> None:
-        assert RoomAvailability._meta.app_label == "inventory"
+    def test_the_table_belongs_to_inventory(self) -> None:
         assert ActivityDeparture._meta.app_label == "inventory"
-
-    def test_a_room_type_has_no_reverse_accessor_to_its_calendar(self) -> None:
-        """With a `ForeignKey` this would be `room_type.availability`, and
-        catalogue code could write capacity with no import to catch."""
-        room_type = django_apps.get_model("catalogue", "RoomType")
-        assert not hasattr(room_type, "availability")
 
     def test_an_activity_has_no_reverse_accessor_to_its_departures(self) -> None:
         activity = django_apps.get_model("catalogue", "Activity")
@@ -91,7 +72,7 @@ class TestCatalogueHasNoPathToTheseRows:
     def test_these_models_hold_no_relation_into_catalogue_either(self) -> None:
         """The references are ids. import-linter enforces the import ban; this
         catches the Django-level relation that would not need one."""
-        for model in (RoomAvailability, ActivityDeparture):
+        for model in (ActivityDeparture,):
             relations = [f for f in model._meta.get_fields() if f.is_relation]
             assert relations == [], f"{model.__name__} declares {relations}"
 
@@ -114,24 +95,9 @@ class TestCatalogueHasNoPathToTheseRows:
         assert "catalogue" not in executable
 
 
-class TestSchemaMatchesSection758And759:
-    def test_the_tables_are_named_as_the_srs_names_them(self) -> None:
-        assert RoomAvailability._meta.db_table == "room_availability"
+class TestSchemaMatchesSection759:
+    def test_the_table_is_named_as_the_srs_names_it(self) -> None:
         assert ActivityDeparture._meta.db_table == "activity_departure"
-
-    def test_every_section_758_column_exists(self) -> None:
-        expected = {
-            "room_type_id",
-            "stay_date",
-            "rooms_open",
-            "rooms_held",
-            "rooms_sold",
-            "rate_override",
-            "min_nights",
-            "is_closed",
-            "version",
-        }
-        assert {f.name for f in RoomAvailability._meta.get_fields()} >= expected
 
     def test_every_section_759_column_exists(self) -> None:
         expected = {
@@ -147,78 +113,23 @@ class TestSchemaMatchesSection758And759:
         }
         assert {f.name for f in ActivityDeparture._meta.get_fields()} >= expected
 
-    def test_both_carry_the_optimistic_lock_column(self) -> None:
-        """§7.2 names both tables; §32.3's VERSION_CONFLICT is the failure."""
-        assert RoomAvailability._meta.get_field("version").default == 0
+    def test_it_carries_the_optimistic_lock_column(self) -> None:
+        """§7.2 names the table; §32.3's VERSION_CONFLICT is the failure."""
         assert ActivityDeparture._meta.get_field("version").default == 0
 
-    def test_the_rate_override_is_a_decimal(self) -> None:
-        rate = RoomAvailability._meta.get_field("rate_override")
-        assert isinstance(rate, models.DecimalField)
-        assert (rate.max_digits, rate.decimal_places) == (14, 2)
+    def test_the_price_override_is_a_decimal(self) -> None:
+        price = ActivityDeparture._meta.get_field("price_override")
+        assert isinstance(price, models.DecimalField)
+        assert (price.max_digits, price.decimal_places) == (14, 2)
 
     def test_the_departure_statuses_are_the_four_the_srs_names(self) -> None:
         assert {c.value for c in DepartureStatus} == {"OPEN", "FULL", "CANCELLED", "CLOSED"}
 
 
 @pytest.mark.django_db
-class TestOversellIsImpossible:
-    def test_a_calendar_row_saves_and_reads_back(self) -> None:
-        row = _availability()
-        row.refresh_from_db()
-        assert (row.rooms_open, row.rooms_held, row.rooms_sold) == (5, 0, 0)
-
-    def test_held_plus_sold_may_equal_open(self) -> None:
-        row = _availability(rooms_open=5, rooms_held=2, rooms_sold=3)
-        assert row.sellable == 0
-
-    def test_held_plus_sold_may_not_exceed_open(self) -> None:
-        """The §14.3 constraint Q2 asked to ship now, before any writer."""
-        with pytest.raises(IntegrityError):
-            _availability(rooms_open=5, rooms_held=3, rooms_sold=3)
-
-    def test_a_negative_counter_is_refused(self) -> None:
-        with pytest.raises(IntegrityError):
-            _availability(rooms_held=-1)
-
-    def test_one_row_per_room_type_per_night(self) -> None:
-        room = make_room_type_id()
-        _availability(room_type_id=room.pk)
-        with pytest.raises(IntegrityError):
-            _availability(room_type_id=room.pk)
-
-    def test_the_same_night_for_two_room_types_is_fine(self) -> None:
-        first = make_room_type_id()
-        second = make_room_type_id(accommodation=first.accommodation, name="Suite")
-        _availability(room_type_id=first.pk)
-        _availability(room_type_id=second.pk)
-
-    def test_a_negative_rate_override_is_refused(self) -> None:
-        with pytest.raises(IntegrityError):
-            _availability(rate_override=Decimal("-1.00"))
-
-    def test_a_zero_minimum_stay_is_refused(self) -> None:
-        with pytest.raises(IntegrityError):
-            _availability(min_nights=0)
-
-    def test_a_calendar_row_for_no_such_room_type_is_refused(self) -> None:
-        """The FOREIGN KEY the migration adds in SQL. The column is a plain
-        integer in the model, and integrity is not therefore optional."""
-        with pytest.raises(IntegrityError):
-            _availability(room_type_id=999_999)
-
-
-@pytest.mark.django_db
 class TestSellableIsIndicativeOnly:
-    def test_sellable_is_open_minus_held_minus_sold(self) -> None:
-        row = _availability(rooms_open=5, rooms_held=1, rooms_sold=2)
-        assert row.sellable == 2
-
-    def test_a_closed_night_sells_nothing_even_with_rooms_open(self) -> None:
-        """§7.5.8 stop-sell. A closed night is a decision; an empty one is an
-        outcome, and §24.13 tells the tourist which it is."""
-        row = _availability(rooms_open=5, is_closed=True)
-        assert row.sellable == 0
+    def test_sellable_is_total_minus_held_minus_sold(self) -> None:
+        assert _departure(capacity_total=12, capacity_held=1, capacity_sold=2).sellable == 9
 
     def test_a_cancelled_departure_sells_nothing(self) -> None:
         assert _departure(status=DepartureStatus.CANCELLED).sellable == 0
@@ -237,6 +148,7 @@ class TestDepartures:
         assert departure.capacity_held == 0
 
     def test_capacity_may_not_be_oversold(self) -> None:
+        """The §16.3 constraint Q2 asked to ship before any writer exists."""
         with pytest.raises(IntegrityError):
             _departure(capacity_total=12, capacity_held=6, capacity_sold=7)
 
@@ -276,3 +188,32 @@ class TestDepartures:
         departure = _departure(departs_at=timezone.now() + dt.timedelta(days=1))
         departure.refresh_from_db()
         assert departure.departs_at.utcoffset() == dt.timedelta(0)
+
+
+@pytest.mark.django_db
+class TestRoomAvailabilityHasLeftTheV1Schema:
+    """ADR 0013. A stay anchor has no rooms, so there is nothing to count.
+
+    Asserted rather than assumed. Both the model and the table are cheap to
+    reintroduce by copying a v2 branch, and nothing else in the suite would
+    notice if one came back.
+    """
+
+    def test_the_model_is_gone(self) -> None:
+        with pytest.raises(LookupError):
+            django_apps.get_model("inventory", "RoomAvailability")
+
+    def test_the_table_is_gone(self) -> None:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('room_availability')")
+            assert cursor.fetchone()[0] is None
+
+    def test_the_only_counter_table_is_the_activity_one(self) -> None:
+        """§17.1 I1 as amended in v1.2: one place per resource type, and in v1
+        there is one resource type carrying capacity."""
+        counters = {
+            model._meta.db_table
+            for model in django_apps.get_app_config("inventory").get_models()
+            if any(f.name.endswith("_held") for f in model._meta.get_fields())
+        }
+        assert counters == {"activity_departure"}

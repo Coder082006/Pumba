@@ -125,9 +125,12 @@ class SoftDeleteModel(BaseModel):
 class VersionedModel(models.Model):
     """Optimistic locking.
 
-    SRS §7.2 applies this to booking, inventory_hold, room_availability,
-    activity_departure and driver_assignment. Mixed in by those models when
-    they are built; the failure mode is SRS §32.3 `VERSION_CONFLICT` (409).
+    SRS §7.2 applies this to booking, inventory_hold, activity_departure and
+    driver_assignment. Mixed in by those models when they are built; the
+    failure mode is SRS §32.3 `VERSION_CONFLICT` (409).
+
+    §7.2 also named room_availability, which left the v1 schema with the rest
+    of the accommodation subsystem (ADR 0013) and returns with it in v2.
     """
 
     version = models.IntegerField(default=0, editable=False)

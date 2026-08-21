@@ -24,7 +24,7 @@ from typing import Any
 from django.apps import apps
 from django.contrib.gis.geos import Point
 
-__all__ = ["make_room_type_id", "make_activity_id", "make_activity_schedule_id"]
+__all__ = ["make_activity_id", "make_activity_schedule_id"]
 
 ZONE = "Pacific/Auckland"
 
@@ -46,30 +46,6 @@ def _destination() -> Any:
         timezone=ZONE,
         default_currency="NZD",
         is_active=True,
-    )
-
-
-def make_room_type_id(*, accommodation: Any = None, name: str = "Harbour View Double") -> Any:
-    """A `room_type` row, returned as the object so its id and parents are
-    both reachable."""
-    if accommodation is None:
-        accommodation = _model("Accommodation").objects.create(
-            destination=_destination(),
-            name="The Harbour Lodge",
-            slug="the-harbour-lodge",
-            property_type="LODGE",
-            coordinates=Point(174.07, -35.27, srid=4326),
-            check_in_time=time(14, 0),
-            check_out_time=time(10, 0),
-        )
-    return _model("RoomType").objects.create(
-        accommodation=accommodation,
-        name=name,
-        max_adults=2,
-        max_children=1,
-        base_rate=Decimal("180.00"),
-        currency="NZD",
-        total_rooms=8,
     )
 
 

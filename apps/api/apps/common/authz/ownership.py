@@ -77,7 +77,6 @@ class Resource(StrEnum):
     CANCELLATION_POLICY = "CANCELLATION_POLICY"
     ACCOMMODATION = "ACCOMMODATION"
     ROOM_TYPE = "ROOM_TYPE"
-    ROOM_AVAILABILITY = "ROOM_AVAILABILITY"
     ACTIVITY = "ACTIVITY"
     ACTIVITY_SCHEDULE = "ACTIVITY_SCHEDULE"
     ACTIVITY_DEPARTURE = "ACTIVITY_DEPARTURE"
@@ -238,8 +237,16 @@ OWNERSHIP: Mapping[tuple[Role, Resource], OwnershipRule] = MappingProxyType(
         # --- capacity counters (inventory) ------------------------------------
         # The rows live in `inventory` (ADR 0011) and nothing writes them in
         # Phase 3. The rule is stated now because §5.2 states it: a provider
-        # publishes `rooms_open` for its own room types and nobody else's.
-        **_provider_listed(Resource.ROOM_AVAILABILITY, "room_type__accommodation__provider_id"),
+        # publishes capacity for its own departures and nobody else's.
+        #
+        # `ROOM_AVAILABILITY` was here until ADR 0013. It is removed rather
+        # than reserved, which is the opposite of what happens to
+        # `booking_type = ACCOMMODATION`: that value is a persisted string in a
+        # CHECK constraint, where a gap would cost a renumbering, while this
+        # enum is never written anywhere. A reserved member would either break
+        # the totality assertion over Role x Resource or carry the ownership
+        # path `room_type__accommodation__provider_id`, which can no longer
+        # resolve.
         **_provider_listed(Resource.ACTIVITY_DEPARTURE, "activity__provider_id"),
         # --- media -------------------------------------------------------------
         # Polymorphic, so there is no single column to scope by: the owner of a

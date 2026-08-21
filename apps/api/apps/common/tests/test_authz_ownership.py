@@ -202,7 +202,6 @@ CATALOGUE_RESOURCES = (
     Resource.CANCELLATION_POLICY,
     Resource.ACCOMMODATION,
     Resource.ROOM_TYPE,
-    Resource.ROOM_AVAILABILITY,
     Resource.ACTIVITY,
     Resource.ACTIVITY_SCHEDULE,
     Resource.ACTIVITY_DEPARTURE,
@@ -212,7 +211,6 @@ CATALOGUE_RESOURCES = (
 PROVIDER_LISTED = (
     Resource.ACCOMMODATION,
     Resource.ROOM_TYPE,
-    Resource.ROOM_AVAILABILITY,
     Resource.ACTIVITY,
     Resource.ACTIVITY_SCHEDULE,
     Resource.ACTIVITY_DEPARTURE,
@@ -220,7 +218,7 @@ PROVIDER_LISTED = (
 
 
 class TestCatalogueIsAdministered:
-    """§27.8 and §5.2, for the thirteen Phase 3 resources."""
+    """§27.8 and §5.2, for the Phase 3 resources."""
 
     @pytest.mark.parametrize("resource", CATALOGUE_RESOURCES)
     def test_the_catalogue_admin_reaches_everything(self, resource: Resource) -> None:
@@ -273,11 +271,17 @@ class TestProviderListingsAreScopedByProvider:
         )
         assert allowed.row_field == "accommodation__provider_id"
 
-    def test_a_capacity_row_is_scoped_two_levels_up(self) -> None:
+    def test_a_capacity_row_is_scoped_through_its_activity(self) -> None:
         allowed = ownership_filter(
-            principal(Role.PROVIDER_OWNER, provider_id=42), Resource.ROOM_AVAILABILITY
+            principal(Role.PROVIDER_OWNER, provider_id=42), Resource.ACTIVITY_DEPARTURE
         )
-        assert allowed.row_field == "room_type__accommodation__provider_id"
+        assert allowed.row_field == "activity__provider_id"
+
+    def test_room_availability_is_no_longer_a_resource(self) -> None:
+        """ADR 0013. Removed, not reserved: this enum is never persisted, so
+        there is no numbering to protect, and a member with no table would
+        carry an ownership path that cannot resolve."""
+        assert not hasattr(Resource, "ROOM_AVAILABILITY")
 
     def test_a_provider_with_no_provider_row_reaches_nothing(self) -> None:
         """A user granted PROVIDER_OWNER before their provider record exists."""
