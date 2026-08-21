@@ -1,5 +1,13 @@
-"""Catalogue display pricing and occupancy — SRS §14.2, §20.1, §24.11, BR-101,
-BR-102, TC-021.
+"""Catalogue display pricing and occupancy — SRS §14.2, §16.1, §20.1, §24.11,
+BR-101, BR-102, TC-021.
+
+Three of the groups below cover code that is **v2** — ADR 0013. `stay_total`,
+`nightly_average` and the whole of `occupancy` price or allocate a room, and v1
+sells no room. They are kept green rather than skipped: a deferred function
+whose tests do not run is a deferred function that quietly rots, and the point
+of retaining them was that they would still be correct when wanted.
+
+`stay_nights` is v1 and load-bearing — it bounds a stay anchor.
 """
 
 from __future__ import annotations
@@ -28,6 +36,8 @@ def usd(amount: str) -> Money:
 
 
 class TestStayNights:
+    """v1. BR-101 bounds a stay anchor exactly as it bounded a booking."""
+
     def test_twelfth_to_sixteenth_is_four_nights(self) -> None:
         # Check-out is exclusive: the guest sleeps on the 12th, 13th, 14th and
         # 15th. Off by one here misprices every stay in the catalogue.
@@ -66,6 +76,8 @@ class TestStayNights:
 
 
 class TestStayTotal:
+    """v2 — ADR 0013. Retained, tested, not called by v1."""
+
     def test_it_sums_the_nightly_rates(self) -> None:
         assert stay_total([usd("100.00")] * 4) == usd("400.00")
 
@@ -100,6 +112,8 @@ class TestStayTotal:
 
 
 class TestNightlyAverage:
+    """v2 — ADR 0013."""
+
     def test_it_divides_the_total(self) -> None:
         assert nightly_average(usd("1240.00"), 4) == usd("310.00")
 
@@ -167,6 +181,9 @@ class TestGroupOrPerPerson:
 
 
 class TestPartyFits:
+    """v2 — ADR 0013. VR-05's occupancy half applies to activities only in v1,
+    and an activity's bound is [min_pax, max_pax], not a room."""
+
     def test_a_party_within_both_allowances_fits(self) -> None:
         assert party_fits(max_adults=2, max_children=2, adults=2, children=2) is True
 
@@ -203,6 +220,8 @@ class TestPartyFits:
 
 
 class TestRoomsRequired:
+    """v2 — ADR 0013."""
+
     def test_a_fitting_party_needs_one_room(self) -> None:
         assert rooms_required(max_adults=2, max_children=2, adults=2, children=2) == 1
 

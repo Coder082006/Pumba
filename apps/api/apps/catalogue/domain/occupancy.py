@@ -1,4 +1,12 @@
-"""Room occupancy — SRS BR-102, §14.1.
+"""Room occupancy — SRS BR-102, §14.1. **Deferred to v2 — ADR 0013.**
+
+Nothing in v1 calls this. Accommodation is a location reference, a STAY item is
+an anchor with no room and no party allocation, and §10.6 VR-05 as amended in
+v1.2 applies its occupancy half to activities only. The module is retained
+rather than deleted because it is pure, tested and correct, and the rule it
+encodes is subtle enough that rewriting it from BR-102 would very likely
+reproduce the bug described below rather than the fix.
+
 
     BR-102  Occupancy of the selected room type must accommodate the assigned
             guests; excess parties must book multiple rooms

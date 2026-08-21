@@ -1,15 +1,13 @@
-"""Catalogue display pricing — SRS §14.2, §20.1, §24.11, TC-021.
+"""Catalogue display pricing — SRS §14.2, §16.1, §20.1, §24.11, TC-021.
 
 This module computes what a tourist *sees while browsing*. It does not compute
 what they will be charged. That distinction is the reason it is small and the
 reason it is here rather than in `trip`:
 
-* §14.2 resolves a nightly rate as `room_availability.rate_override` for that
-  (room_type, date), else `room_type.base_rate`, and the stay total as the sum
-  over `[check_in .. check_out - 1 day]`.
-* §24.11 requires the **total for the stay** be the headline figure with the
-  nightly average beneath it, *"so comparison is honest"* — a per-night price
-  next to a four-night stay invites the tourist to do the multiplication wrong.
+* §24.11 requires the **total** be the headline figure with the per-unit price
+  beneath it, *"so comparison is honest"* — a per-night or per-person price
+  next to a four-night stay or a party of six invites the tourist to do the
+  multiplication wrong.
 * §20.1 fixes the arithmetic: `Decimal`, `ROUND_HALF_UP`, *"applied once per
   line total and once per aggregate; intermediate values retain full
   precision."*
@@ -24,6 +22,21 @@ the indicative display figure of the currency port is a separate value that
 must never enter a subtotal — `stay_total` refuses mixed currencies outright
 rather than trying, which is what makes that rule enforceable rather than
 advisory.
+
+Two of the five functions are **v2**, and the split runs through this module
+rather than around it — ADR 0013.
+
+`stay_total` and `nightly_average` price a room, and v1 does not sell one: a
+STAY item is an anchor with no price. They are kept, tested and marked, because
+they are cheap and will be wanted again exactly as written.
+
+`stay_nights` is **not** v2 and is load-bearing in v1. BR-101's "check-out
+strictly after check-in, maximum 30 nights" bounds a *stay anchor* exactly as
+it bounded a booking, and §24.11 in its amended form validates with it. It is
+also what the two deferred functions call, so moving them out would orphan it.
+
+`per_person_total` and `group_or_per_person_total` are §16.1 activity pricing
+and are untouched.
 
 `max_nights` is a parameter — `stay.max_nights` in `system_setting`, already
 registered in Appendix B. BR-101's "maximum stay is 30 nights" is that row's
@@ -56,8 +69,10 @@ def stay_nights(check_in: date, check_out: date, *, max_nights: int) -> int:
     """Nights in `[check_in, check_out)`. BR-101, TC-021.
 
     Check-out is exclusive: a 12th-to-16th stay is four nights, and the guest
-    sleeps on the 12th, 13th, 14th and 15th. Getting this off by one overprices
-    or underprices every stay in the catalogue by one night.
+    sleeps on the 12th, 13th, 14th and 15th. Getting this off by one used to
+    misprice every stay in the catalogue by a night; since ADR 0013 it decides
+    how many nights a stay anchor covers, and therefore which nights VR-16
+    reports as having no anchor to plan transfers around.
     """
     if check_out <= check_in:
         raise DateRangeError("check-out must be after check-in")
@@ -68,7 +83,10 @@ def stay_nights(check_in: date, check_out: date, *, max_nights: int) -> int:
 
 
 def stay_total(nightly: Sequence[Money]) -> Money:
-    """Sum of the per-night rates, rounded once at the end. §14.2, §20.1.
+    """**v2 — ADR 0013.** Sum of the per-night rates. §14.2, §20.1.
+
+    Deferred with the accommodation subsystem: v1 sells no room, so there is no
+    nightly rate to sum. Retained and tested against the day it returns.
 
     Refuses an empty sequence rather than returning zero: a stay with no nights
     is a caller error, and a free stay rendered as "$0 total" is worse than an
@@ -88,7 +106,7 @@ def stay_total(nightly: Sequence[Money]) -> Money:
 
 
 def nightly_average(total: Money, nights: int) -> Money:
-    """§24.11's secondary figure, derived from the headline one.
+    """**v2 — ADR 0013.** §24.11's secondary figure, derived from the headline one.
 
     Derived rather than recomputed so the two cannot drift apart by a rounding
     step while sitting one line above the other on the card.
