@@ -1238,7 +1238,8 @@ title | VARCHAR(160) |  |  | N |  | Rendered label
 starts_at | TIMESTAMPTZ |  |  | N |  | 
 ends_at | TIMESTAMPTZ |  |  | N |  | 
 accommodation_id | BIGINT |  | Y | Y |  | Set when STAY
-room_type_id | BIGINT |  | Y | Y |  | Set when STAY
+room_type_id | BIGINT |  | Y | Y |  | Set when STAY. Deferred to v2 (ADR 0013). See the note below.
+Amended v1.2 — ADR 0013. A STAY itinerary_item is a stay anchor. It carries accommodation_id where the tourist named a curated property, or a free-entry name and coordinate confirmed through the §13.2 geocoding path where they did not, together with starts_at and ends_at. It carries no room_type_id, no quantity, no unit_price, no line_total, no currency and no booking_id: there is no room, no price and no booking behind it. Those columns stay on the table because ACTIVITY, TRANSFER and ATTRACTION items use them.
 activity_id | BIGINT |  | Y | Y |  | Set when ACTIVITY
 activity_departure_id | BIGINT |  | Y | Y |  | Set when ACTIVITY
 attraction_id | BIGINT |  | Y | Y |  | Set when ATTRACTION

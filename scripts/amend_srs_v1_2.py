@@ -188,6 +188,23 @@ def row(*cells: str) -> str:
     )
 
 
+#: SRS 7.5.11 gives `accommodation_id` and `room_type_id` adjacent rows
+#: whose description cells are byte-identical ("Set when STAY"), so neither
+#: row can be located on its own. The match window is therefore widened
+#: until it is unique: this literal spans from the first row's field name to
+#: the end of the second row's description, and the pair occurs exactly once
+#: where either half occurs twice.
+#:
+#: It is applied with `sub`, a plain literal replacement, so nothing here
+#: depends on which occurrence anything is. There is no positional logic to
+#: audit, and a later reader can find the anchor by searching for its text.
+STAY_ROWS = r"""<w:t>accommodation_id</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="2277" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="18007851" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00000000"><w:pPr><w:spacing w:after="0"/><w:ind w:left="109"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>BIGINT</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="402" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="65147891" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00CF1EF7"/></w:tc><w:tc><w:tcPr><w:tcW w:w="253" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="5D6234E8" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00000000"><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>Y</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="791" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="1B948725" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00000000"><w:pPr><w:spacing w:after="0"/><w:ind w:left="148"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>Y</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="964" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="2C114845" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00CF1EF7"/></w:tc><w:tc><w:tcPr><w:tcW w:w="2510" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="2E0E50E4" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00000000"><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>Set when STAY</w:t></w:r></w:p></w:tc></w:tr><w:tr w:rsidR="00CF1EF7" w14:paraId="512F6744" w14:textId="77777777"><w:trPr><w:trHeight w:val="299"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="2167" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="5C6560BA" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00000000"><w:pPr><w:spacing w:after="0"/><w:ind w:left="108"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>room_type_id</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="2277" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="383CB296" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00000000"><w:pPr><w:spacing w:after="0"/><w:ind w:left="109"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>BIGINT</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="402" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="0B9BF75E" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00CF1EF7"/></w:tc><w:tc><w:tcPr><w:tcW w:w="253" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="796D8093" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00000000"><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>Y</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="791" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="78EA86C7" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00000000"><w:pPr><w:spacing w:after="0"/><w:ind w:left="148"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>Y</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="964" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="58417867" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00CF1EF7"/></w:tc><w:tc><w:tcPr><w:tcW w:w="2510" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p w14:paraId="62B4E7D9" w14:textId="77777777" w:rsidR="00CF1EF7" w:rsidRDefault="00000000"><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>Set when STAY</w:t></w:r>"""
+
+#: The same bytes with the second row marked. Marking it also makes that row
+#: locatable on its own, which is what the note row below then anchors on.
+STAY_ROWS_MARKED = STAY_ROWS + run(". " + DEFER + " See the note below.", RB)
+
+
 def amend(d: Doc) -> None:
     # ======================================================================
     # Revision history
@@ -1075,6 +1092,32 @@ def amend(d: Doc) -> None:
         "28.2.5 SD-05 deferred",
         "28.2.5 SD-05 Accommodation Booking (search to hold)",
         run("  " + DEFER, RB),
+    )
+
+    # ======================================================================
+    # 7.5.11 itinerary_item
+    # ======================================================================
+    d.sub("7.5.11 room_type_id deferred", STAY_ROWS, STAY_ROWS_MARKED)
+    d.after_row(
+        "7.5.11 what a STAY item carries",
+        '<w:t xml:space="preserve">. ' + DEFER + " See the note below.</w:t>",
+        row(
+            cell(
+                9364,
+                run("Amended v1.2 — ADR 0013. ", RB)
+                + run(
+                    "A STAY itinerary_item is a stay anchor. It carries "
+                    "accommodation_id where the tourist named a curated property, or a "
+                    "free-entry name and coordinate confirmed through the §13.2 "
+                    "geocoding path where they did not, together with starts_at and "
+                    "ends_at. It carries no room_type_id, no quantity, no unit_price, "
+                    "no line_total, no currency and no booking_id: there is no room, "
+                    "no price and no booking behind it. Those columns stay on the "
+                    "table because ACTIVITY, TRANSFER and ATTRACTION items use them."
+                ),
+                span=7,
+            )
+        ),
     )
 
 
