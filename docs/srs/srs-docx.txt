@@ -25,6 +25,7 @@ Intended Audience Revision History Version	Date | Software architects, backend e
 0.9	— | Architecture Team | API specification, diagrams, test strategy added | 
 1.0	— | Architecture Team | Consolidated baseline release for development | 
 1.1	2026-08-18 | Product Owner | MVP client scope re-baselined on the tourist web application. Flutter tourist application deferred to v1.1; Flutter driver application retained in MVP. Amends §38.1, §38.2 and §41.10. Rationale and consequences in docs/adr/0002-web-first-tourist-client.md. | 
+1.2	2026-08-21 | Product Owner | Accommodation re-scoped from a bookable product to a location reference. room_type and room_availability deferred to v2 and removed from the v1 schema; a STAY item becomes a stay anchor carrying location and dates, with no provider, price, booking or inventory. Amends §2.2, §3.3, §5.1, §5.3, §6.4, §7.2–§7.6, §8.4, §8.10, §9.2, §9.4, §10.6, §10.7, §14, §17, §18.2, §18.4, §20.2, §20.3, §22.1, §24.11–§24.13, §26.4, §26.5, §28.2.5, §33.12, §37.5, §38.1–§38.5, §41.4, §42.2, Appendix B, Appendix C and Appendix D. Rationale and consequences in docs/adr/0013-accommodation-is-a-location-reference-in-v1.md.
 Approvals Role | Responsibility | Signature | Date
 Product Owner | Business scope, MVP boundary, prioritisation
 Solution Architect | Architecture, technology stack, integration design
@@ -470,12 +471,12 @@ An operations engineer must be able to build the environments and pipelines desc
 	2.2.1	In Scope for Version 1
 The Platform in its first release covers the complete pre-arrival and in-destination journey of an international tourist in Zanzibar:
 Account creation, identity capture and authentication for tourists and providers.
-Browsing of a curated, administrator-managed catalogue of Zanzibar destinations, attractions, activities and accommodation.
-Construction of a multi-day trip: dates, party size, inbound and outbound flight details, accommodation nights, activity selections, and inter-location transport legs.
+Browsing of a curated, administrator-managed catalogue of Zanzibar destinations, attractions and activities, and of accommodation as location reference data (v1.2: accommodation is not sold — §14, ADR 0013).
+Construction of a multi-day trip: dates, party size, inbound and outbound flight details, stay anchors (where the tourist is staying, and from when to when), activity selections, and inter-location transport legs.
 Deterministic computation of distance, estimated travel duration and price for every transport leg using an external routing provider behind an internal abstraction.
 Generation of a structured, day-sequenced itinerary that is persisted, versioned and re-priceable.
 Single-basket checkout covering all component bookings, paid by international card or mobile money, in USD or TZS.
-Availability enforcement, capacity enforcement and inventory holding across accommodation, activities and transport.
+Availability enforcement, capacity enforcement and inventory holding across activities and transport. Accommodation carries no inventory in v1 (§14, ADR 0013).
 Driver assignment for airport transfers and scheduled transport legs, including offer dispatch, acceptance, and status progression.
 Real-time driver location sharing during an active transport leg only.
 Booking-scoped messaging between tourist and provider.
@@ -496,6 +497,7 @@ Dynamic/surge pricing | Prices are set by providers and administrator-configured
 Multi-language user interface beyond English | Localisation framework is built in V1 (Section 29.10); additional locales load as data
 Provider-side mobile applications for hotels and activity operators | Providers use the responsive web portal in V1
 Any AI/ML capability of any kind | Explicit product constraint (Section 50 of the concept brief; restated in
+Accommodation booking, room inventory, rate management and accommodation commission | Tourists choose and book a hotel months ahead on established OTAs, before they consider transfers or excursions; by the time they reach the Platform the property is already chosen. V1 records where the tourist is staying as a stay anchor (§14) so that transfers can be planned and priced around it. Full subsystem returns in v2 — ADR 0013.
 <<<END TABLE>>>
 The following are deliberately excluded. Each is excluded because it adds material regulatory, integration or operational risk without which the MVP still delivers its core value.
 
@@ -566,8 +568,9 @@ Cash negotiation     -> transfers       One payment
 No record            -> disputes        One record, one support channel
 Arrival uncertainty                     Named driver, known vehicle, known time
 The tourist-facing outcome is a single artefact — the confirmed itinerary — of the following shape. The exact layout is specified in Section 24.20; the content model is specified in Section 10.
+Amended v1.2. The stay appears as an anchor line: the property, the dates and no price. The Platform does not sell the room in v1 (§14, ADR 0013), so the cost summary covers transfers and activities only, and the total is what the Platform actually charges. Where the tourist has booked elsewhere, the itinerary says so rather than implying the stay is part of the basket.
 <<<TABLE>>>
-MY ZANZIBAR TRIP                                   Ref: TRP-2027-0000481 Party: 2 adults                                    Status: CONFIRMED ARRIVAL Abeid Amani Karume Intl (ZNZ)   10 Aug 2027  14:30   Flight PW 412 DAY 1 - 10 Aug 14:45  Airport transfer   ZNZ -> Ocean Breeze Hotel, Nungwi Driver: John M.  Toyota Noah  T 123 ABC  Seats 6 57.4 km - est. 1 h 25 min                          USD  38.00 16:30  Check-in          Ocean Breeze Hotel, Deluxe Sea View 10 Aug -> 15 Aug, 5 nights, 1 room             USD 465.00 DAY 2 - 11 Aug 08:30  Transfer          Hotel -> Stone Town             USD  42.00 10:00  Stone Town Heritage Walking Tour  (3 h)           USD  60.00   14:00  Transfer          Stone Town -> Hotel             USD  42.00 DAY 3 - 12 Aug   09:00  Mnemba Atoll Snorkelling  (5 h, incl. transfer)   USD 110.00 DEPARTURE 15 Aug  09:00  Transfer  Hotel -> ZNZ                    USD  38.00 COST SUMMARY Accommodation                                            USD 465.00 Transportation                                           USD 160.00 Activities                                               USD 170.00 Service fee (5%)                                         USD  39.75   ---------------------------------------------------------------- TOTAL PAID                                               USD 834.75
+MY ZANZIBAR TRIP                                   Ref: TRP-2027-0000481 Party: 2 adults                                    Status: CONFIRMED ARRIVAL Abeid Amani Karume Intl (ZNZ)   10 Aug 2027  14:30   Flight PW 412 DAY 1 - 10 Aug 14:45  Airport transfer   ZNZ -> Ocean Breeze Hotel, Nungwi Driver: John M.  Toyota Noah  T 123 ABC  Seats 6 57.4 km - est. 1 h 25 min                          USD  38.00 16:30  Stay              Ocean Breeze Hotel, Nungwi 10 Aug -> 15 Aug, 5 nights        booked separately DAY 2 - 11 Aug 08:30  Transfer          Hotel -> Stone Town             USD  42.00 10:00  Stone Town Heritage Walking Tour  (3 h)           USD  60.00   14:00  Transfer          Stone Town -> Hotel             USD  42.00 DAY 3 - 12 Aug   09:00  Mnemba Atoll Snorkelling  (5 h, incl. transfer)   USD 110.00 DEPARTURE 15 Aug  09:00  Transfer  Hotel -> ZNZ                    USD  38.00 COST SUMMARY Transportation                                           USD 160.00 Activities                                               USD 170.00 Service fee (5%)                                         USD  16.50   ---------------------------------------------------------------- TOTAL PAID                                               USD 346.50
 <<<END TABLE>>>
 	3.4	Non-Goals
 The Platform is not a ride-hailing application. Transport is one of four bookable service classes and is subordinate to the itinerary. The Platform is not an OTA; it does not aggregate global inventory but curates a verified local supply base. The Platform is not a payment institution; it never holds card data and uses a licensed payment service provider for all money movement.
@@ -653,7 +656,7 @@ Actor | Type | Channel | Authentication | Volume assumption (Year 1)
 Tourist | Primary, human | Tourist mobile app (iOS/Android) | Email + password, or OAuth social login; JWT | 15,000 registered; 3,000 trips
 Driver | Primary, human | Driver mobile app (Android-first) | Phone + password + OTP; JWT | 250 verified
 Transport Provider (company) | Primary, human | Provider web portal | Email + password + mandatory TOTP | 40
-Accommodation Provider | Primary, human | Provider web portal | Email + password + mandatory TOTP | 180 properties
+Accommodation Provider | Primary, human | Provider web portal | Email + password + mandatory TOTP | — Deferred to v2 (ADR 0013). Not a v1 actor.
 Activity Provider | Primary, human | Provider web portal | Email + password + mandatory TOTP | 120
 Administrator | Primary, human | Admin web console | Email + password + mandatory TOTP, IP allowlist | 12 staff
 Support Agent | Secondary, human | Admin web console (restricted role) | As administrator | 6 staff
@@ -688,7 +691,7 @@ Register and verify email; maintain profile including party details and passport
 	5.3.2	Driver
 Register; submit national identity document, driving licence and photograph; register a vehicle and submit registration, insurance and inspection documents; complete verification; set online/offline availability and service area; receive and accept or decline booking offers within the offer TTL; view pickup location, tourist first name, masked contact and flight information; navigate to pickup; progress trip status through the defined states; complete the trip; view earnings and trip history; receive ratings.
 	5.3.3	Accommodation Provider
-Register the business; submit business licence and tax registration; create one or more properties; create room types with capacity, amenities and photographs; define nightly rates by date range and rate plan; publish availability by room-type-day; manage inbound bookings; manage cancellations under policy; view earnings, statements and payouts; view and respond to reviews.
+Register the business; submit business licence and tax registration; create one or more properties; create room types with capacity, amenities and photographs; define nightly rates by date range and rate plan; publish availability by room-type-day; manage inbound bookings; manage cancellations under policy; view earnings, statements and payouts; view and respond to reviews. Deferred to v2 (ADR 0013). Accommodation is administrator-curated location reference data in v1, not provider-listed supply, so there is no accommodation provider role, onboarding or portal surface. The responsibilities above return with the subsystem.
 	5.3.4	Activity Provider
 Register; submit licence and, where applicable, operating permits; create activities with description, duration, meeting point, requirements and inclusions; define price per person and any per-group price; define capacity per departure; define schedules (fixed departures or on-request windows); manage availability and blackout dates; manage bookings; view earnings; receive ratings.
 	5.3.5	Transport Provider
@@ -784,9 +787,9 @@ Each module owns its tables. No module may query another module’s tables direc
 
 <<<TABLE>>>
 Module | Owns (principal tables) | Public service interface (illustrative) | Depends on
-catalogue | country, region, destination, attraction, activity, activity_schedule, accommodation, room_type, media | search_activities(), get_destination(), list_room_types() | location
+catalogue | country, region, destination, attraction, activity, activity_schedule, accommodation, cancellation_policy, tag, media | search_activities(), get_destination(), list_accommodation() | location
 provider | provider, provider_document, provider_staff, driver, vehicle | is_verified(), eligible_drivers(), get_payout_account() | identity
-inventory | room_availability, activity_departure, inventory_hold | check_availability(), hold(), commit(), release() | catalogue
+inventory | activity_departure, inventory_hold Deferred to v2 (ADR 0013). room_availability returns with the accommodation subsystem. | check_availability(), hold(), commit(), release() | catalogue
 trip | trip, itinerary, itinerary_item, trip_flight | create_trip(), regenerate_itinerary(), validate_itinerary() | catalogue, transport
 booking | booking, booking_accommodation, booking_activity, booking_transfer, booking_status_history | create_basket(), confirm(), cancel(), transition() | inventory, trip, provider
 transport | transfer_corridor, transfer_tariff, driver_assignment, driver_offer | quote_transfer(), assign_driver(), dispatch_offer() | location, provider
@@ -875,7 +878,7 @@ Soft deletion | deleted_at TIMESTAMPTZ NULL on catalogue and user-facing entitie
 Money | amount_minor BIGINT (minor units, e.g. cents) or NUMERIC(14,2); the schema below uses NUMERIC(14,2) for readability. Every money column is accompanied by a currency CHAR(3) column. Never store money without its currency.
 Enumerations | Stored as VARCHAR with a CHECK constraint, mirrored by a Python enum. Not native PG enums, because adding a value must not require an exclusive lock.
 Geography | geography(Point, 4326) for all coordinates
-Concurrency | version INTEGER NOT NULL DEFAULT 0 on booking, inventory_hold, room_availability, activity_departure, driver_assignment for optimistic locking
+Concurrency | version INTEGER NOT NULL DEFAULT 0 on booking, inventory_hold, room_availability, activity_departure, driver_assignment for optimistic locking — room_availability: Deferred to v2 (ADR 0013).
 Audit fields | created_by_user_id, updated_by_user_id on all administrator-mutable tables
 <<<END TABLE>>>
 These conventions are mandatory across every table.
@@ -910,12 +913,13 @@ The ERD is presented in four connected views to remain legible. Together they ar
 
 
 <<<TABLE>>>
-+---------------------+ |   tourist_profile   | +----------+----------+ |1 |* +----------v--------------------------------+ |                  trip                     | +-------------------------------------------+ | PK id                                     | |    public_id                (U)           | |    reference                (U)  TRP-...  | | FK tourist_id -> tourist_profile          | | FK destination_id -> destination          | |    start_date / end_date                  | |    adults / children / infants            | |    status  DRAFT|PRICED|PENDING_PAYMENT|  | |            CONFIRMED|IN_PROGRESS|         | |            COMPLETED|CANCELLED            | |    currency                               | |    subtotal / fees / taxes / total        | |    priced_at / confirmed_at               | |    version                                | +---+--------------------+------------------+ |1                   |1 |*                   |1 +------v---------+   +------v-------------------+ |  trip_flight   |   |       itinerary          | +----------------+   +--------------------------+ | PK id          |   | PK id                    | | FK trip_id     |   | FK trip_id           (U) | |    direction   |   |    version               | |    (INBOUND|   |   |    generated_at          | |     OUTBOUND)  |   |    validation_state      | |    flight_no   |   |    total_distance_m      | |    airline_iata|   |    total_travel_seconds  | | FK gateway_dest|   +-----------+--------------+ |    scheduled_at|               |1 |    terminal    |               |* |    pax_count   |   +-----------v--------------------------+ |    luggage_cnt |   |          itinerary_item              | +----------------+   +--------------------------------------+ | PK id                                | | FK itinerary_id                      | |    day_number                        | |    sequence_no                       | |    item_type  STAY|ACTIVITY|         | |               TRANSFER|ATTRACTION|   | |               FREE_TIME              | |    starts_at / ends_at  TIMESTAMPTZ  | | FK accommodation_id   NULL           | | FK room_type_id       NULL           | | FK activity_id        NULL           | | FK attraction_id      NULL           | | FK origin_dest_id     NULL           | | FK destination_dest_id NULL          | |    distance_m / travel_seconds NULL  | |    quantity                          | |    unit_price / line_total / currency| | FK booking_id         NULL           | |    U (itinerary_id, day_number,      | |       sequence_no)                   | +------------------+-------------------+ |0..1 | +------------------v-------------------+ |              booking                 |
++---------------------+ |   tourist_profile   | +----------+----------+ |1 |* +----------v--------------------------------+ |                  trip                     | +-------------------------------------------+ | PK id                                     | |    public_id                (U)           | |    reference                (U)  TRP-...  | | FK tourist_id -> tourist_profile          | | FK destination_id -> destination          | |    start_date / end_date                  | |    adults / children / infants            | |    status  DRAFT|PRICED|PENDING_PAYMENT|  | |            CONFIRMED|IN_PROGRESS|         | |            COMPLETED|CANCELLED            | |    currency                               | |    subtotal / fees / taxes / total        | |    priced_at / confirmed_at               | |    version                                | +---+--------------------+------------------+ |1                   |1 |*                   |1 +------v---------+   +------v-------------------+ |  trip_flight   |   |       itinerary          | +----------------+   +--------------------------+ | PK id          |   | PK id                    | | FK trip_id     |   | FK trip_id           (U) | |    direction   |   |    version               | |    (INBOUND|   |   |    generated_at          | |     OUTBOUND)  |   |    validation_state      | |    flight_no   |   |    total_distance_m      | |    airline_iata|   |    total_travel_seconds  | | FK gateway_dest|   +-----------+--------------+ |    scheduled_at|               |1 |    terminal    |               |* |    pax_count   |   +-----------v--------------------------+ |    luggage_cnt |   |          itinerary_item              | +----------------+   +--------------------------------------+ | PK id                                | | FK itinerary_id                      | |    day_number                        | |    sequence_no                       | |    item_type  STAY|ACTIVITY|         | |               TRANSFER|ATTRACTION|   | |               FREE_TIME              | |    starts_at / ends_at  TIMESTAMPTZ  | | FK accommodation_id   NULL           | |    room_type_id: v2 (ADR 0013)       | | FK activity_id        NULL           | | FK attraction_id      NULL           | | FK origin_dest_id     NULL           | | FK destination_dest_id NULL          | |    distance_m / travel_seconds NULL  | |    quantity                          | |    unit_price / line_total / currency| | FK booking_id         NULL           | |    U (itinerary_id, day_number,      | |       sequence_no)                   | +------------------+-------------------+ |0..1 | +------------------v-------------------+ |              booking                 |
 <<<END TABLE>>>
 
 <<<TABLE>>>
 +--------------------------------------+ | PK id                                | |    public_id / reference        (U)  | | FK trip_id                           | | FK tourist_id                        | | FK provider_id                       | |    booking_type  ACCOMMODATION|      | |                  ACTIVITY|TRANSFER   | |    status  (see Section 20)          | |    starts_at / ends_at               | |    pax_count                         | |    gross_amount / currency           | |    commission_amount / net_amount    | |    cancel_policy_id  FK              | |    cancelled_at / cancel_reason      | |    version                           | +--+------------+-----------+----------+ |1           |1          |1 +-----------v--+  +------v------+  +-v--------------------+ | booking_     |  | booking_    |  | booking_transfer     | | accommodation|  | activity    |  +----------------------+ +--------------+  +-------------+  | PK,FK booking_id     | | PK,FK        |  | PK,FK       |  | FK origin_dest_id    | |   booking_id |  |   booking_id|  | FK dest_dest_id      | | FK room_type |  | FK activity |  |    pickup_lat/lng    | |   check_in   |  | FK departure|  |    dropoff_lat/lng   | |   check_out  |  |   pax_adult |  |    pickup_at         | |   nights     |  |   pax_child |  |    distance_m        | |   rooms      |  |   meeting_at|  |    travel_seconds    | |   guests     |  +-------------+  |    vehicle_class     | +--------------+                   | FK tariff_id         | |    luggage_count     | |    is_airport_transfer| | FK trip_flight_id NUL| +----------+-----------+ |1 |0..1 +-------------v------------+ |    driver_assignment     | +--------------------------+ | PK id                    | | FK booking_id       (U)  | | FK driver_id             | | FK vehicle_id            | |    status                | |    offered_at/accepted_at| |    arrived_at/started_at | |    completed_at          | |    start_odo / end_odo   | |    version               | +--------------------------+ +--------------------------+        +---------------------------+ |  booking_status_history  |        |      inventory_hold       | +--------------------------+        +---------------------------+ | PK id                    |        | PK id                     | | FK booking_id            |        |    hold_token        (U)  | |    from_status/to_status |        | FK trip_id                | |    actor_user_id  FK     |        |    resource_type          | |    reason                |        |    resource_id            | |    occurred_at           |        |    date_from / date_to    | +--------------------------+        |    quantity               | |    expires_at             | |    status HELD|COMMITTED| | |           RELEASED|EXPIRED| +---------------------------+
 <<<END TABLE>>>
+Amended v1.2 — ADR 0013. booking_accommodation is deferred to v2 with the accommodation subsystem, and booking_type ACCOMMODATION is reserved rather than withdrawn. A STAY itinerary_item carries accommodation_id (or a free-entry name and coordinate), starts_at and ends_at, and no room_type_id, quantity, unit_price, line_total or booking_id: a stay anchor has no price and no booking. The View 2 boxes for room_type and room_availability are deferred with it.
 	7.3.4	View 4 — Payment, Finance, Engagement and Operations
 
 
@@ -1824,25 +1828,25 @@ Page
 ID | Severity | Rule
 VR-02 | ERROR | No two non-STAY items on the same day overlap in time
 VR-03 | ERROR | Consecutive items are geographically reachable: gap between A.ends_at and B.starts_at ≥ travel time + buffer
-VR-04 | ERROR | Every accommodation night in the trip range is covered by exactly one STAY item, or explicitly marked as “own arrangement”
-VR-05 | ERROR | Party size ≤ room occupancy for every stay; party size within [min_pax, max_pax] for every activity
+VR-04 | ERROR | Every night in the trip range is covered by exactly one STAY anchor, or explicitly marked as “own arrangement”. Amended v1.2: “own arrangement” is the normal case, since the Platform does not sell the room (§14, ADR 0013).
+VR-05 | ERROR | Party size within [min_pax, max_pax] for every activity. Amended v1.2: the room occupancy half of this rule is deferred to v2 with room_type (ADR 0013); a stay anchor asserts no occupancy.
 VR-06 | ERROR | Activity booked at or before its booking_cutoff_hours relative to departure
 VR-07 | ERROR | Airport arrival transfer starts no earlier than the flight arrival plus buffer.arrival_processing_minutes (default 45)
 VR-08 | ERROR | Airport departure transfer arrives at the gateway at least buffer.airport_departure_minutes before scheduled departure
 VR-09 | ERROR | Every item’s provider and listing are active and not suspended
 VR-10 | ERROR | Currency is uniform across all items in the trip
-VR-11 | ERROR | Minimum-nights requirement of each selected room type is satisfied
+VR-11 | ERROR | Minimum-nights requirement of each selected room type is satisfied. Deferred to v2 (ADR 0013).
 VR-12 | WARNING | An attraction is scheduled outside its opening hours for that weekday
 VR-13 | WARNING | A day contains more than limit.items_per_day (default 5) timed items
 VR-14 | WARNING | Total travel time in a day exceeds limit.travel_minutes_per_day (default 240)
 VR-15 | WARNING | An activity has an age requirement and the party includes children below it
-VR-16 | WARNING | The trip has no accommodation for one or more nights
+VR-16 | WARNING | The trip has no accommodation for one or more nights. Retained in v1.2: a night with no stay anchor is a night whose transfers cannot be planned around it.
 VR-17 | WARNING | Same-day arrival flight and an activity starting within 3 hours of landing
 <<<END TABLE>>>
 Each finding carries {code, severity, message, item_ids[], suggested_action} so the client can render an inline fix affordance.
 	10.7	Cost Computation
 <<<TABLE>>>
-FOR each item:     line_total := unit_price × quantity            (STAY: nightly rate × nights × rooms) (ACTIVITY: per-person × pax, or group price)                                                    (TRANSFER: tariff result, Section 12.4) subtotal := Σ line_total fee      := round(subtotal × platform_fee_rate, 2)        # system_setting tax      := Σ applicable tax rules (Section 18.3) total    := subtotal + fee + tax
+FOR each item:     line_total := unit_price × quantity            (STAY: none — an anchor has no price, ADR 0013) (ACTIVITY: per-person × pax, or group price)                                                    (TRANSFER: tariff result, Section 12.4) subtotal := Σ line_total fee      := round(subtotal × platform_fee_rate, 2)        # system_setting tax      := Σ applicable tax rules (Section 18.3) total    := subtotal + fee + tax
 <<<END TABLE>>>
 Money arithmetic uses Decimal with ROUND_HALF_UP at two decimal places, applied once per line and once per aggregate. Floating point is prohibited anywhere in the pricing path.
 	10.8	Regeneration and Versioning
@@ -2042,10 +2046,15 @@ Consent | Explicit OS-level permission plus an in-app explanation screen before 
 Access | Live location is readable by the assigned tourist, the driver’s provider organisation, and administrators with the SUPPORT_AGENT role or above; every administrative access is audited
 <<<END TABLE>>>
 	13.7	Location Privacy
-	14	Accommodation Subsystem
+	14	Accommodation Reference and Stay Anchoring
 	14.1	Model
-Accommodation is a two-level model: a property (accommodation) owned by a provider and located at a destination, containing one or more room types (room_type). The Platform sells room types, not individual rooms; the property allocates a physical room at check-in. This matches how small and mid-sized Zanzibar properties actually operate and avoids modelling a room-level PMS.
+Amended v1.2 — ADR 0013. Accommodation is not sold by the Platform in v1. It is a curated location reference: an accommodation row holds name, slug, property type, destination, coordinates, address line, check-in time, check-out time and is_active, and nothing about price, capacity or availability. It is administrator-managed catalogue data of the same kind as an attraction, not provider-listed supply.
+A stay anchor. A STAY itinerary item anchors location and dates. It has no provider, no price, no booking and no inventory. It exists so that the itinerary knows where the tourist sleeps, which is what the adjacent transfers need.
+Captured one of two ways. Curated property — the tourist selects a seeded accommodation record; its coordinates are known and exact, so transfer routing and pricing are accurate. Free entry — the tourist types any hotel name or address, which is resolved to a coordinate through the geocoding path of §13.2 and shown as a map pin the tourist confirms. Per §13.2 an unconfirmed geocode is never silently persisted: if the tourist does not confirm the pin, no anchor is created.
+What an anchor does. Either way the item supplies the origin or the target for the transfers on either side of it, and bounds the day sequencing of §10.4. Multiple non-overlapping stays across one trip remain supported. VR-16’s warning for uncovered nights is retained.
+Why no inventory exists in v1. Selling the room would mean availability calendars, rate resolution, minimum-stay rules and inventory holds — the heaviest subsystem in this document — aimed at a decision the tourist has already made elsewhere, months earlier. §38.2 records an optional Booking.com affiliate deep link as a SHOULD-HAVE; nothing in the booking, pricing or itinerary path may depend on it.
 Supported property types: HOTEL, RESORT, LODGE, GUESTHOUSE, APARTMENT, VILLA. The type affects presentation and filtering only.
+§14.2 to §14.4 are deferred to v2 — ADR 0013. The rate model, the availability model and the booking rules below are preserved verbatim, and are not implemented in v1. room_type and room_availability do not exist in the v1 schema. BR-101 is the one exception: its bound on the stay — check-out strictly after check-in, maximum 30 nights — applies to a stay anchor in v1 exactly as it applied to a booking, and is enforced against the Appendix B setting stay.max_nights.
 	14.2	Rates
 The rate for a given night is resolved as:
 room_availability.rate_override for that (room_type, date)   -> use it
@@ -2069,7 +2078,7 @@ BR-105	A confirmed accommodation booking decrements rooms_open availability thro
 BR-106	The cancellation policy in force is the one snapshotted onto the booking at confirmation, not the property’s current policy
 
 	14.5	Check-in and Check-out
-accommodation.check_in_time and check_out_time drive the STAY itinerary item boundaries, and therefore the timing of the arrival transfer and any first-day activity. Early check-in and late check-out are not sold in V1; they are a provider-side arrangement noted in the booking’s guest_notes.
+accommodation.check_in_time and check_out_time drive the STAY itinerary item boundaries, and therefore the timing of the arrival transfer and any first-day activity. Early check-in and late check-out are not sold in V1; they are a provider-side arrangement noted in the booking’s guest_notes. Amended v1.2. Where the stay anchor names a curated property, its check_in_time and check_out_time bound the STAY item and therefore the timing of the arrival transfer and any first-day activity. Where the anchor is a free-entry address, the destination defaults in Appendix B apply until the tourist overrides them. There is no booking, so there are no guest_notes in v1.
 	14.6	Cancellation Policies
 Policies are rows in cancellation_policy, referenced by properties and activities and snapshotted onto bookings:
 	Code	Rule
@@ -2078,9 +2087,9 @@ Policies are rows in cancellation_policy, referenced by properties and activitie
 	MODERATE_7D	Full refund > 7 days; 50% between 7 days and 48 h; none thereafter
 	STRICT_14D	50% refund > 14 days; none thereafter
 NON_REFUNDABL	No refund at any time E
-A policy is expressed generically as an ordered list of {hours_before, refund_percent} tiers, so administrators can create new policies without code changes. Evaluation is specified in Section 20.9.
+A policy is expressed generically as an ordered list of {hours_before, refund_percent} tiers, so administrators can create new policies without code changes. Evaluation is specified in Section 20.9. Amended v1.2. cancellation_policy is retained in full: activities reference it, and it is administered under §27.12. Only the accommodation reference to it is deferred, because a location record has nothing to cancel.
 	14.7	Provider Operations
-Providers manage properties, room types, photographs, amenities, the availability and rate calendar, arriving bookings, and cancellations, through the portal (Section 26). A provider may not modify a confirmed booking’s dates or price; changes are handled as cancel-and-rebook or via a support ticket, so that the financial record stays coherent.
+Amended v1.2 — ADR 0013. There are no accommodation provider operations in v1. Accommodation records are created and maintained by a catalogue administrator through the console (§27.8) and by the seed loader (Appendix C). The provider portal covers transport and activity providers. The paragraph this replaces — properties, room types, the availability and rate calendar, arriving bookings and cancellations — returns with the subsystem in v2.
 	15	Attractions Subsystem
 	15.1	Model
 An attraction is a place of interest, not a bookable product. It exists to help the tourist decide where to go and to give the itinerary a geographic anchor. Where an attraction can be visited commercially, a provider publishes an activity linked to it.
@@ -2144,7 +2153,7 @@ activity.booking_cutoff_hours prevents last-minute bookings the provider cannot 
 	17.1	Principles
 	#	Principle
 
-	I1	Capacity counters live in exactly one place per resource type: room_availability and activity_departure
+	I1	Capacity counters live in exactly one place per resource type. In v1 that is activity_departure alone; room_availability is deferred to v2 with the accommodation subsystem (ADR 0013).
 	I2	Every capacity change happens inside a transaction that holds a row lock on the counter row
 	I3	Search may read cached or stale capacity; committing a booking may not
 	I4	Holds are explicit, time-boxed rows — never implicit reservations inferred from booking status
@@ -2155,7 +2164,7 @@ activity.booking_cutoff_hours prevents last-minute bookings the provider cannot 
 <<<END TABLE>>>
 Hold TTL: 20 minutes at quote, extended to 30 minutes from the moment a payment intent is created (so a tourist completing a 3-D Secure challenge or a mobile-money prompt is not timed out). Both values are system_setting keys.
 	17.3	Concurrency Control
-The critical section for placing a hold:
+The critical section for placing a hold: Amended v1.2. V1 holds inventory for activity departures only. The routine below is written against room_availability, which does not exist in the v1 schema; read activity_departure, departs_at and capacity_held for room_availability, stay_date and rooms_held. The lock discipline, the ascending primary-key ordering, the application assertion and the CHECK backstop are unchanged, and the accommodation form returns verbatim in v2.
 <<<TABLE>>>
 BEGIN; SELECT id, rooms_open, rooms_held, rooms_sold, version FROM room_availability WHERE room_type_id = :rt AND stay_date BETWEEN :ci AND :co - 1 ORDER BY id            -- ascending PK order: deadlock avoidance FOR UPDATE; -- application asserts sellable >= rooms for every night UPDATE room_availability SET rooms_held = rooms_held + :rooms, version = version + 1 WHERE id = ANY(:ids); INSERT INTO inventory_hold (...) VALUES (...); COMMIT;
 <<<END TABLE>>>
@@ -2176,7 +2185,7 @@ Runs every 60 seconds: selects inventory_hold rows with status = 'HELD' AND expi
 Prices are computed server-side, always. The client never sends a price; it sends selections. Every computed price is reproducible from stored inputs: the applied tariff id, rate override, commission rule id and FX rate are all persisted on the booking or payment.
 <<<TABLE>>>
 Component | Source | Applied to
-Accommodation line | Σ nightly rates × rooms | STAY items
+Accommodation line Deferred to v2 (ADR 0013). | Σ nightly rates × rooms | STAY items
 Activity line | price_per_person × pax, or price_per_group when defined and cheaper for the party | ACTIVITY items
 Transfer line | Corridor price or metered tariff (Section 12.4) | TRANSFER items
 Platform service fee | platform_fee_rate × subtotal, or a flat minimum, whichever is greater | Trip
@@ -2190,7 +2199,7 @@ Tax rules are rows: {country_id, service_type, tax_code, rate_percent, is_inclus
 exclusive: tax = round(line_total × rate, 2);      total = line_total + tax inclusive: tax = round(line_total × rate/(1+rate), 2);  total = line_total
 <<<TABLE>>>
 Concept | Definition
-Catalogue currency | The currency in which a provider publishes a price (room_type.currency, activity.currency)
+Catalogue currency | The currency in which a provider publishes a price (activity.currency; room_type.currency returns with v2)
 Presentment currency | The currency shown to and charged to the tourist (trip.currency)
 Settlement currency | The currency the PSP settles to the Platform
 Payout currency | The currency in which a provider is paid (provider.payout_currency)
@@ -2285,10 +2294,11 @@ PENDING / AWAITING_PROVIDER / CONFIRMED | CANCELLED | Tourist / Provider / Admin
 CANCELLED | REFUNDED | System | Refund settled at PSP
 <<<END TABLE>>>
 Every transition writes a booking_status_history row with actor, reason and timestamp. Transitions are validated by a single table-driven guard function; an illegal transition raises ConflictError → 409 ILLEGAL_TRANSITION. 
+Amended v1.2 — ADR 0013. ACCOMMODATION is not a v1 booking type: the v1 set is ACTIVITY and TRANSFER. The enum value ACCOMMODATION and the booking_accommodation subtype table are reserved, not withdrawn, so that reviving the subsystem in v2 renumbers nothing. The lifecycle, the guards and the audit trail are unchanged.
 <<<TABLE>>>
 restricted to SUPER_ADMIN, and is always audited. 20.3	Type-Specific Nuances |  | 
 Aspect	ACCOMMODATION | ACTIVITY | TRANSFER
-Inventory	room_availability nights | activity_departure seats | None (vehicle class, not a unit)
+Inventory	Deferred to v2 (ADR 0013). (room_availability nights) | activity_departure seats | None (vehicle class, not a unit)
 Confirmation mode	Always instant | Instant or on-request | Instant
 Fulfilment actor	Property staff | Activity guide | Assigned driver
 IN_PROGRESS trigger	Check-in datetime reached | Departure time reached | Driver sets STARTED
@@ -2434,7 +2444,7 @@ A daily job ingests the PSP settlement report and matches every line to a paymen
 	22	Revenue, Commission and Settlement
 	22.1	Commercial Model
 <<<TABLE>>>
-Tourist pays gross                        e.g. USD 834.75 |         v Platform receives into PSP account | +-- Platform service fee (tourist-facing)      USD  39.75         | +-- Component gross by provider | +-- Accommodation provider  465.00 |       - commission 15%     -69.75  -> net 395.25              +-- Activity provider        170.00 |       - commission 18%     -30.60  -> net 139.40              +-- Transport provider       160.00 - commission 20%     -32.00  -> net 128.00 |         v Platform revenue = service fee 39.75 + commissions 132.35 = USD 172.10 Provider payouts  = 395.25 + 139.40 + 128.00               = USD 662.65
+Tourist pays gross                        e.g. USD 346.50 |         v Platform receives into PSP account | +-- Platform service fee (tourist-facing)      USD  16.50         | +-- Component gross by provider | +-- Activity provider        170.00 |       - commission 18%     -30.60  -> net 139.40              +-- Transport provider       160.00 - commission 20%     -32.00  -> net 128.00 |         v Platform revenue = service fee 16.50 + commissions  62.60 = USD  79.10 Provider payouts  = 139.40 + 128.00                        = USD 267.40
 <<<END TABLE>>>
 	22.2	Commission Rule Resolution
 Rules are rows in commission_rule with a scope and a priority. Resolution takes the highest-priority active rule matching the booking, evaluated in this order:
@@ -2584,14 +2594,14 @@ Purpose Inform, and allow addition to the plan as an unbooked visit. Components 
 
 24.10 Activity Details
 Purpose Convert interest into a bookable selection. Components Gallery, provider name and rating, duration, price per person, inclusions and exclusions, requirements, meeting point with map, cancellation policy summary, date picker showing the next 30 days with availability, departure list with remaining seats, pax stepper, Add to Trip. Validation min_pax ≤ pax ≤ max_pax; departure not past its cutoff; age requirements checked against the party. API GET /activities/{id}, GET /activities/{id}/departures. Navigation → Trip Planner. States Empty departures shows the next available date; sold-out departures render disabled with a “full” label; error shows a retry on the departures panel only.
-24.11 Accommodation Search
-Purpose Find a stay for the trip dates. Components Destination, check-in/check-out, guests and rooms selector, filters (price band, property type, star rating, amenities), sort control, map/list toggle, result cards with the total price for the stay. Validation Check-out after check-in; stay ≤ 30 nights; dates within the trip range when launched from a trip. API GET /accommodations. Navigation → Accommodation Details. States Skeleton cards; a no-results state offering to widen dates or relax filters; error with retry. Prices displayed are totals for the whole stay, with the nightly average shown beneath, so comparison is honest.
-24.12 Accommodation Details
+24.11 Where Are You Staying
+Purpose Record where the tourist is staying, so the itinerary can plan transfers around it. Components One screen. A search field over the curated accommodation list for this destination, with a “can’t find it?” affordance that accepts any hotel name or address as free entry; a map showing the pin, which the tourist confirms; check-in and check-out date pickers; an “I haven’t booked yet” option that skips the anchor and leaves VR-16’s warning standing. No prices, no availability, no room types. Validation Check-out strictly after check-in; stay ≤ stay.max_nights (default 30); dates within the trip range; a free-entry address must have a confirmed geocode before the anchor is created (§13.2). API GET /accommodations?destination=… for the curated list; POST /trips/{id}/items with item_type STAY. Navigation → Trip Planner. States Skeleton list; a no-match state that offers free entry rather than a dead end; a geocode-failed state that asks the tourist to drop the pin themselves; error with retry. Where an affiliate deep link is configured (§38.2) a property card may offer “book this stay”, which leaves the Platform and is never presented as part of the basket.
+24.12 Accommodation Details (deferred to v2)
 Purpose Evaluate a property. Components Gallery, description, amenity grid, map, house rules, check-in/check-out times, cancellation policy, reviews summary with the rating histogram, room-type list. API GET 
 /accommodations/{id}, GET /reviews?subject_type=accommodation&subject_id=…. Navigation → Room Selection. States Standard; fewer than three reviews shows “New on the platform” rather than a misleading average.
-24.13 Room Selection
+24.13 Room Selection (deferred to v2)
 Purpose Choose a room type and quantity. Components Room-type cards with occupancy, bed configuration, amenities, per-night rate, stay total, remaining availability indicator, quantity stepper, policy note, Add to Trip. Validation Party fits the occupancy; requested rooms ≤ available; minimum-nights satisfied. API GET 
-/accommodations/{id}/room-types?check_in=&check_out=&adults=&children=&rooms=. Navigation → Trip Planner. States Unavailable room types are shown greyed with the reason (“not available for 12 Aug”), which is more useful than hiding them.
+/accommodations/{id}/room-types?check_in=&check_out=&adults=&children=&rooms=. Navigation → Trip Planner. States Unavailable room types are shown greyed with the reason (“not available for 12 Aug”), which is more useful than hiding them. Deferred to v2 (ADR 0013). §24.12 and §24.13 are preserved with their numbering so that cross-references keep resolving. Neither screen is built in v1; §24.11 in its amended form is the whole of the accommodation experience.
 24.14 Trip Planner
 Purpose The workspace where the journey is assembled. Components Trip header (destination, dates, party, editable), day tab strip, per-day timeline of items with times, durations, prices and drag handles, an add-item action sheet (stay, activity, attraction, transfer, free time), a validation banner summarising errors and warnings, a running total footer with a Continue action. Actions Add, edit, reorder, remove items; edit trip dates or party; regenerate; open validation findings; continue to summary. Validation Client-side date and party checks; the authoritative rule set is server-side (Section 10.6) and findings are rendered inline against the offending items. API POST/PATCH/DELETE /trips/{id}/items, POST /trips/{id}/itinerary/generate, GET /trips/{id}. Navigation → any detail screen, → Flight Information, → Transportation, → Trip Summary. States Loading uses an optimistic update with rollback on failure; empty shows a guided three-step prompt (dates → stay → activities); locked items render with a padlock and are non-draggable; error keeps the last good itinerary on screen.
 24.15 Flight Information
@@ -2696,12 +2706,12 @@ Today’s arrivals and departures or departures-by-activity; pending action item
 	26.4	Listing Management
 	Provider type	Capabilities
 
-Accommodation	Create and edit properties, room types, photographs (ordered, with a primary), amenities, house rules, check-in/check-out times, cancellation policy selection, activate/deactivate
+Accommodation	Deferred to v2 (ADR 0013). The v1 provider portal covers transport and activity providers only. Accommodation records are catalogue reference data maintained by an administrator (§27.8) and by the seed loader.
 Activity	Create and edit activities, descriptions, inclusions/exclusions, requirements, meeting point with map pin, duration, price per person and per group, min/max party, booking cutoff, confirmation mode, cancellation policy, photographs
 Transport	Manage drivers and vehicles, documents, vehicle classes and service areas; transfer pricing is platformmanaged (Section 12.4) and is displayed read-only with the applicable tariff
 All listing edits by a verified provider publish immediately except changes to price, cancellation policy or capacity, which take effect only for new bookings — never for existing ones.
 	26.5	Availability and Rate Calendar
-A month-grid calendar per room type or activity showing, per date, availability, held, sold and rate. Bulk editing supports a date range, a weekday mask, and set-availability / set-rate / open / close operations in one submission. A conflict (attempting to reduce availability below what is already sold or held) is rejected with the specific dates named. API PUT /provider/room-types/{id}/availability, PUT /provider/activities/{id}/departures.
+A month-grid calendar per room type or activity showing, per date, availability, held, sold and rate. Bulk editing supports a date range, a weekday mask, and set-availability / set-rate / open / close operations in one submission. A conflict (attempting to reduce availability below what is already sold or held) is rejected with the specific dates named. API PUT /provider/room-types/{id}/availability, PUT /provider/activities/{id}/departures. Amended v1.2. In v1 the calendar exists for activity departures only; PUT /provider/room-types/{id}/availability is deferred to v2 with room_type (ADR 0013).
 	26.6	Booking Management
 List and detail views with filters by status, date range and listing; guest name (first name and last initial only until 24 hours before service, then full name), party size, special requests, and the booking’s cancellation policy. Actions: accept or decline on-request bookings within the response window; cancel with a reason (which triggers a full tourist refund under BR-045 and is recorded against the provider’s reliability metrics); mark no-show with evidence; message the tourist.
 	26.7	Earnings, Statements and Payouts
@@ -3408,7 +3418,8 @@ Conducted with real participants: five international tourists unfamiliar with th
 <<<TABLE>>>
 ID | Title | Preconditions | Steps | Expected
 TC-013 | Non-enumeration | Unknown email | Login attempt | Response identical to TC-011
-TC-020 | Search accommodation | Property with availability | Search valid dates | 200; only room types available every night
+TC-020 | Search accommodation — void in v1 | Property with availability | Search valid dates | 200; only room types available every night
+ | TC-020 is void in v1 and is amended rather than deleted, because §41.4 and §42.2 refer to it by number. There is no accommodation search with availability in v1 (ADR 0013); the v1 equivalent is that GET /accommodations returns curated location records for a destination, with no price and no availability, and that a stay anchor can be created from one. TC-020 returns with the subsystem in v2.
 TC-021 | Search with checkout before check-in | — | Invalid range | 422 INVALID_DATE_RANGE
 TC-030 | Create trip | Authenticated | Valid destination and dates | 201; trip DRAFT; empty itinerary v1
 TC-031 | Create trip in the past | — | start_date yesterday | 422
@@ -3416,10 +3427,10 @@ TC-040 | Generate itinerary inserts transfers | Stay + activity at different loc
 TC-041 | Validation catches unreachable schedule | Two activities 90 min apart, 2 h travel | Generate | Finding VR-03 severity ERROR; quoting blocked
 TC-042 | Validation warns on opening hours | Attraction visit on a closed day | Generate | Finding VR-12 severity WARNING; quoting permitted
 TC-043 | Deterministic ordering | Two items with identical start times | Generate twice | Identical sequence_no both times
-TC-050 | Quote places holds | Valid itinerary | Quote | 200; rooms_held and capacity_held incremented; quote_expires_at set
+TC-050 | Quote places holds | Valid itinerary | Quote | 200; capacity_held incremented; quote_expires_at set (v1.2: activity departures only — rooms_held returns with v2)
 TC-051 | Quote when sold out | Availability exhausted | Quote | 409 INVENTORY_UNAVAILABLE with alternatives; no counters changed
 TC-052 | Hold expires | Quote, wait past TTL | Sweeper runs | Hold EXPIRED; counters decremented; trip returns to DRAFT-equivalent
-TC-053 | Concurrent quote for the last room | 1 room; 2 simultaneous quotes | Both submit | Exactly one 200, one 409; rooms_held = 1
+TC-053 | Concurrent quote for the last seat on a departure | 1 seat; 2 simultaneous quotes | Both submit | Exactly one 200, one 409; capacity_held = 1
 TC-060 | Confirm creates the basket | Valid unexpired quote | Confirm | 201; bookings PENDING; policy and commission snapshotted; trip PENDING_PAYMENT
 TC-061 | Confirm with an expired quote | Quote expired | Confirm | 409 QUOTE_EXPIRED; no bookings created
 TC-070 | Payment success confirms everything | Basket exists | Sandbox success + webhook | Payment CAPTURED; holds COMMITTED; bookings CONFIRMED; trip CONFIRMED; notifications sent; ledger entries written
@@ -3544,8 +3555,8 @@ Features User, role and profile models; registration, email verification, login,
 Features Geography hierarchy; destination, attraction, activity, accommodation and room-type models; media handling with CDN delivery; full-text search; the deterministic ranking expression; catalogue APIs; admin console catalogue CRUD; the Zanzibar seed dataset. Dependencies Phase 2. Deliverables API-02 complete; Explore, Destination, Attraction, Activity, Accommodation and Room Selection screens; admin catalogue management. Acceptance All ten seed destinations manageable entirely through the console with no code change; ranking is byteidentical across repeated identical requests; TC-020 and TC-021 pass.
 	37.4	Phase 4 — Trip Planner and Itinerary Engine (5 weeks)
 Features Trip, itinerary, item and flight models; item CRUD; the day-sequencing algorithm; the routing port with a fake and one real adapter; route cache and the nightly destination-pair matrix; validation rules VR-01 to VR-17; cost computation; itinerary versioning and locking. Dependencies Phases 3 and, for transfer insertion, the routing port from Phase 6 — the port interface is delivered here and the tariff logic in Phase 6. Deliverables API-03 and API-04 (quoting stub); Trip Planner, Flight Information, Itinerary, Trip Summary and Cost Breakdown screens. Acceptance TC-030, TC-031, TC-040 to TC-043 and TC-902 pass; generation of a 20-item itinerary meets NFR-P02.
-	37.5	Phase 5 — Accommodation and Inventory (3 weeks)
-Features Availability calendar, rate resolution, the hold lifecycle, the concurrency-safe hold and commit routines, the expiry sweeper, and the reconciliation checker; provider availability APIs. Dependencies Phases 3 and 4. 
+	37.5	Phase 5 — Activity Inventory and Holds (3 weeks)
+Features The activity departure calendar, the hold lifecycle, the concurrency-safe hold and commit routines, the expiry sweeper, and the reconciliation checker; provider departure and capacity APIs. Dependencies Phases 3 and 4. Deliverables Activity search with authoritative capacity; hold mechanics. Acceptance TC-050 to TC-053 pass against activity departures, including the concurrency test with zero oversell under LT-03. Amended v1.2 — ADR 0013: rate resolution and the room availability calendar are deferred to v2.
 Deliverables Accommodation search with authoritative availability; hold mechanics. Acceptance TC-050 to TC-053 pass, including the concurrency test with zero oversell under LT-03.
 	37.6	Phase 6 — Transportation and Tariffs (3 weeks)
 Features Corridors and tariffs with the resolution order; the metered pricing function; vehicle classes; the transport quoting API; the degraded-mode rules; admin tariff management with the quote preview tool. Dependencies Phases 4 and 5. Deliverables API-04 complete; Airport Pickup and Transportation screens. Acceptance A quote for every seeded corridor resolves deterministically; an unconfigured corridor returns NO_TARIFF_CONFIGURED rather than a guessed price; the worked example in Section 12.4 reproduces exactly.
@@ -3591,7 +3602,7 @@ Accounts | Tourist registration, verification, login, profile, password reset
 Catalogue | Zanzibar destinations, attractions, activities, accommodation; search, filter, deterministic ranking
 Planning | Trip creation, dates, party, flights, item selection, itinerary generation, validation, cost breakdown
 Transport | Airport transfers and inter-location transfers with corridor and metered tariffs, vehicle classes
-Accommodation | Search, availability, rates, room selection, booking
+Accommodation | Stay anchoring: a curated property or a free-entry address with a confirmed geocode, plus check-in and check-out. No inventory, no price, no booking (§14, ADR 0013).
 Activities | Departures, capacity, requirements, booking, instant and on-request confirmation
 Inventory | Holds with TTL, concurrency-safe commit, expiry sweeper
 Checkout | Single-basket quote, confirm, payment by international card and mobile money, USD and TZS
@@ -3614,14 +3625,14 @@ Quality | The NFR set in Section 29
 Clients | Backend API, tourist web application, provider portal, admin console and the Flutter driver application. The driver application is not substitutable by mobile web: a 90-second offer TTL requires high-priority push, and ARRIVED and COMPLETED transitions require background location inside a geofence. The Flutter tourist application is v1.1 (§38.2).
 <<<END TABLE>>>
 	38.2	SHOULD HAVE — Immediately After MVP
-Promotion and discount codes; multi-currency presentment beyond USD and TZS; vehicle hire by the hour (driver at disposal); masked-number voice relay; saved payment methods; trip sharing with a travelling companion; provider mobile applications; additional interface languages (French, German, Italian); the Flutter tourist companion application delivering offline itinerary access, live driver tracking, the pickup PIN and push notification (v1.1 — the public web booking front end moved into the MVP in v1.1 of this document); group and family party management with per-traveller details; waitlists for full activity departures; provider-side bulk import of listings and calendars.
+Booking.com affiliate deep links from a curated accommodation record, non-blocking and outside the basket (Appendix D10); promotion and discount codes; multi-currency presentment beyond USD and TZS; vehicle hire by the hour (driver at disposal); masked-number voice relay; saved payment methods; trip sharing with a travelling companion; provider mobile applications; additional interface languages (French, German, Italian); the Flutter tourist companion application delivering offline itinerary access, live driver tracking, the pickup PIN and push notification (v1.1 — the public web booking front end moved into the MVP in v1.1 of this document); group and family party management with per-traveller details; waitlists for full activity departures; provider-side bulk import of listings and calendars.
 	38.3	FUTURE — Deliberately Deferred
-Flight status integration and automatic transfer re-timing; on-demand (unscheduled) rides; multi-country and multidestination trips; mainland Tanzania and East African expansion; loyalty programme; affiliate and agency channels; attraction entrance-fee collection; travel insurance; a partner API for inbound tour operators; dynamic pricing of any kind; a public API marketplace.
+The full accommodation subsystem — room types, rate resolution, availability calendars, room inventory holds and accommodation commission (ADR 0013); flight status integration and automatic transfer re-timing; on-demand (unscheduled) rides; multi-country and multidestination trips; mainland Tanzania and East African expansion; loyalty programme; affiliate and agency channels; attraction entrance-fee collection; travel insurance; a partner API for inbound tour operators; dynamic pricing of any kind; a public API marketplace.
 	38.4	Explicitly Excluded Permanently or Until Reconsidered
 Every AI and machine-learning capability listed in Section 3.5. This is not a phasing decision; it is a product constraint that must be re-authorised at the product-owner level before any such work is contemplated.
 <<<TABLE>>>
 Metric | Target within 90 days of launch
-Verified providers live | ≥ 60 accommodation, ≥ 40 activity, ≥ 100 drivers
+Verified providers live | ≥ 40 activity, ≥ 100 drivers (v1.2: the accommodation provider target is withdrawn — ADR 0013)
 Confirmed trips | ≥ 250
 Payment success rate | ≥ 92%
 Trips with all bookings confirmed > 72 h before arrival | ≥ 80%
@@ -3779,7 +3790,7 @@ All ten seeded Zanzibar destinations, their attractions, activities and accommod
 	41.3	Trip Planner and Itinerary
 A tourist can create a trip, set dates and party, record inbound and outbound flights, add stays, activities and attractions, and generate an itinerary in which required transfers are inserted automatically with real distances and durations. All seventeen validation rules fire correctly, blocking on errors and advising on warnings. Regeneration is deterministic and never alters a locked item. The cost breakdown reconciles line by line to the total. Tests TC-030, TC031, TC-040 to TC-043.
 	41.4	Accommodation
-Search returns only room types available for every night of the requested stay at the requested occupancy. Nightly rates and stay totals are correct including overrides. Quoting places holds under lock; concurrent attempts on the last room produce exactly one success. Providers can publish availability and rates in bulk and cannot reduce availability below what is sold or held. Tests TC-020, TC-050 to TC-053, LT-03.
+Amended v1.2 — ADR 0013. A tourist can record where they are staying, either by choosing a curated property from the destination’s accommodation list or by entering any hotel name or address and confirming the map pin. A free-entry address with no confirmed geocode creates no anchor. The resulting STAY item carries location and dates and carries no provider, price, booking or inventory. Check-out is strictly after check-in and the stay does not exceed stay.max_nights. Transfers on either side of the anchor quote from its coordinates, and a curated property quotes to the metre. A trip with a night that no anchor covers still quotes, and raises VR-16. Multiple non-overlapping stays in one trip are supported. Tests TC-021, plus the stay-anchor cases of TC-040 and TC-043. TC-020 and TC-050 to TC-053 as written against rooms return with v2.
 	41.5	Activities
 Departures materialise from schedules across the horizon. Capacity, party-size bounds, age requirements and booking cutoffs are all enforced. On-request activities enter AWAITING_PROVIDER and auto-cancel with a full refund if the provider does not respond in time. Capacity can never be exceeded. Tests TC-051, TC-053, plus the on-request timeout scenario.
 	41.6	Transportation
@@ -3846,6 +3857,7 @@ FR-090 | Tourist reviews a completed | UC-21 | POST /reviews | review, rating_ag
 Req | Description booking | Use case | API | Data | UI | Rules | Tests
 FR-100 | Provider onboards and is verified | UC- 40, UC-41 | POST /provider/register, /provider/documents | provider, provider_document | 26.2 | BR-080, BR-085 | Provider suite
 FR-101 | Provider manages listings and calendar | UC- 42, UC-43 | /provider/… | accommodation, room_type, activity, availability | 26.4, 26.5 | BR-023, BR-082 | Provider suite
+Amended v1.2 — ADR 0013. FR-013 becomes “Tourist records where they are staying”, against GET /accommodations and POST /trips/{id}/items, entities accommodation only, screen §24.11, rule BR-101, test TC-021. FR-030 keeps inventory_hold and activity_departure and drops room_availability. FR-101 covers activity and transport listings only. The rows above are left as written so that every FR number keeps resolving.
 FR-110 | Administrator manages the catalogue | UC-61 | /admin/… | country, region, destination, attraction | 27.8 | BR-084 | Section 41.12
 FR-111 | Administrator configures commercial rules | UC-62 | /admin/commissionrules, /admin/tariffs | commission_rule, transfer_tariff | 27.11 | BR-070 | TC-110
 FR-112 | All administrativ e actions are audited | UC-69 | /admin/audit-logs | audit_log | 27.17 | — | Audit coverage test
@@ -3968,7 +3980,7 @@ limit.items_per_day | 5 | Warning threshold VR-13
 limit.travel_minutes_per_day | 240 | Warning threshold VR-14
 trip.max_days | 30 | Maximum trip length
 stay.max_nights | 30 | Maximum accommodation stay
-availability.horizon_days | 400 | Calendar auto-extension
+availability.horizon_days | 400 | Calendar auto-extension. Deferred to v2 (ADR 0013).
 departures.horizon_days | 180 | Schedule materialisation window
 location.retention_days | 30 | Raw point retention
 provider_response_hours | 24 | On-request activity response window
@@ -3992,6 +4004,7 @@ Region | 5 | Zanzibar Urban/West, North, Central/South, Pemba North, Pemba South
 Destination | 10 | Section 4.1, with Pemba inactive at launch
 Gateway destination | 1 | ZNZ, with meeting point text, coordinates and photograph
 Attraction | ~25 | Stone Town sites, Jozani Forest, Prison Island, Nungwi turtle sanctuary, spice farms, Mnemba Atoll, and others
+Accommodation (location records) | ~40 | Known Zanzibar properties with name, property type, destination, coordinates and address. Reference data, not inventory: no price, no capacity, no availability (§14, ADR 0013).
 Transfer corridor | ~30 | All gateway-to-destination pairs plus principal inter-destination pairs, per vehicle class
 Transfer tariff | 4 | One per vehicle class, region-scoped fallback
 Cancellation policy | 4 | FLEX_48H, MODERATE_7D, STRICT_14D, NON_REFUNDABLE
@@ -4000,12 +4013,13 @@ Vehicle class | 4 | STANDARD, COMFORT, VAN, MINIBUS
 Notification template | ~25 events × 3 channels | English
 <<<END TABLE>>>
 The seed set delivered in database/seeds/ and loadable through the admin console:
-Accommodation and activity records are not seeded; they are created by verified providers through the portal, which is the correct source of truth for price, availability and capacity.
+Amended v1.2 — ADR 0013. Activity records are not seeded: they are created by verified providers through the portal, which is the correct source of truth for price, availability and capacity. Accommodation records are seeded, because in v1 they are location reference data and assert nothing about price or availability. Seeding roughly forty known Zanzibar properties with coordinates makes transfer pricing exact for the tourists most likely to arrive with a hotel already booked.
 Appendix D — Open Decisions Requiring Commercial Input
 None of these decisions changes the architecture; each is isolated behind a port, a configuration row or a content record, which is the property that allows development to proceed in parallel with the commercial workstream.
 <<<TABLE>>>
 # | Decision | Owner | Blocking
 D 8 | Support operating hours and escalation contacts | Operations | Phase 13
+D 10 | Booking.com affiliate enrolment — whether to join the affiliate programme and surface deep links from curated accommodation records at roughly 4% on completed stays. Airbnb offers no public API or affiliate route; Booking.com’s Demand API is approval-gated and unavailable pre-launch. | Commercial / Product Owner | Non-blocking. No v1 dependency — ADR 0013.
 <<<END TABLE>>>
 Appendix E — Document Conventions
 “Must” denotes a mandatory requirement; “should” denotes a strong recommendation whose deviation requires a recorded architecture decision; “may” denotes an option. All times are stored in UTC and displayed in the destination’s local timezone. All monetary examples use United States Dollars unless stated. Code fragments are illustrative of structure and contract, not literal implementations. Diagrams are normative where they define states, transitions, relationships or sequences, and indicative where they describe deployment topology.

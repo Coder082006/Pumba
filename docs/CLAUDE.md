@@ -13,7 +13,7 @@ activities, transport — before travelling, and receive one confirmed day-by-da
 Supply side is verified local drivers, hotels and activity operators.
 
 **Authoritative specification:**
-`docs/srs/SRS-ZTJOP-001 Zanzibar Tourism Platform SRS v1.0.docx`, **baselined to v1.1**
+`docs/srs/SRS-ZTJOP-001 Zanzibar Tourism Platform SRS v1.0.docx`, **baselined to v1.2**
 — the filename still says v1.0; the revision-history table inside the document is
 authoritative for the version. Read it. It defines the data model, API, state machines
 and business rules. If this file and the SRS conflict, raise it with me rather than
@@ -25,6 +25,13 @@ which are superseded v1.0 PDF extractions kept only for provenance; `srs.txt` in
 particular column-scrambles every multi-column table.
 
 **Core aggregate:** `Trip → Itinerary → ItineraryItem → Booking`.
+
+**Accommodation is not a bookable product.** It is a curated location reference:
+name, property type, destination, coordinates, address, check-in and check-out times.
+A STAY itinerary item is a *stay anchor* — location and dates, no provider, no price,
+no booking, no inventory. `room_type` and `room_availability` are v2 and are not in the
+v1 schema. Decided in [ADR 0013](adr/0013-accommodation-is-a-location-reference-in-v1.md)
+and recorded as SRS v1.2.
 
 ## Build order and MVP client scope
 
