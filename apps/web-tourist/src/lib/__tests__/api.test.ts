@@ -35,8 +35,8 @@ describe('apiFetch', () => {
         mockResponse(409, {
           error: {
             code: 'INVENTORY_UNAVAILABLE',
-            message: 'The selected room is no longer available.',
-            details: [{ field: 'items[1].room_type_id', issue: 'SOLD_OUT' }],
+            message: 'This departure is no longer available.',
+            details: [{ field: 'items[1].departure_id', issue: 'SOLD_OUT' }],
             request_id: 'r2',
             retryable: false,
           },
@@ -50,7 +50,7 @@ describe('apiFetch', () => {
       code: 'INVENTORY_UNAVAILABLE',
       status: 409,
       retryable: false,
-      details: [{ field: 'items[1].room_type_id', issue: 'SOLD_OUT' }],
+      details: [{ field: 'items[1].departure_id', issue: 'SOLD_OUT' }],
     });
   });
 

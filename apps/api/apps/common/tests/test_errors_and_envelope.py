@@ -85,14 +85,14 @@ class TestEnvelopeShape:
         set_request_id("0f0a")
         envelope = error_envelope(
             "INVENTORY_UNAVAILABLE",
-            "The selected room is no longer available.",
-            details=[{"field": "items[1].room_type_id", "issue": "SOLD_OUT"}],
+            "This departure is no longer available.",
+            details=[{"field": "items[1].departure_id", "issue": "SOLD_OUT"}],
         )
         assert envelope == {
             "error": {
                 "code": "INVENTORY_UNAVAILABLE",
-                "message": "The selected room is no longer available.",
-                "details": [{"field": "items[1].room_type_id", "issue": "SOLD_OUT"}],
+                "message": "This departure is no longer available.",
+                "details": [{"field": "items[1].departure_id", "issue": "SOLD_OUT"}],
                 "request_id": "0f0a",
                 "retryable": False,
             }
@@ -122,10 +122,10 @@ class TestExceptionHandler:
     def test_drf_validation_error_is_flattened_to_details(self) -> None:
         """SRS §9.2: details[].field uses JSON-pointer-like paths."""
         response = self._handle(
-            drf_exc.ValidationError({"items": [{"room_type_id": ["SOLD_OUT"]}]})
+            drf_exc.ValidationError({"items": [{"departure_id": ["SOLD_OUT"]}]})
         )
         assert response is not None and response.status_code == 422
-        assert {"field": "items[0].room_type_id", "issue": "SOLD_OUT"} in response.data["error"][
+        assert {"field": "items[0].departure_id", "issue": "SOLD_OUT"} in response.data["error"][
             "details"
         ]
 

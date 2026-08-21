@@ -950,6 +950,133 @@ def amend(d: Doc) -> None:
         ),
     )
 
+    # ======================================================================
+    # 7.4 Relationship register, 7.5.7, 7.5.8, 7.6
+    # ======================================================================
+    d.set_cell(
+        "7.4 R13 note",
+        "<w:t>One row per room-type per date</w:t>",
+        para(run("One row per room-type per date. ") + run(DEFER, RB))
+        + para(run("R12 (accommodation 1 : 1..* room_type) and R24's ", RS))
+        + para(run("booking_accommodation subtype are deferred with it.", RS)),
+    )
+    # This runs before the fields-of-note edit: that edit's replacement text
+    # contains the same "(HOTEL/..." phrase, and would make this anchor
+    # ambiguous if it landed first.
+    d.set_para(
+        "7.5.7 room_type deferred",
+        "(HOTEL/RESORT/LODGE/GUESTHOUSE/APARTMENT), ",
+        run("Deferred to v2 — ADR 0013. ", PB)
+        + run(
+            "provider_id, star_rating, amenities, cancellation_policy_id and "
+            "child_policy leave the v1 table with the subsystem: accommodation is a "
+            "curated location record, not provider-listed supply, and a property that "
+            "cannot be booked has nothing to cancel. The room_type specification "
+            "below is preserved verbatim and is not implemented in v1; the table does "
+            "not exist in the v1 schema. room_type:",
+            PS,
+        ),
+    )
+    d.set_para(
+        "7.5.7 accommodation fields of note",
+        '<w:t>accommodation</w:t></w:r><w:r>' + PS + '<w:t xml:space="preserve"> fields of note: ',
+        run("accommodation", MONO)
+        + run(" fields of note, as amended in v1.2 — ADR 0013: ", PS)
+        + run(
+            "provider_id, destination_id, property_type "
+            "(HOTEL/RESORT/LODGE/GUESTHOUSE/APARTMENT), coordinates, address_line, "
+            "check_in_time TIME, check_out_time TIME, is_active, deleted_at.",
+            PS,
+        ),
+    )
+    # A new paragraph before the constraints line, not appended to it: that
+    # paragraph carries the §7.5.9 heading text too, so an append would land
+    # after it and read as though it applied to activity_departure.
+    d.before_para(
+        "7.5.8 room_availability deferred",
+        " enforced by trigger. ",
+        body_para(
+            "§7.5.8 is deferred to v2 — ADR 0013.",
+            "room_availability does not exist in the v1 schema; the specification above "
+            "is preserved for the day it returns. §7.5.9 below is unaffected: "
+            "activity_departure is v1, and in v1 it is the only capacity counter.",
+        ),
+    )
+    d.set_cell(
+        "7.6 room_availability index",
+        "<w:t>Availability scan; nightly sweeps</w:t>",
+        para(run("Availability scan; nightly sweeps. ") + run(DEFER, RB)),
+    )
+
+    # ======================================================================
+    # 8.4 transaction policy, 8.10 caching
+    # ======================================================================
+    d.set_cell(
+        "8.4 hold critical section",
+        "<w:t>Serialises the capacity check-anddecrement; PK ordering prevents deadlock</w:t>",
+        para(
+            run(
+                "Serialises the capacity check-and-decrement; PK ordering prevents "
+                "deadlock. Amended v1.2 — ADR 0013: activity_departure rows only in "
+                "v1; room_availability returns with the accommodation subsystem."
+            )
+        ),
+    )
+    d.set_cell(
+        "8.10 availability cache key",
+        "<w:t>Availability search result</w:t>",
+        para(run("Availability search result (activity departures in v1). ")
+             + run(DEFER.replace("Deferred", "The room form is deferred"), RB)),
+    )
+
+    # ======================================================================
+    # 9.2 envelope example, 9.4.3, 9.4.5
+    # ======================================================================
+    d.sub(
+        "9.2 envelope message",
+        '>"The selected room is no longer available for 12-14 Aug 2027."</w:t>',
+        '>"This departure is no longer available."</w:t>',
+    )
+    d.sub(
+        "9.2 envelope field path",
+        '>"items[1].room_type_id"</w:t>',
+        '>"items[1].departure_id"</w:t>',
+    )
+    d.append_para(
+        "9.4.3 deferred",
+        "Business rules applied: a room type appears only if every night in the range has ",
+        run(" " + DEFER + " ", PB)
+        + run(
+            "GET /accommodations/{id}/room-types is not a v1 endpoint. GET "
+            "/accommodations returns curated location records for a destination — name, "
+            "property type, coordinates, address, check-in and check-out times — with no "
+            "price and no availability, because a location record asserts neither.",
+            PS,
+        ),
+    )
+    d.set_para(
+        "9.4.5 quote no longer locks room nights",
+        "For each accommodation item: lock the ",
+        run("Amended v1.2 — ADR 0013. ", PB)
+        + run(
+            "A STAY item is an anchor: it locks nothing, holds nothing and prices "
+            "nothing, so the quote skips it entirely. The step this replaces — locking "
+            "room_availability rows for every night, asserting capacity, incrementing "
+            "rooms_held and creating an inventory_hold — returns with the subsystem in "
+            "v2. The activity step below is unchanged.",
+            PS,
+        ),
+    )
+
+    # ======================================================================
+    # 28.2.5 SD-05
+    # ======================================================================
+    d.append_para(
+        "28.2.5 SD-05 deferred",
+        "28.2.5 SD-05 Accommodation Booking (search to hold)",
+        run("  " + DEFER, RB),
+    )
+
 
 def main() -> int:
     with zipfile.ZipFile(SRC) as z:

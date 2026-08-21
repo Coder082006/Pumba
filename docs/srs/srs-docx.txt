@@ -995,7 +995,7 @@ R9 | destination | accommodation | 1 : 0..* | RESTRIC T |
 R1 0 | destination | activity | 1 : 0..* | RESTRIC T | 
 R11 | attraction | activity | 0..1 : 0..* | SET NULL | Activity may be standalone
 R12 | accommodation | room_type | 1 : 1..* | CASCADE | 
-R13 | room_type | room_availability | 1 : 0..* | CASCADE | One row per room-type per date
+R13 | room_type | room_availability | 1 : 0..* | CASCADE | One row per room-type per date. Deferred to v2 (ADR 0013). R12 (accommodation 1 : 1..* room_type) and R24's booking_accommodation subtype are deferred with it.
 R14 | activity | activity_schedule | 1 : 0..* | CASCADE | 
 R15 | activity | activity_departure | 1 : 0..* | CASCADE | Materialised departures
 R16 | tourist_profile | trip | 1 : 0..* | RESTRIC T | 
@@ -1144,8 +1144,8 @@ deleted_at | TIMESTAMPTZ |  |  | Y |  |
 <<<END TABLE>>>
 Indexes: GIST(centroid); INDEX(region_id, is_active); UNIQUE(slug); partial UNIQUE(gateway_code) WHERE is_gateway.
 7.5.7 accommodation and room_type
-accommodation fields of note: provider_id, destination_id, property_type 
-(HOTEL/RESORT/LODGE/GUESTHOUSE/APARTMENT), coordinates, address_line, star_rating SMALLINT NULL, amenities JSONB (GIN indexed), check_in_time TIME, check_out_time TIME, cancellation_policy_id, child_policy JSONB, is_active, deleted_at. room_type:
+accommodation fields of note, as amended in v1.2 — ADR 0013: provider_id, destination_id, property_type (HOTEL/RESORT/LODGE/GUESTHOUSE/APARTMENT), coordinates, address_line, check_in_time TIME, check_out_time TIME, is_active, deleted_at.
+Deferred to v2 — ADR 0013. provider_id, star_rating, amenities, cancellation_policy_id and child_policy leave the v1 table with the subsystem: accommodation is a curated location record, not provider-listed supply, and a property that cannot be booked has nothing to cancel. The room_type specification below is preserved verbatim and is not implemented in v1; the table does not exist in the v1 schema. room_type:
 <<<TABLE>>>
 Field | Data Type | P K | F K | Null | Default | Description
 id | BIGSERIAL | Y |  | N |  | 
@@ -1176,6 +1176,7 @@ is_closed | BOOLEAN |  |  | N | false | Stop-sell
  | Data Type | P K | F K | Null | Default | Description
 version | INTEGER |  |  | N | 0 | Optimistic lock
 <<<END TABLE>>>
+§7.5.8 is deferred to v2 — ADR 0013. room_availability does not exist in the v1 schema; the specification above is preserved for the day it returns. §7.5.9 below is unaffected: activity_departure is v1, and in v1 it is the only capacity counter.
 Constraints: UNIQUE(room_type_id, stay_date); CHECK (rooms_held + rooms_sold <= rooms_open); CHECK (rooms_open <= (SELECT total_rooms ...)) enforced by trigger. 7.5.9 activity and activity_departure
 <<<TABLE>>>
 activity_departure: |  |  |  |  | 
@@ -1357,7 +1358,7 @@ destination | GIST(centroid) | Nearest-destination and radius queries
 <<<TABLE>>>
 accommodation | GIST(coordinates); GIN(amenities) | Map search; amenity filters
 activity | GIST(coordinates); GIN(to_tsvector(name || description)) | Map search; catalogue full-text
-room_availability | UNIQUE(room_type_id, stay_date); INDEX(stay_date) WHERE NOT is_closed | Availability scan; nightly sweeps
+room_availability | UNIQUE(room_type_id, stay_date); INDEX(stay_date) WHERE NOT is_closed | Availability scan; nightly sweeps. Deferred to v2 (ADR 0013).
 activity_departure | UNIQUE(activity_id, departs_at); INDEX(departs_at) WHERE status=‘OPEN’ | Departure search
 booking | INDEX(provider_id, status, starts_at); INDEX(status, starts_at) | Provider console; scheduler
 itinerary_item | UNIQUE(itinerary_id, day_number, sequence_no) | Deterministic ordering
@@ -1434,7 +1435,7 @@ Domain events are dispatched after commit (transaction.on_commit) so that no not
 <<<TABLE>>>
 Operation | Isolation | Locking | Rationale
 Read catalogue | READ COMMITTE D | none | Tolerates staleness
-Place inventory hold | READ COMMITTE D | SELECT … FOR UPDATE on the affected room_availability / activity_departure rows, ordered by primary key | Serialises the capacity check-anddecrement; PK ordering prevents deadlock
+Place inventory hold | READ COMMITTE D | SELECT … FOR UPDATE on the affected room_availability / activity_departure rows, ordered by primary key | Serialises the capacity check-and-decrement; PK ordering prevents deadlock. Amended v1.2 — ADR 0013: activity_departure rows only in v1; room_availability returns with the accommodation subsystem.
 Confirm trip (basket) | READ COMMITTE D | Row locks on all held inventory + optimistic version on trip and each booking | Atomic multi-booking confirmation
 Payment webhook processing | READ COMMITTE D | Advisory lock on payment.id; unique constraint on psp_reference | Exactly-once effect under duplicate webhooks
 Driver assignment acceptance | READ COMMITTE D | SELECT … FOR UPDATE on driver_assignment + EXCLUDE constraint | First acceptance wins; overlap impossible
@@ -1530,7 +1531,7 @@ Structured JSON logs carrying request_id, user_id, trip_id, booking_id, payment_
 <<<TABLE>>>
 Cached item | Key | TTL | Invalidation
 FX rate | fx:{base}:{quote} | 1 h | Scheduled refresh
-Availability search result | avail:{room_type}:{from}:{to} | 60 s | Deliberately short; never used for the authoritative check
+Availability search result (activity departures in v1). The room form is deferred to v2 (ADR 0013). | avail:{room_type}:{from}:{to} | 60 s | Deliberately short; never used for the authoritative check
 Session principal | auth:{jti} | Token TTL | On logout/revocation
 <<<END TABLE>>>
 <<<TABLE>>>
@@ -1559,7 +1560,7 @@ Error:
 
 
 <<<TABLE>>>
-{ "error": { "code": "INVENTORY_UNAVAILABLE", "message": "The selected room is no longer available for 12-14 Aug 2027.",     "details": [ { "field": "items[1].room_type_id", "issue": "SOLD_OUT" }     ], "request_id": "0f0a...", "retryable": false } }
+{ "error": { "code": "INVENTORY_UNAVAILABLE", "message": "This departure is no longer available.",     "details": [ { "field": "items[1].departure_id", "issue": "SOLD_OUT" }     ], "request_id": "0f0a...", "retryable": false } }
 <<<END TABLE>>>
 message is safe to display to an end user, localised by Accept-Language. code is stable and machine-readable. details[].field uses JSON-pointer-like paths into the request body.
 	9.3	Endpoint Catalogue
@@ -1719,7 +1720,7 @@ Response 200:
       }
     }
   ] }
-Business rules applied: a room type appears only if every night in the range has rooms_open − rooms_held − rooms_sold ≥ rooms and is_closed = false; min_nights is satisfied; and requested occupancy fits capacity. Availability shown here is indicative — the authoritative check occurs at POST /trips/{id}/quote.
+Business rules applied: a room type appears only if every night in the range has rooms_open − rooms_held − rooms_sold ≥ rooms and is_closed = false; min_nights is satisfied; and requested occupancy fits capacity. Availability shown here is indicative — the authoritative check occurs at POST /trips/{id}/quote. Deferred to v2 (ADR 0013). GET /accommodations/{id}/room-types is not a v1 endpoint. GET /accommodations returns curated location records for a destination — name, property type, coordinates, address, check-in and check-out times — with no price and no availability, because a location record asserts neither.
 Errors: 422 INVALID_DATE_RANGE (check-out ≤ check-in, or range exceeds the 30-night maximum stay), 404 NOT_FOUND.
 	9.4.4	POST /transport/quotes
 Request:
@@ -1752,7 +1753,7 @@ Auth: tourist, owner of the trip. Idempotency-Key: required.
 Processing sequence, entirely within one transaction:
 Assert trip.status ∈ {DRAFT, PRICED} and the itinerary passes validation (Section 10.6). Otherwise 409 TRIP_NOT_QUOTABLE.
 Release any prior holds belonging to this trip.
-For each accommodation item: lock the room_availability rows for every night (FOR UPDATE, PK order); assert capacity; increment rooms_held; create inventory_hold.
+Amended v1.2 — ADR 0013. A STAY item is an anchor: it locks nothing, holds nothing and prices nothing, so the quote skips it entirely. The step this replaces — locking room_availability rows for every night, asserting capacity, incrementing rooms_held and creating an inventory_hold — returns with the subsystem in v2. The activity step below is unchanged.
 For each activity item: lock the activity_departure; assert capacity_total − held − sold ≥ pax; increment capacity_held; create inventory_hold.
 For each transfer item: re-quote using current tariffs; transfers hold no inventory but reserve a vehicle class, not a specific driver.
 Recompute all line totals, the platform fee and taxes; write to trip.
@@ -2886,7 +2887,7 @@ Tourist  App       API           Catalogue   RouteCache   RoutingProvider
   |        |    |--UPDATE trip, itinerary.version += 1            |
   |        |<--200 {itinerary, findings, totals}--|              |
   |<-render-|   |                  |           |              |
-28.2.5 SD-05 Accommodation Booking (search to hold)
+28.2.5 SD-05 Accommodation Booking (search to hold)  Deferred to v2 (ADR 0013).
 Tourist  App      API            DB(room_availability)
   |--search->|     |                     |
   |       |--GET /accommodations?…------>|

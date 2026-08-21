@@ -57,8 +57,8 @@ MODULES = [
         "catalogue",
         "L1",
         "country, region, destination, attraction, activity, activity_schedule, "
-        "accommodation, room_type, media",
-        "search_activities(), get_destination(), list_room_types()",
+        "accommodation, cancellation_policy, tag, media",
+        "search_activities(), get_destination(), list_accommodation()",
         "location",
     ),
     Module(
@@ -71,7 +71,7 @@ MODULES = [
     Module(
         "inventory",
         "L2",
-        "room_availability, activity_departure, inventory_hold",
+        "activity_departure, inventory_hold",
         "check_availability(), hold(), commit(), release()",
         "catalogue",
     ),

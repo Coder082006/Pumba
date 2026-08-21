@@ -50,7 +50,7 @@ def _flatten_drf_detail(detail: Any, prefix: str = "") -> list[dict[str, Any]]:
     """Turn DRF's nested error structure into SRS §9.2 `details[]`.
 
     `field` uses JSON-pointer-like paths into the request body, e.g.
-    `items[1].room_type_id`.
+    `items[1].departure_id`.
     """
     out: list[dict[str, Any]] = []
 
