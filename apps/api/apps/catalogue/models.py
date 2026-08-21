@@ -1,8 +1,8 @@
 """catalogue module — SRS §6.4.
 
     Owns:       country, region, destination, attraction, activity,
-                activity_schedule, accommodation, room_type, media
-    Interface:  search_activities(), get_destination(), list_room_types()
+                activity_schedule, accommodation, cancellation_policy, tag, media
+    Interface:  search_activities(), get_destination(), list_accommodation()
     Depends on: location
     Layer:      L1
 
@@ -61,7 +61,6 @@ __all__ = [
     "CancellationPolicy",
     "PropertyType",
     "Accommodation",
-    "RoomType",
     "ConfirmationMode",
     "Activity",
     "ActivitySchedule",
@@ -457,18 +456,22 @@ class PropertyType(models.TextChoices):
 
 
 class Accommodation(SoftDeleteModel):
-    """SRS §7.5.7 and §14.
+    """SRS §7.5.7 and §14, as amended in v1.2 — ADR 0013.
 
-    `provider_id` is a plain indexed integer and not a `ForeignKey`: §6.4 gives
-    `catalogue` one dependency and it is not `provider`. See ADR 0012 - a
-    `ForeignKey` would install a traversable attribute, and the boundary would
-    be gone by attribute access rather than by any import anybody wrote.
+    **This is a location record, not a product.** It holds where a property is
+    and when its day starts and ends, and nothing about price, capacity or
+    availability. A STAY itinerary item anchors to one of these (or to a
+    free-entry address with a confirmed geocode, §13.2) and carries no
+    provider, no price, no booking and no inventory.
+
+    That is why it is administrator-curated in the same way `attraction` is,
+    and why Appendix C can seed roughly forty Zanzibar properties: seeding a
+    location asserts nothing that only its owner could assert. The columns that
+    did make such assertions — `provider_id`, `star_rating`, `amenities`,
+    `child_policy`, `cancellation_policy_id`, `booking_cutoff_hours` and the
+    denormalised rating pair — left with the subsystem and return with it in
+    v2, along with `room_type`.
     """
-
-    #: ADR 0012. Nullable because `provider` arrives around Phase 6, and Phase 3
-    #: seeds no accommodation, so nothing carries a dangling reference in the
-    #: meantime. The database constraint is added by provider's own migration.
-    provider_id = models.BigIntegerField(null=True, blank=True, default=None, db_index=True)
 
     destination = models.ForeignKey(
         Destination, on_delete=models.PROTECT, related_name="accommodations"
@@ -479,43 +482,19 @@ class Accommodation(SoftDeleteModel):
     description = models.TextField(blank=True, default="")
 
     property_type = models.CharField(max_length=20, choices=PropertyType.choices)
+
+    #: The whole point of the record. §12.4 prices the transfer from here, and
+    #: a curated property quotes to the metre where a geocoded address does not.
     coordinates = gis_models.PointField(geography=True, srid=4326)
     address_line = models.CharField(max_length=255, blank=True, default="")
 
-    #: §7.5.7 allows null: an unrated guesthouse is not a one-star one, and
-    #: §24.12 renders the two differently.
-    star_rating = models.SmallIntegerField(null=True, blank=True, default=None)
-
-    #: GIN-indexed, for the §24.11 amenity filter. §14.2 also parks
-    #: `pricing_rules` in here for extra-person charges.
-    amenities = models.JSONField(default=dict, blank=True)
-
-    #: §14.5: these drive the STAY itinerary item boundaries, and therefore the
-    #: timing of the arrival transfer. A local wall time, rendered in
-    #: `destination.timezone`, which is the only zone it means anything in.
+    #: §14.5: these bound the STAY item, and therefore the timing of the
+    #: arrival transfer and any first-day activity. A local wall time, rendered
+    #: in `destination.timezone`, which is the only zone it means anything in.
+    #: Null where the property has not published one; §24.11 falls back to the
+    #: destination defaults in Appendix B.
     check_in_time = models.TimeField(null=True, blank=True, default=None)
     check_out_time = models.TimeField(null=True, blank=True, default=None)
-
-    cancellation_policy = models.ForeignKey(
-        CancellationPolicy,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        default=None,
-        related_name="accommodations",
-    )
-    child_policy = models.JSONField(default=dict, blank=True)
-
-    #: BR-103, "default 4". A column rather than a constant, per the standing
-    #: rule that thresholds are data.
-    booking_cutoff_hours = models.SmallIntegerField(default=4)
-
-    #: §16.5 ranks on rating, and §7.5.3 already denormalises the same pair onto
-    #: `provider`. `review` owns the truth and publishes a domain event; this is
-    #: a cached projection of it, never written by catalogue from its own
-    #: arithmetic.
-    rating_avg = models.DecimalField(max_digits=3, decimal_places=2, default=Decimal("0.00"))
-    rating_count = models.IntegerField(default=0)
 
     feature_rank = models.SmallIntegerField(default=100)
     is_active = models.BooleanField(default=True)
@@ -536,30 +515,12 @@ class Accommodation(SoftDeleteModel):
                 name="accommodation_slug_unique_alive",
             ),
             models.CheckConstraint(
-                condition=models.Q(star_rating__isnull=True)
-                | models.Q(star_rating__gte=1, star_rating__lte=5),
-                name="accommodation_star_rating_in_range",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(booking_cutoff_hours__gte=0),
-                name="accommodation_booking_cutoff_non_negative",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(rating_avg__gte=0, rating_avg__lte=5),
-                name="accommodation_rating_avg_in_range",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(rating_count__gte=0),
-                name="accommodation_rating_count_non_negative",
-            ),
-            models.CheckConstraint(
                 condition=models.Q(feature_rank__gte=1),
                 name="accommodation_feature_rank_positive",
             ),
         ]
         indexes = [
             GistIndex(fields=["coordinates"], name="accommodation_coordinates_gist"),
-            GinIndex(fields=["amenities"], name="accommodation_amenities_gin"),
             models.Index(
                 fields=["destination", "is_active", "feature_rank"],
                 name="accommodation_dest_active_rank",
@@ -569,78 +530,6 @@ class Accommodation(SoftDeleteModel):
 
     def __str__(self) -> str:
         return self.slug
-
-
-class RoomType(SoftDeleteModel):
-    """SRS §7.5.7.
-
-    §14.2 makes rate plans - breakfast-inclusive, non-refundable - separate room
-    type rows in V1 rather than a rate-plan dimension, which is why two rows may
-    look near-identical and differ only in `base_rate` and policy.
-    """
-
-    accommodation = models.ForeignKey(
-        Accommodation, on_delete=models.PROTECT, related_name="room_types"
-    )
-    name = models.CharField(max_length=120)
-
-    #: BR-102: the party must fit, and adults and children count separately.
-    #: `max_children = 0` means the room does not accept children at all, which
-    #: `domain.occupancy` refuses to price rather than rounding around.
-    max_adults = models.SmallIntegerField()
-    max_children = models.SmallIntegerField(default=0)
-
-    bed_configuration = models.CharField(max_length=80, blank=True, default="")
-    size_sqm = models.SmallIntegerField(null=True, blank=True, default=None)
-
-    #: §14.2: the nightly rate before overrides. §18.5: `Decimal`, never a
-    #: float, paired with its currency per §7.2.
-    base_rate = models.DecimalField(max_digits=14, decimal_places=2)
-    currency = models.CharField(max_length=3, validators=[validate_iso_currency_code])
-
-    #: §7.5.7 "Physical inventory ceiling". `room_availability.rooms_open` may
-    #: not exceed it; that constraint lives with the availability rows, in
-    #: `inventory` (ADR 0011).
-    total_rooms = models.SmallIntegerField()
-
-    amenities = models.JSONField(default=dict, blank=True)
-
-    #: The room type's default minimum stay. §14.3 lets a particular night
-    #: override it, and that override lives on the availability row.
-    min_nights = models.SmallIntegerField(null=True, blank=True, default=None)
-
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        db_table = "room_type"
-        ordering = ["accommodation", "base_rate", "id"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(base_rate__gte=0), name="room_type_base_rate_non_negative"
-            ),
-            models.CheckConstraint(
-                condition=models.Q(total_rooms__gt=0), name="room_type_total_rooms_positive"
-            ),
-            # A room that sleeps nobody cannot be sold, and would divide by zero
-            # in `domain.occupancy.rooms_required`.
-            models.CheckConstraint(
-                condition=models.Q(max_adults__gte=1), name="room_type_takes_at_least_one_adult"
-            ),
-            models.CheckConstraint(
-                condition=models.Q(max_children__gte=0), name="room_type_max_children_non_negative"
-            ),
-            models.CheckConstraint(
-                condition=models.Q(size_sqm__isnull=True) | models.Q(size_sqm__gt=0),
-                name="room_type_size_positive",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(min_nights__isnull=True) | models.Q(min_nights__gt=0),
-                name="room_type_min_nights_positive",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.accommodation_id}/{self.name}"
 
 
 class ConfirmationMode(models.TextChoices):
@@ -914,6 +803,11 @@ class MediaOwnerType(models.TextChoices):
     ATTRACTION = "attraction", "Attraction"
     ACTIVITY = "activity", "Activity"
     ACCOMMODATION = "accommodation", "Accommodation"
+
+    #: Reserved, not withdrawn. `room_type` is v2 (ADR 0013), but this value is
+    #: a persisted string in a column, and the rule for those is the same one
+    #: §20.2 applies to `booking_type = ACCOMMODATION`: leave the value in
+    #: place so reviving the subsystem renumbers nothing.
     ROOM_TYPE = "room_type", "Room type"
 
 

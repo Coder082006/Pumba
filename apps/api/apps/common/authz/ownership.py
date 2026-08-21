@@ -76,7 +76,6 @@ class Resource(StrEnum):
     ATTRACTION = "ATTRACTION"
     CANCELLATION_POLICY = "CANCELLATION_POLICY"
     ACCOMMODATION = "ACCOMMODATION"
-    ROOM_TYPE = "ROOM_TYPE"
     ACTIVITY = "ACTIVITY"
     ACTIVITY_SCHEDULE = "ACTIVITY_SCHEDULE"
     ACTIVITY_DEPARTURE = "ACTIVITY_DEPARTURE"
@@ -229,9 +228,11 @@ OWNERSHIP: Mapping[tuple[Role, Resource], OwnershipRule] = MappingProxyType(
         # §14.6 policies are referenced by properties and activities across
         # every market. A provider choosing one is not a provider editing one.
         **_administered(Resource.CANCELLATION_POLICY),
+        # ADR 0013: a location record has no provider owner. It is curated
+        # catalogue data like an attraction, so it is administered, and
+        # `ROOM_TYPE` is gone with the rest of the subsystem.
+        **_administered(Resource.ACCOMMODATION),
         # --- provider-supplied listings --------------------------------------
-        **_provider_listed(Resource.ACCOMMODATION, "provider_id"),
-        **_provider_listed(Resource.ROOM_TYPE, "accommodation__provider_id"),
         **_provider_listed(Resource.ACTIVITY, "provider_id"),
         **_provider_listed(Resource.ACTIVITY_SCHEDULE, "activity__provider_id"),
         # --- capacity counters (inventory) ------------------------------------
@@ -239,14 +240,14 @@ OWNERSHIP: Mapping[tuple[Role, Resource], OwnershipRule] = MappingProxyType(
         # Phase 3. The rule is stated now because §5.2 states it: a provider
         # publishes capacity for its own departures and nobody else's.
         #
-        # `ROOM_AVAILABILITY` was here until ADR 0013. It is removed rather
-        # than reserved, which is the opposite of what happens to
-        # `booking_type = ACCOMMODATION`: that value is a persisted string in a
-        # CHECK constraint, where a gap would cost a renumbering, while this
-        # enum is never written anywhere. A reserved member would either break
-        # the totality assertion over Role x Resource or carry the ownership
-        # path `room_type__accommodation__provider_id`, which can no longer
-        # resolve.
+        # `ROOM_TYPE` and `ROOM_AVAILABILITY` were here until ADR 0013. Both
+        # are removed rather than reserved, which is the opposite of what
+        # happens to `booking_type = ACCOMMODATION`: that value is a persisted
+        # string in a CHECK constraint, where a gap would cost a renumbering,
+        # while this enum is never written anywhere. A reserved member would
+        # either break the totality assertion over Role x Resource or carry the
+        # ownership path `room_type__accommodation__provider_id`, which can no
+        # longer resolve.
         **_provider_listed(Resource.ACTIVITY_DEPARTURE, "activity__provider_id"),
         # --- media -------------------------------------------------------------
         # Polymorphic, so there is no single column to scope by: the owner of a

@@ -6,7 +6,7 @@
 
     Returns DTOs and primitives — never ORM instances (SRS §6.5 rule 5).
 
-    Public interface: search_activities(), get_destination(), list_room_types()
+    Public interface: search_activities(), get_destination(), list_accommodation()
 
 Phase 1: skeleton only.
 """

@@ -29,7 +29,6 @@ from apps.catalogue.models import (
     Media,
     PropertyType,
     Region,
-    RoomType,
     Tag,
 )
 
@@ -41,7 +40,6 @@ __all__ = [
     "make_attraction",
     "make_cancellation_policy",
     "make_accommodation",
-    "make_room_type",
     "make_activity",
     "make_activity_schedule",
     "make_media",
@@ -130,27 +128,11 @@ def make_accommodation(destination: Destination | None = None, **overrides: Any)
         "property_type": PropertyType.LODGE,
         "coordinates": Point(174.07, -35.27, srid=4326),
         "address_line": "1 Quay Street",
-        "star_rating": 4,
         "check_in_time": time(14, 0),
         "check_out_time": time(10, 0),
     }
     values.update(overrides)
     return Accommodation.objects.create(**values)
-
-
-def make_room_type(accommodation: Accommodation | None = None, **overrides: Any) -> RoomType:
-    values: dict[str, Any] = {
-        "accommodation": accommodation or make_accommodation(),
-        "name": "Harbour View Double",
-        "max_adults": 2,
-        "max_children": 1,
-        "bed_configuration": "1 queen",
-        "base_rate": Decimal("180.00"),
-        "currency": "NZD",
-        "total_rooms": 8,
-    }
-    values.update(overrides)
-    return RoomType.objects.create(**values)
 
 
 def make_activity(destination: Destination | None = None, **overrides: Any) -> Activity:

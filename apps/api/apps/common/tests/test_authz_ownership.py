@@ -201,7 +201,6 @@ CATALOGUE_RESOURCES = (
     Resource.ATTRACTION,
     Resource.CANCELLATION_POLICY,
     Resource.ACCOMMODATION,
-    Resource.ROOM_TYPE,
     Resource.ACTIVITY,
     Resource.ACTIVITY_SCHEDULE,
     Resource.ACTIVITY_DEPARTURE,
@@ -209,8 +208,6 @@ CATALOGUE_RESOURCES = (
 )
 
 PROVIDER_LISTED = (
-    Resource.ACCOMMODATION,
-    Resource.ROOM_TYPE,
     Resource.ACTIVITY,
     Resource.ACTIVITY_SCHEDULE,
     Resource.ACTIVITY_DEPARTURE,
@@ -264,12 +261,12 @@ class TestProviderListingsAreScopedByProvider:
         assert owner == staff
 
     def test_a_child_row_is_scoped_through_its_parent(self) -> None:
-        """`room_type` has no `provider_id` of its own; the path is what makes
-        the rule expressible without denormalising the column."""
+        """`activity_schedule` has no `provider_id` of its own; the path is
+        what makes the rule expressible without denormalising the column."""
         allowed = ownership_filter(
-            principal(Role.PROVIDER_OWNER, provider_id=42), Resource.ROOM_TYPE
+            principal(Role.PROVIDER_OWNER, provider_id=42), Resource.ACTIVITY_SCHEDULE
         )
-        assert allowed.row_field == "accommodation__provider_id"
+        assert allowed.row_field == "activity__provider_id"
 
     def test_a_capacity_row_is_scoped_through_its_activity(self) -> None:
         allowed = ownership_filter(
@@ -286,7 +283,17 @@ class TestProviderListingsAreScopedByProvider:
     def test_a_provider_with_no_provider_row_reaches_nothing(self) -> None:
         """A user granted PROVIDER_OWNER before their provider record exists."""
         who = principal(Role.PROVIDER_OWNER, provider_id=None)
+        assert ownership_filter(who, Resource.ACTIVITY).is_deny_all
+
+    def test_accommodation_is_administered_and_not_provider_listed(self) -> None:
+        """ADR 0013. A location record has no provider owner, so a provider
+        principal reaches none of them — the same answer `attraction` gives."""
+        who = principal(Role.PROVIDER_OWNER, provider_id=42)
         assert ownership_filter(who, Resource.ACCOMMODATION).is_deny_all
+        assert ownership_filter(who, Resource.ATTRACTION).is_deny_all
+
+    def test_room_type_is_no_longer_a_resource(self) -> None:
+        assert not hasattr(Resource, "ROOM_TYPE")
 
     @pytest.mark.parametrize(
         "resource",

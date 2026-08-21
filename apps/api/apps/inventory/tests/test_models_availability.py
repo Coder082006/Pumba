@@ -60,7 +60,7 @@ class TestCatalogueHasNoPathToTheseRows:
         assert not hasattr(activity, "departures")
 
     def test_no_catalogue_model_can_reach_an_inventory_model(self) -> None:
-        for name in ("RoomType", "Activity", "ActivitySchedule", "Accommodation"):
+        for name in ("Activity", "ActivitySchedule", "Accommodation"):
             model = django_apps.get_model("catalogue", name)
             reachable = {
                 f.related_model._meta.app_label
