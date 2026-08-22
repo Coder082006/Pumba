@@ -1,0 +1,37 @@
+[
+  {
+    "slug": "beaches",
+    "label": "Beaches",
+    "sort_order": 1
+  },
+  {
+    "slug": "heritage",
+    "label": "Heritage",
+    "sort_order": 2
+  },
+  {
+    "slug": "water-sports",
+    "label": "Water sports",
+    "sort_order": 3
+  },
+  {
+    "slug": "nature",
+    "label": "Nature",
+    "sort_order": 4
+  },
+  {
+    "slug": "culture",
+    "label": "Culture",
+    "sort_order": 5
+  },
+  {
+    "slug": "food",
+    "label": "Food",
+    "sort_order": 6
+  },
+  {
+    "slug": "diving",
+    "label": "Diving",
+    "sort_order": 7
+  }
+]

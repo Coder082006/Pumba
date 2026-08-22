@@ -1,0 +1,9 @@
+[
+  {
+    "iso_code": "TZ",
+    "name": "Tanzania",
+    "default_currency": "TZS",
+    "default_timezone": "Africa/Dar_es_Salaam",
+    "is_active": true
+  }
+]

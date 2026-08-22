@@ -312,6 +312,20 @@ forbidden_modules =
 ; One contract per module, protecting its internals from every other module.
 ; Extended beyond `models` to every non-public submodule, because reaching
 ; into another module's selectors or domain breaks the seam just as thoroughly.
+;
+; DIRECT IMPORTS ONLY. Every contract below sets `allow_indirect_imports = True`,
+; which makes import-linter report only imports named in an import statement.
+; Without it SRS §6.5 rule 1 is unsatisfiable rather than merely awkward:
+; a module's `services.py` necessarily imports its own models, repositories and
+; domain, so *any* cross-module call through the sanctioned public interface
+; drags those in transitively and trips the contract. The first such call — the
+; Appendix C seed loader in `administration` reaching
+; `apps.catalogue.services` — is what surfaced it.
+;
+; What is still forbidden is what the rule actually cares about: naming another
+; module's internals in an import statement. `from apps.catalogue.models import
+; Destination` fails here exactly as before. What is now permitted is the one
+; thing §6.5 requires — `from apps.catalogue import services`.
 ; ---------------------------------------------------------------------------
 
 [importlinter:contract:private-identity]
@@ -342,6 +356,7 @@ forbidden_modules =
     apps.identity.urls
     apps.identity.tasks
     apps.identity.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-location]
 name = location internals are private
@@ -371,6 +386,7 @@ forbidden_modules =
     apps.location.urls
     apps.location.tasks
     apps.location.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-notify]
 name = notify internals are private
@@ -400,6 +416,7 @@ forbidden_modules =
     apps.notify.urls
     apps.notify.tasks
     apps.notify.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-catalogue]
 name = catalogue internals are private
@@ -429,6 +446,7 @@ forbidden_modules =
     apps.catalogue.urls
     apps.catalogue.tasks
     apps.catalogue.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-provider]
 name = provider internals are private
@@ -458,6 +476,7 @@ forbidden_modules =
     apps.provider.urls
     apps.provider.tasks
     apps.provider.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-inventory]
 name = inventory internals are private
@@ -487,6 +506,7 @@ forbidden_modules =
     apps.inventory.urls
     apps.inventory.tasks
     apps.inventory.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-transport]
 name = transport internals are private
@@ -516,6 +536,7 @@ forbidden_modules =
     apps.transport.urls
     apps.transport.tasks
     apps.transport.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-trip]
 name = trip internals are private
@@ -545,6 +566,7 @@ forbidden_modules =
     apps.trip.urls
     apps.trip.tasks
     apps.trip.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-booking]
 name = booking internals are private
@@ -574,6 +596,7 @@ forbidden_modules =
     apps.booking.urls
     apps.booking.tasks
     apps.booking.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-payment]
 name = payment internals are private
@@ -603,6 +626,7 @@ forbidden_modules =
     apps.payment.urls
     apps.payment.tasks
     apps.payment.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-messaging]
 name = messaging internals are private
@@ -632,6 +656,7 @@ forbidden_modules =
     apps.messaging.urls
     apps.messaging.tasks
     apps.messaging.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-review]
 name = review internals are private
@@ -661,6 +686,7 @@ forbidden_modules =
     apps.review.urls
     apps.review.tasks
     apps.review.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-finance]
 name = finance internals are private
@@ -690,6 +716,7 @@ forbidden_modules =
     apps.finance.urls
     apps.finance.tasks
     apps.finance.adapters
+allow_indirect_imports = True
 
 [importlinter:contract:private-administration]
 name = administration internals are private
@@ -731,6 +758,7 @@ forbidden_modules =
 ; machine guards. Keeping it free of I/O is what makes it testable without a
 ; database and reviewable without a debugger.
 ; ---------------------------------------------------------------------------
+allow_indirect_imports = True
 
 [importlinter:contract:domain-layer-is-pure]
 name = domain layers import no ORM, no I/O and no other layer

@@ -78,6 +78,7 @@ __all__ = [
     "writable_fields",
     "snapshot",
     "reference",
+    "find_by_natural_key",
     "create_country",
     "update_country",
     "create_region",
@@ -291,6 +292,22 @@ def reference(model: type[_M], public_id: UUID) -> _M | None:
         return _get(model, public_id)
     except model.DoesNotExist:  # type: ignore[attr-defined]
         return None
+
+
+def find_by_natural_key(model: type[_M], field: str, value: str) -> _M | None:
+    """The live row a seed file names, or `None`.
+
+    Seed data cannot carry `public_id`: the file is written before the row
+    exists and is checked into git, where a generated UUID would either be
+    invented by hand or change on every re-seed. So a seed row identifies
+    itself the way a person does — by ISO code or by slug — and this is the
+    only place that identification happens.
+
+    Restricted to live rows on purpose. A soft-deleted destination was retired
+    by an administrator, and re-running the seed loader must not quietly undo
+    that; §7.7 releases the slug precisely so the name can be reused.
+    """
+    return model._default_manager.filter(**{field: value, "deleted_at__isnull": True}).first()
 
 
 def _check(model: type[Model], fields: Mapping[str, Any]) -> None:

@@ -83,6 +83,13 @@ services:
       # at import time and the host does not have it (ADR 0009). Writable: the
       # generated specification is committed from the host afterwards.
       - ./packages/contracts:/contracts
+      # Appendix C's seed set. It lives at the repository root rather than
+      # under apps/api because it is data the whole platform is seeded from,
+      # not application source — and because §4.2 forbids a destination name
+      # appearing as a string literal in a Python module, which is what it
+      # would become if it moved inside the package. Read-only: `make seed`
+      # loads it and nothing in the container may edit it.
+      - ./database:/database:ro
     ports:
       - "8000:8000"
     depends_on:

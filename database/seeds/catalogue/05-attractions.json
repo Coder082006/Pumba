@@ -1,0 +1,345 @@
+[
+  {
+    "destination": "stone-town",
+    "slug": "house-of-wonders",
+    "name": "House of Wonders",
+    "latitude": "-6.1620",
+    "longitude": "39.1885",
+    "tags": [
+      "heritage",
+      "culture"
+    ],
+    "summary": "Beit-al-Ajaib, the sultan's palace and the first building in Zanzibar with electricity.",
+    "visit_minutes": 60
+  },
+  {
+    "destination": "stone-town",
+    "slug": "old-fort",
+    "name": "The Old Fort",
+    "latitude": "-6.1626",
+    "longitude": "39.1880",
+    "tags": [
+      "heritage"
+    ],
+    "summary": "Ngome Kongwe, built by Omani Arabs over the ruins of a Portuguese chapel.",
+    "visit_minutes": 45
+  },
+  {
+    "destination": "stone-town",
+    "slug": "forodhani-gardens",
+    "name": "Forodhani Gardens",
+    "latitude": "-6.1618",
+    "longitude": "39.1873",
+    "tags": [
+      "food",
+      "culture"
+    ],
+    "summary": "The seafront gardens, and the night food market that fills them.",
+    "visit_minutes": 90
+  },
+  {
+    "destination": "stone-town",
+    "slug": "old-slave-market",
+    "name": "Anglican Cathedral and Former Slave Market",
+    "latitude": "-6.1650",
+    "longitude": "39.1920",
+    "tags": [
+      "heritage",
+      "culture"
+    ],
+    "summary": "The cathedral built over the whipping post, and the holding chambers beneath it.",
+    "visit_minutes": 75,
+    "entrance_fee": "5.00",
+    "fee_currency": "USD"
+  },
+  {
+    "destination": "stone-town",
+    "slug": "darajani-market",
+    "name": "Darajani Market",
+    "latitude": "-6.1655",
+    "longitude": "39.1935",
+    "tags": [
+      "food",
+      "culture"
+    ],
+    "summary": "The city's working market: spices, fish, fruit and everything else.",
+    "visit_minutes": 45
+  },
+  {
+    "destination": "stone-town",
+    "slug": "freddie-mercury-museum",
+    "name": "Freddie Mercury Museum",
+    "latitude": "-6.1614",
+    "longitude": "39.1884",
+    "tags": [
+      "culture"
+    ],
+    "summary": "The house where Farrokh Bulsara was born, above a shop on Kenyatta Road.",
+    "visit_minutes": 30,
+    "entrance_fee": "8.00",
+    "fee_currency": "USD"
+  },
+  {
+    "destination": "stone-town",
+    "slug": "palace-museum",
+    "name": "Palace Museum",
+    "latitude": "-6.1608",
+    "longitude": "39.1888",
+    "tags": [
+      "heritage"
+    ],
+    "summary": "The Sultan's Palace, kept as it was left in 1964.",
+    "visit_minutes": 45,
+    "entrance_fee": "4.00",
+    "fee_currency": "USD"
+  },
+  {
+    "destination": "stone-town",
+    "slug": "hamamni-baths",
+    "name": "Hamamni Persian Baths",
+    "latitude": "-6.1637",
+    "longitude": "39.1911",
+    "tags": [
+      "heritage"
+    ],
+    "summary": "The island's first public baths, built for Sultan Barghash in the 1870s.",
+    "visit_minutes": 30
+  },
+  {
+    "destination": "stone-town",
+    "slug": "old-dispensary",
+    "name": "Old Dispensary",
+    "latitude": "-6.1592",
+    "longitude": "39.1893",
+    "tags": [
+      "heritage"
+    ],
+    "summary": "The most ornate façade on the waterfront, carved balconies and stained glass.",
+    "visit_minutes": 30
+  },
+  {
+    "destination": "stone-town",
+    "slug": "mtoni-palace-ruins",
+    "name": "Mtoni Palace Ruins",
+    "latitude": "-6.1264",
+    "longitude": "39.1900",
+    "tags": [
+      "heritage"
+    ],
+    "summary": "What is left of the largest palace on the island, and Princess Salme's childhood home.",
+    "visit_minutes": 45
+  },
+  {
+    "destination": "paje",
+    "slug": "jozani-forest",
+    "name": "Jozani Chwaka Bay National Park",
+    "latitude": "-6.2667",
+    "longitude": "39.4167",
+    "tags": [
+      "nature"
+    ],
+    "summary": "The last stand of Zanzibar's groundwater forest, and the only home of the red colobus.",
+    "visit_minutes": 120,
+    "entrance_fee": "10.00",
+    "fee_currency": "USD"
+  },
+  {
+    "destination": "paje",
+    "slug": "pete-butterfly-centre",
+    "name": "Zanzibar Butterfly Centre",
+    "latitude": "-6.2708",
+    "longitude": "39.4083",
+    "tags": [
+      "nature"
+    ],
+    "summary": "A community-run butterfly farm at the edge of Jozani.",
+    "visit_minutes": 45,
+    "entrance_fee": "5.00",
+    "fee_currency": "USD"
+  },
+  {
+    "destination": "stone-town",
+    "slug": "prison-island",
+    "name": "Prison Island (Changuu)",
+    "latitude": "-6.1256",
+    "longitude": "39.1683",
+    "tags": [
+      "nature",
+      "heritage"
+    ],
+    "summary": "Never actually a prison — a quarantine station, and now a colony of Aldabra giant tortoises.",
+    "visit_minutes": 180,
+    "entrance_fee": "4.00",
+    "fee_currency": "USD"
+  },
+  {
+    "destination": "stone-town",
+    "slug": "nakupenda-sandbank",
+    "name": "Nakupenda Sandbank",
+    "latitude": "-6.1450",
+    "longitude": "39.1600",
+    "tags": [
+      "beaches"
+    ],
+    "summary": "A sandbar that appears at low tide and is gone by evening.",
+    "visit_minutes": 180
+  },
+  {
+    "destination": "matemwe",
+    "slug": "mnemba-atoll",
+    "name": "Mnemba Atoll",
+    "latitude": "-5.8167",
+    "longitude": "39.3833",
+    "tags": [
+      "diving",
+      "water-sports"
+    ],
+    "summary": "The reef ring off the north-east coast, and the best diving in Zanzibar.",
+    "visit_minutes": 300
+  },
+  {
+    "destination": "nungwi",
+    "slug": "nungwi-turtle-sanctuary",
+    "name": "Mnarani Turtle Sanctuary",
+    "latitude": "-5.7233",
+    "longitude": "39.2947",
+    "tags": [
+      "nature"
+    ],
+    "summary": "A tidal lagoon where green and hawksbill turtles are rehabilitated.",
+    "visit_minutes": 60,
+    "entrance_fee": "5.00",
+    "fee_currency": "USD"
+  },
+  {
+    "destination": "nungwi",
+    "slug": "ras-nungwi-lighthouse",
+    "name": "Ras Nungwi Lighthouse",
+    "latitude": "-5.7222",
+    "longitude": "39.2942",
+    "tags": [
+      "heritage"
+    ],
+    "summary": "The 1886 lighthouse at the island's northern tip, still working.",
+    "visit_minutes": 20
+  },
+  {
+    "destination": "nungwi",
+    "slug": "nungwi-dhow-yards",
+    "name": "Nungwi Dhow Yards",
+    "latitude": "-5.7269",
+    "longitude": "39.2939",
+    "tags": [
+      "culture",
+      "heritage"
+    ],
+    "summary": "Where the island's dhows are still built by eye, without plans.",
+    "visit_minutes": 45
+  },
+  {
+    "destination": "jambiani",
+    "slug": "kizimkazi-dolphins",
+    "name": "Kizimkazi Dolphin Point",
+    "latitude": "-6.4333",
+    "longitude": "39.4667",
+    "tags": [
+      "nature",
+      "water-sports"
+    ],
+    "summary": "The south-coast village where bottlenose and humpback dolphins feed.",
+    "visit_minutes": 180
+  },
+  {
+    "destination": "paje",
+    "slug": "kuza-cave",
+    "name": "Kuza Cave",
+    "latitude": "-6.2708",
+    "longitude": "39.5350",
+    "tags": [
+      "nature",
+      "culture"
+    ],
+    "summary": "A freshwater coral cavern used for Swahili cultural teaching.",
+    "visit_minutes": 60,
+    "entrance_fee": "5.00",
+    "fee_currency": "USD"
+  },
+  {
+    "destination": "paje",
+    "slug": "maalum-cave",
+    "name": "Maalum Cave",
+    "latitude": "-6.2611",
+    "longitude": "39.5236",
+    "tags": [
+      "nature"
+    ],
+    "summary": "A natural swimming cave in the coral rag inland of Paje.",
+    "visit_minutes": 90,
+    "entrance_fee": "20.00",
+    "fee_currency": "USD"
+  },
+  {
+    "destination": "michamvi",
+    "slug": "the-rock",
+    "name": "The Rock",
+    "latitude": "-6.1806",
+    "longitude": "39.5306",
+    "tags": [
+      "food"
+    ],
+    "summary": "The restaurant on a coral outcrop that you wade to at low tide and boat to at high.",
+    "visit_minutes": 90
+  },
+  {
+    "destination": "stone-town",
+    "slug": "kizimbani-spice-farm",
+    "name": "Kizimbani Spice Farm",
+    "latitude": "-6.1050",
+    "longitude": "39.2683",
+    "tags": [
+      "nature",
+      "food",
+      "culture"
+    ],
+    "summary": "Cloves, nutmeg, cinnamon and vanilla, on the plantations that gave the island its name.",
+    "visit_minutes": 150
+  },
+  {
+    "destination": "stone-town",
+    "slug": "mangapwani-slave-chamber",
+    "name": "Mangapwani Slave Chamber",
+    "latitude": "-5.9333",
+    "longitude": "39.1833",
+    "tags": [
+      "heritage"
+    ],
+    "summary": "A coral cave cut into the cliff, used to hide slaves after the trade was banned.",
+    "visit_minutes": 45,
+    "entrance_fee": "4.00",
+    "fee_currency": "USD"
+  },
+  {
+    "destination": "kendwa",
+    "slug": "fukuchani-ruins",
+    "name": "Fukuchani Ruins",
+    "latitude": "-5.8000",
+    "longitude": "39.2833",
+    "tags": [
+      "heritage"
+    ],
+    "summary": "A sixteenth-century coral-stone house, and one of the oldest structures on the island.",
+    "visit_minutes": 30
+  },
+  {
+    "destination": "chake-chake",
+    "slug": "ngezi-forest",
+    "name": "Ngezi Forest Reserve",
+    "latitude": "-4.9333",
+    "longitude": "39.6833",
+    "tags": [
+      "nature"
+    ],
+    "summary": "Pemba's remaining primary forest, and the Pemba flying fox.",
+    "visit_minutes": 150
+  }
+]

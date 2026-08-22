@@ -35,13 +35,11 @@ yet.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any
 
-from django.contrib.gis.geos import Point
 from rest_framework import serializers
 
-from apps.catalogue.domain.geo import COORDINATE_PRECISION, Coordinates
+from apps.catalogue.domain.geo import COORDINATE_PRECISION
 from apps.catalogue.domain.ranking import SortOption
 from apps.catalogue.domain.search import SearchKind
 from apps.catalogue.models import (
@@ -112,42 +110,25 @@ class _CoordinateWriteSerializer(StrictSerializer):
     The pair is all-or-nothing on a PATCH. Half a coordinate is a location in
     the sea off West Africa, and accepting one would let a typo move a hotel
     there while reporting success.
-    """
 
-    #: The model field the pair becomes. `centroid` on a destination,
-    #: `coordinates` on everything else.
-    point_field = "coordinates"
+    The pair is *not* turned into a geometry here. `latitude` and `longitude`
+    leave this layer as the two decimals they arrived as, and
+    `services.to_orm_fields` builds the `Point` — the same call the seed
+    loader makes, which never sees a serializer at all. Converting in both
+    places would be two chances to differ on precision or on axis order, and
+    axis order is the one that produces a hotel in the Atlantic.
+    """
 
     latitude = _degrees()
     longitude = _degrees()
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         attrs = super().validate(attrs)
-        latitude = attrs.pop("latitude", None)
-        longitude = attrs.pop("longitude", None)
-        if (latitude is None) != (longitude is None):
+        if (attrs.get("latitude") is None) != (attrs.get("longitude") is None):
             raise serializers.ValidationError(
                 {"latitude": "Latitude and longitude must be supplied together."}
             )
-        if latitude is not None:
-            attrs[self.point_field] = _point(latitude, longitude)
         return attrs
-
-
-def _point(latitude: Decimal, longitude: Decimal) -> Point:
-    """Validate through the domain value object, then build the geometry.
-
-    `Coordinates` is what refuses an out-of-range or over-precise pair, and it
-    is `Decimal`-based, so it is asked first. `Point` takes floats because
-    PostGIS stores double precision — that conversion is a property of the
-    storage type, not a choice, and it happens after the value has been
-    checked rather than before.
-    """
-    try:
-        checked = Coordinates(lat=latitude, lon=longitude)
-    except ValueError as exc:
-        raise serializers.ValidationError({"latitude": str(exc)}) from exc
-    return Point(float(checked.lon), float(checked.lat), srid=4326)
 
 
 class CountryWriteSerializer(StrictSerializer):
@@ -174,8 +155,6 @@ class DestinationWriteSerializer(_CoordinateWriteSerializer):
     staged, then published — §41.12 asks an administrator to open Arusha, and
     "created" and "open" are two decisions with a review in between.
     """
-
-    point_field = "centroid"
 
     region = serializers.UUIDField()
     name = serializers.CharField(max_length=120)

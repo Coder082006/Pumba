@@ -38,15 +38,18 @@ of a diff nobody edited.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from decimal import Decimal
 from types import MappingProxyType
 from typing import Any
 from uuid import UUID
 
+from django.contrib.gis.geos import Point
 from django.db import transaction
 
 from apps.catalogue import repositories as repo
+from apps.catalogue.domain.geo import Coordinates
 from apps.catalogue.models import (
     Accommodation,
     Activity,
@@ -67,6 +70,10 @@ __all__ = [
     "ENTITIES",
     "entity_for",
     "resolve_references",
+    "to_orm_fields",
+    "SEED_FILES",
+    "SeedResult",
+    "load_seed",
     "create",
     "update",
     "delete",
@@ -93,13 +100,24 @@ class CatalogueEntity:
     references: Mapping[str, type[SoftDeleteModel]] = field(default_factory=dict)
     """Fields that arrive as another row's `public_id` and must become a row."""
 
+    point_field: str | None = None
+    """Where `latitude`/`longitude` land. `centroid` on a destination."""
+
+    natural_key: str = "slug"
+    """What a seed file identifies this entity by. See `load_seed`."""
+
 
 ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
     {
         entity.key: entity
         for entity in (
             CatalogueEntity(
-                "country", Country, Resource.COUNTRY, repo.create_country, repo.update_country
+                "country",
+                Country,
+                Resource.COUNTRY,
+                repo.create_country,
+                repo.update_country,
+                natural_key="iso_code",
             ),
             CatalogueEntity(
                 "region",
@@ -116,6 +134,7 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
                 repo.create_destination,
                 repo.update_destination,
                 {"region": Region},
+                point_field="centroid",
             ),
             CatalogueEntity("tag", Tag, Resource.TAG, repo.create_tag, repo.update_tag),
             CatalogueEntity(
@@ -125,6 +144,7 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
                 repo.create_attraction,
                 repo.update_attraction,
                 {"destination": Destination},
+                point_field="coordinates",
             ),
             CatalogueEntity(
                 "activity",
@@ -137,6 +157,7 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
                     "attraction": Attraction,
                     "cancellation_policy": CancellationPolicy,
                 },
+                point_field="coordinates",
             ),
             CatalogueEntity(
                 "accommodation",
@@ -145,6 +166,7 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
                 repo.create_accommodation,
                 repo.update_accommodation,
                 {"destination": Destination},
+                point_field="coordinates",
             ),
         )
     }
@@ -153,6 +175,52 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
 
 def entity_for(key: str) -> CatalogueEntity:
     return ENTITIES[key]
+
+
+def to_orm_fields(entity: CatalogueEntity, fields: Mapping[str, Any]) -> dict[str, Any]:
+    """Wire shape to ORM shape: references resolved, degrees made a geometry.
+
+    Both halves are here rather than in the serializer because the serializer
+    is not the only entrance. §41.12's console path goes through it; Appendix
+    C's seed loader does not, and the two must not be able to disagree about
+    which of `latitude` and `longitude` is the `x` of a `Point`. Getting that
+    backwards puts a Zanzibar hotel in the Gulf of Guinea, and every test that
+    only checks a row was written still passes.
+    """
+    resolved = _fold_coordinates(entity, resolve_references(entity, fields))
+    return resolved
+
+
+def _fold_coordinates(entity: CatalogueEntity, fields: dict[str, Any]) -> dict[str, Any]:
+    """`latitude` + `longitude` become the entity's point column.
+
+    Absent on a PATCH that does not touch the location, in which case the
+    column is left alone rather than blanked — the serializer has already
+    refused half a pair, so absence here means "not being changed".
+    """
+    if entity.point_field is None:
+        return fields
+    latitude = fields.pop("latitude", None)
+    longitude = fields.pop("longitude", None)
+    if latitude is None or longitude is None:
+        return fields
+    # `Coordinates` refuses an out-of-range or over-precise pair and is
+    # `Decimal`-based, so it is asked before anything becomes a float. `Point`
+    # takes floats because PostGIS stores double precision — that is a
+    # property of the storage type, not a choice.
+    #
+    # Its refusal is a domain `ValueError` and becomes a 422 here. `domain/`
+    # may not import the platform's error hierarchy, so the translation has to
+    # happen at the first layer that can — and a latitude of 91 arriving as a
+    # 500 would tell an administrator nothing about which field to fix. The
+    # serializer's `DecimalField` bounds precision but not range: 91.0000000
+    # is a perfectly well-formed decimal.
+    try:
+        checked = Coordinates(lat=Decimal(str(latitude)), lon=Decimal(str(longitude)))
+    except ValueError as exc:
+        raise ValidationError(str(exc), details=[{"field": "latitude", "issue": str(exc)}]) from exc
+    fields[entity.point_field] = Point(float(checked.lon), float(checked.lat), srid=4326)
+    return fields
 
 
 def resolve_references(entity: CatalogueEntity, fields: Mapping[str, Any]) -> dict[str, Any]:
@@ -257,7 +325,7 @@ def create(
     populated one reads as a creation at a glance, where a missing key reads as
     a bug in whatever wrote the entry.
     """
-    dto = entity.create(**resolve_references(entity, fields))
+    dto = entity.create(**to_orm_fields(entity, fields))
     _audit(
         AuditAction.CATALOGUE_CREATED,
         entity,
@@ -287,7 +355,7 @@ def update(
     and who turned it.
     """
     before = _require(entity, public_id)
-    dto = entity.update(public_id, **resolve_references(entity, fields))
+    dto = entity.update(public_id, **to_orm_fields(entity, fields))
     _audit(
         AuditAction.CATALOGUE_UPDATED,
         entity,
@@ -354,3 +422,108 @@ def restore(
         before=before,
         after=repo.snapshot(entity.model, public_id),
     )
+
+
+# ---------------------------------------------------------------------------
+# The Appendix C seed set
+# ---------------------------------------------------------------------------
+
+#: Which file holds which entity, and the order they must be loaded in.
+#:
+#: The order is a real constraint, not a preference: a destination names its
+#: region and an attraction names its destination, so the parent has to exist.
+#: The numeric prefixes on the filenames say the same thing to anyone reading
+#: the directory, and this mapping is what the loader actually obeys.
+SEED_FILES: tuple[tuple[str, str], ...] = (
+    ("01-countries", "country"),
+    ("02-regions", "region"),
+    ("03-destinations", "destination"),
+    ("04-tags", "tag"),
+    ("05-attractions", "attraction"),
+    ("06-accommodation", "accommodation"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SeedResult:
+    """What one file did. Reported per entity so a re-run is legible."""
+
+    entity: str
+    created: int
+    updated: int
+
+    def __str__(self) -> str:
+        return f"{self.entity}: {self.created} created, {self.updated} updated"
+
+
+def load_seed(
+    entity_key: str,
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    principal: Principal | None = None,
+    ip: str | None = None,
+) -> SeedResult:
+    """Load one entity's seed rows. Idempotent, and audited like any write.
+
+    **Idempotent by natural key.** `make seed` is run on every fresh checkout
+    and again whenever the data changes, so a second run must be a no-op and
+    not a unique-constraint failure or forty duplicate hotels. A seed file
+    cannot carry `public_id` — it is written before the row exists and lives in
+    git, where a UUID would be invented by hand and change on every re-seed —
+    so the row identifies itself by ISO code or slug, and an existing live row
+    with that key is updated rather than inserted.
+
+    **Through the same audited path as the console.** Appendix C says the seed
+    set is *"loadable through the admin console"*, and §41.13 audits every
+    administrative action. A bulk `Model.objects.create()` here would be faster
+    and would leave sixty-nine catalogue rows with no record of where they came
+    from — which is the question somebody asks first when one of them is wrong.
+
+    **A retired row stays retired.** `find_by_natural_key` looks only at live
+    rows, so re-seeding does not resurrect a destination an administrator
+    deliberately withdrew; §7.7 releases the slug so the name can be reused,
+    and a new row is what the loader would then create. Withdrawing something
+    the seed file still lists is a decision, and re-running a loader is not the
+    place to reverse it.
+
+    References are by natural key too — `"region": "zanzibar-north"` — because
+    a file that had to name a UUID could not be written by a person.
+    """
+    entity = entity_for(entity_key)
+    created = updated = 0
+    for row in rows:
+        fields = _resolve_natural_references(entity, row)
+        key = fields.pop(entity.natural_key, None) or row.get(entity.natural_key)
+        existing = repo.find_by_natural_key(entity.model, entity.natural_key, str(key))
+        if existing is None:
+            create(entity, fields={**fields, entity.natural_key: key}, principal=principal, ip=ip)
+            created += 1
+        else:
+            update(entity, existing.public_id, fields=fields, principal=principal, ip=ip)
+            updated += 1
+    return SeedResult(entity_key, created, updated)
+
+
+def _resolve_natural_references(entity: CatalogueEntity, row: Mapping[str, Any]) -> dict[str, Any]:
+    """Swap each parent's slug or ISO code for that parent's `public_id`.
+
+    Turning a natural key into a UUID and letting `to_orm_fields` turn it back
+    into a row looks indirect, and is deliberate: it means the seed path and
+    the API path converge before anything is written, so a rule that holds for
+    a console write holds for a seeded one. The alternative is a second write
+    path with its own bugs and its own audit behaviour.
+    """
+    fields = dict(row)
+    for name, model in entity.references.items():
+        value = fields.get(name)
+        if value is None:
+            continue
+        key = "iso_code" if model is Country else "slug"
+        parent = repo.find_by_natural_key(model, key, str(value))
+        if parent is None:
+            raise ValidationError(
+                f"seed row names a {name} that does not exist: {value!r}",
+                details=[{"field": name, "issue": "No such row."}],
+            )
+        fields[name] = parent.public_id
+    return fields

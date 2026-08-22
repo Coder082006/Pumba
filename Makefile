@@ -179,3 +179,14 @@ migrate: ## Apply migrations
 .PHONY: makemigrations
 makemigrations: ## Generate migrations
 	$(COMPOSE) exec api python manage.py makemigrations
+
+# Idempotent: a second run updates rather than duplicates, so this is safe on
+# a database that already has a catalogue. See Appendix C and the loader's
+# docstring for why it goes through the audited service path.
+.PHONY: seed
+seed: ## Load the Appendix C seed set (idempotent)
+	$(API_IN) python manage.py seed
+
+.PHONY: seed-check
+seed-check: ## Validate every seed file without writing anything
+	$(API_IN) python manage.py seed --dry-run

@@ -1,0 +1,27 @@
+[
+  {
+    "country": "TZ",
+    "slug": "zanzibar-urban-west",
+    "name": "Zanzibar Urban/West"
+  },
+  {
+    "country": "TZ",
+    "slug": "zanzibar-north",
+    "name": "Zanzibar North"
+  },
+  {
+    "country": "TZ",
+    "slug": "zanzibar-central-south",
+    "name": "Zanzibar Central/South"
+  },
+  {
+    "country": "TZ",
+    "slug": "pemba-north",
+    "name": "Pemba North"
+  },
+  {
+    "country": "TZ",
+    "slug": "pemba-south",
+    "name": "Pemba South"
+  }
+]
