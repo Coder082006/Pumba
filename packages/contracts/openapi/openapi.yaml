@@ -1437,6 +1437,66 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/search:
+    get:
+      operationId: search_list
+      description: 'Full-text search across destinations, attractions, activities
+        and accommodation, merged into one relevance-ordered list. A bounded top-N
+        rather than a paginated walk: the way to see more of one kind is that kind''s
+        listing endpoint.'
+      summary: Search the catalogue
+      parameters:
+      - in: query
+        name: kind
+        schema:
+          type: array
+          items:
+            enum:
+            - destination
+            - attraction
+            - activity
+            - accommodation
+            type: string
+            description: |-
+              * `destination` - destination
+              * `attraction` - attraction
+              * `activity` - activity
+              * `accommodation` - accommodation
+      - in: query
+        name: q
+        schema:
+          type: string
+          minLength: 1
+        required: true
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SearchHit'
+          description: ''
+  /api/v1/tags:
+    get:
+      operationId: tags_list
+      description: 'The §24.7 category chips. Rows, not code: adding an interest is
+        an administrator action and reaches the chip strip with no deployment, and
+        retiring one removes it the same way.'
+      summary: List the interest vocabulary
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tag'
+          description: ''
 components:
   schemas:
     Accommodation:
@@ -2819,6 +2879,37 @@ components:
       required:
       - new_password
       - token
+    SearchHit:
+      type: object
+      description: |-
+        One result row. Thin on purpose — §24.7 renders a kind, a name and a
+        link, and a hit carrying the whole entity would fan out four
+        `select_related` trees to draw a line of text.
+      properties:
+        kind:
+          type: string
+        public_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        destination_slug:
+          type:
+          - string
+          - 'null'
+        rank:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,8})?$
+      required:
+      - destination_slug
+      - kind
+      - name
+      - public_id
+      - rank
+      - slug
     Tag:
       type: object
       properties:

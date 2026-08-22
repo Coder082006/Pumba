@@ -74,11 +74,12 @@ from rest_framework.views import APIView
 from apps.catalogue import selectors, services
 from apps.catalogue import serializers as ser
 from apps.catalogue.domain.ranking import SortOption
+from apps.catalogue.domain.search import SearchKind, SearchQueryError
 from apps.common.authentication import principal_from_request
 from apps.common.authz import Permission
 from apps.common.config import get_setting
 from apps.common.envelope import success_envelope
-from apps.common.errors import NotFoundError
+from apps.common.errors import NotFoundError, ValidationError
 from apps.common.mixins import ScopedQuerysetMixin
 from apps.common.pagination import Page
 from apps.common.permissions import (
@@ -121,6 +122,8 @@ __all__ = [
     "ActivityDetailView",
     "AccommodationListView",
     "AccommodationDetailView",
+    "SearchView",
+    "TagListView",
 ]
 
 #: §5.2 grants `CATALOGUE_MANAGE` to CATALOGUE_ADMIN and, by composition, to
@@ -676,4 +679,83 @@ class AccommodationDetailView(_PublicDetailView):
         return self._detail(
             selectors.get_accommodation(reference=reference, today=_today()),
             ser.AccommodationSerializer,
+        )
+
+
+@extend_schema(
+    parameters=[ser.SearchQuerySerializer],
+    responses={200: ser.SearchHitSerializer(many=True)},
+    summary="Search the catalogue",
+    description=(
+        "Full-text search across destinations, attractions, activities and "
+        "accommodation, merged into one relevance-ordered list. A bounded "
+        "top-N rather than a paginated walk: the way to see more of one kind "
+        "is that kind's listing endpoint."
+    ),
+    tags=["catalogue"],
+    auth=[],
+)
+class SearchView(_PublicCatalogueView):
+    """§9.3.2's `GET /search`. §24.7's box.
+
+    The one endpoint on the platform that puts arbitrary public text into a
+    database query, which is why `domain.search` stands between the two.
+    `websearch_to_tsquery` accepts what a person types — quotes, `or`, a stray
+    ampersand — where `to_tsquery` raises a database error on any of them, and
+    a 500 on `GET /search?q=fish %26 chips` is both a bug and a cheap denial of
+    service on an unauthenticated URL.
+    """
+
+    query_serializer = ser.SearchQuerySerializer
+
+    def get(self, request: Request) -> Response:
+        query = self._query(request)
+        try:
+            hits = selectors.search(
+                query["q"],
+                today=_today(),
+                min_length=int(get_setting("search.min_length")),
+                max_length=int(get_setting("search.max_length")),
+                kinds=[SearchKind(kind) for kind in query.get("kind", ())],
+                limit_per_kind=int(get_setting("search.results_per_kind")),
+            )
+        except SearchQueryError as exc:
+            # §24.7's "requires two characters", surfacing as 422 rather than
+            # as a scan of every row in the catalogue. Translated here because
+            # `domain/` may not import the platform's error hierarchy — the
+            # interface layer is where a domain refusal becomes a status code.
+            raise ValidationError(str(exc), details=[{"field": "q", "issue": str(exc)}]) from exc
+
+        return Response(success_envelope([dict(ser.SearchHitSerializer(hit).data) for hit in hits]))
+
+
+@extend_schema(
+    responses={200: ser.TagSerializer(many=True)},
+    summary="List the interest vocabulary",
+    description=(
+        "The §24.7 category chips. Rows, not code: adding an interest is an "
+        "administrator action and reaches the chip strip with no deployment, "
+        "and retiring one removes it the same way."
+    ),
+    tags=["catalogue"],
+    auth=[],
+)
+class TagListView(_PublicCatalogueView):
+    """§24.7's chip vocabulary.
+
+    Unpaginated, and that is a decision rather than an omission. This is a
+    curated closed vocabulary an administrator writes by hand — §24.7 names
+    five of them — and the client renders it as one strip. A cursor here would
+    make a front end loop to draw a row of chips, and would make the response
+    uncacheable as a whole for no benefit. It is also the one catalogue list
+    with no visibility chain, because a tag has no parent: retired and
+    deactivated are the whole of its lifecycle.
+    """
+
+    query_serializer = ser.NoQuerySerializer
+
+    def get(self, request: Request) -> Response:
+        self._query(request)
+        return Response(
+            success_envelope([dict(ser.TagSerializer(tag).data) for tag in selectors.list_tags()])
         )

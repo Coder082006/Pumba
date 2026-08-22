@@ -56,6 +56,8 @@ from apps.catalogue.views import (
     AttractionListView,
     DestinationDetailView,
     DestinationListView,
+    SearchView,
+    TagListView,
 )
 
 app_name = "catalogue"
@@ -157,4 +159,6 @@ urlpatterns = [
         AccommodationDetailView.as_view(),
         name="accommodation-detail",
     ),
+    path("search", SearchView.as_view(), name="search"),
+    path("tags", TagListView.as_view(), name="tag-list"),
 ]

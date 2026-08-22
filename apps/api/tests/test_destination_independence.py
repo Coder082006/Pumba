@@ -26,23 +26,22 @@ The one thing built outside that rule is the administrator's own account, via
 and asks what they can do with the console. Creating the person who logs in is
 not the thing under test.
 
-**The marker is coming off one assertion at a time, which is what it was for.**
-The criterion was written before any of its endpoints and marked
-`xfail(strict=True)` rather than skipped: while an endpoint is missing the test
-reports XFAIL and the suite stays usable, and the moment it passes the build
-turns red rather than going quietly green.
+**The marker is gone as of commit 27, and it came off the way it was meant to.**
+The criterion was written before any of the endpoints it calls, and marked
+`xfail(strict=True)` rather than skipped: while an endpoint was missing it
+reported XFAIL and the suite stayed usable, and the moment it passed the build
+turned red instead of going quietly green.
 
-It has now done that once. Commit 25 gave it the admin write API and commit 26
-gave it the public read endpoints, and at 26 the deactivation half started
-passing on its own — `strict=True` failed the build, which is how anybody found
-out. So the marker moved from the class to the one test still waiting on
-`/search`; the half that works is now an ordinary test that must keep working.
-Had it been a plain `xfail`, that half would have gone on reporting XFAIL
-indefinitely and nobody would have known it had been passing since 26.
+It did that twice, on schedule. At commit 26 the deactivation half started
+passing on its own and `strict=True` failed the build, which is how anybody
+found out — so the marker moved to the one test still waiting on `/search`. At
+27 `/search` landed and the second half XPASSed, which is how this marker came
+off. A plain `xfail` would have reported expected-failure through both, and
+§41.12 would have looked unmet for as long as anybody cared to look.
 
-What is left is `test_arusha_opens_with_no_engineering_involvement`, which
-calls `GET /api/v1/search` — commit 27. When that lands the same thing happens
-again, and the marker comes off for good in the commit that says so.
+Nothing here is marked now. §41.12 is an ordinary passing test, which means a
+regression anywhere in the flow — the admin write API, the public read
+endpoints, `/search` — fails here, naming the criterion it breaks.
 
 Written now, before any of the endpoints it calls, because an acceptance test
 written after the fact tests what was built. This one states what must be true
@@ -121,16 +120,6 @@ class TestAnAdministratorCanOpenANewMarket:
     opened by an administrator is destination-independent in one direction.
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "§41.12, the opening flow. Everything up to and including "
-            "GET /api/v1/attractions now works — commits 25 and 26 — and the last "
-            "call is GET /api/v1/search, which is commit 27. strict=True so that "
-            "it cannot pass quietly: when /search lands this turns the build red, "
-            "and the marker comes off in the commit that says so."
-        ),
-    )
     def test_arusha_opens_with_no_engineering_involvement(self) -> None:
         admin = _administrator()
 
@@ -221,12 +210,11 @@ class TestAnAdministratorCanOpenANewMarket:
         assert attraction["public_id"] in _public_ids(public.get("/api/v1/attractions"))
 
     def test_deactivating_the_market_closes_it_again(self) -> None:
-        """The other half of "without a deployment", and it passes as of 26.
+        """The other half of "without a deployment".
 
-        Every call this makes now exists: the admin write API from commit 25,
-        and `GET /api/v1/destinations` and its detail route from commit 26. It
-        carries no marker, which means a regression in any of them fails here
-        rather than being absorbed by an expected failure.
+        A market that can be opened by an administrator and only closed by an
+        engineer is not destination-independent; it is destination-independent
+        in one direction.
         """
         admin = _administrator()
         country = _created(

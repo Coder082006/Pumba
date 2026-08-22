@@ -152,6 +152,9 @@ SETTINGS_REGISTER: dict[str, Setting] = {
         Setting("auth.email_verification_ttl_hours", 24, "Verification link validity"),
         Setting("auth.password_reset_ttl_minutes", 60, "Reset link validity"),
         # -- Rate limits (§9.6). "N/period/scope", one row per table line. --
+        Setting("search.min_length", 2, "SRS 24.7: search requires two characters"),
+        Setting("search.max_length", 64, "Longest query accepted before it is refused"),
+        Setting("search.results_per_kind", 20, "Top-N taken from each searched table"),
         Setting("page.default_size", 20, "Rows per page when the caller names no limit"),
         Setting("page.max_size", 100, "Ceiling on ?limit, whatever the caller asks for"),
         Setting("ratelimit.catalogue_read", "60/minute/ip", "Unauthenticated catalogue reads"),

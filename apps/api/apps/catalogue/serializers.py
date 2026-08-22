@@ -43,6 +43,7 @@ from rest_framework import serializers
 
 from apps.catalogue.domain.geo import COORDINATE_PRECISION, Coordinates
 from apps.catalogue.domain.ranking import SortOption
+from apps.catalogue.domain.search import SearchKind
 from apps.catalogue.models import (
     ConfirmationMode,
     GatewayTypeChoices,
@@ -72,6 +73,9 @@ __all__ = [
     "AttractionQuerySerializer",
     "ActivityQuerySerializer",
     "AccommodationQuerySerializer",
+    "SearchQuerySerializer",
+    "SearchHitSerializer",
+    "NoQuerySerializer",
 ]
 
 
@@ -464,6 +468,15 @@ class _PageQuerySerializer(StrictSerializer):
     cursor = serializers.CharField(required=False, allow_blank=False)
 
 
+class NoQuerySerializer(StrictSerializer):
+    """An endpoint that takes no parameters at all.
+
+    Declared rather than skipped: without it, `/tags?is_active=false` would be
+    a 200 that quietly ignored what was asked for, which is the same failure
+    the strict write serializers exist to prevent.
+    """
+
+
 class DestinationQuerySerializer(_PageQuerySerializer):
     region = serializers.SlugField(max_length=140, required=False)
     is_gateway = serializers.BooleanField(required=False)
@@ -491,6 +504,46 @@ class AttractionQuerySerializer(_ListingQuerySerializer):
 
 class ActivityQuerySerializer(_ListingQuerySerializer):
     pass
+
+
+class SearchQuerySerializer(StrictSerializer):
+    """`GET /search?q=` — §24.7.
+
+    Deliberately not a `_PageQuerySerializer`. `/search` is a bounded top-N
+    across four tables, not a cursor walk: a keyset over a merged relevance
+    ranking would need four positions *and* a rank that stays stable while the
+    corpus changes, and `ts_rank` does not. §24.7's box is a jump-to, not a
+    browse — the way to see more of one kind is the listing endpoint for it.
+
+    `q` carries no length bounds here. §24.7's two-character minimum is
+    `search.min_length` in `system_setting` (rule 5) and is enforced by
+    `domain.search.normalise_query`, which is also the seed loader's and the
+    console's path. Restating it here would give the rule two homes and one
+    would be missed.
+    """
+
+    q = serializers.CharField(trim_whitespace=False)
+    kind = serializers.ListField(
+        child=serializers.ChoiceField(choices=[k.value for k in SearchKind]),
+        required=False,
+        allow_empty=True,
+    )
+
+
+class SearchHitSerializer(serializers.Serializer[Any]):
+    """One result row. Thin on purpose — §24.7 renders a kind, a name and a
+    link, and a hit carrying the whole entity would fan out four
+    `select_related` trees to draw a line of text."""
+
+    kind = serializers.CharField()
+    public_id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+    destination_slug = serializers.CharField(allow_null=True)
+    #: The relevance the row was ordered by. Published because §16.5 commits to
+    #: an explainable ordering and a result list is no exception: a provider
+    #: asking why they rank where they do can read it.
+    rank = serializers.DecimalField(max_digits=12, decimal_places=8)
 
 
 class AccommodationQuerySerializer(_PageQuerySerializer):

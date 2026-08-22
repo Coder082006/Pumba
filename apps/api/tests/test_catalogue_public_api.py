@@ -31,6 +31,8 @@ rows. It is refused.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
@@ -78,36 +80,73 @@ def _meta(response: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _hidden_destination() -> tuple[str, Any]:
-    destination = make_destination(slug="closed-market", name="Closed Market", is_active=False)
-    return "/api/v1/destinations", destination
+@dataclass(frozen=True, slots=True)
+class HiddenCase:
+    """A row that must not be reachable, and the request that would reach it."""
+
+    path: str
+    row: Any
+    params: dict[str, Any] = field(default_factory=dict)
 
 
-def _unlaunched_destination() -> tuple[str, Any]:
-    destination = make_destination(
-        slug="opens-tomorrow", name="Opens Tomorrow", launch_date=TOMORROW
+def _hidden_destination() -> HiddenCase:
+    return HiddenCase(
+        "/api/v1/destinations",
+        make_destination(slug="closed-market", name="Closed Market", is_active=False),
     )
-    return "/api/v1/destinations", destination
 
 
-def _attraction_under_hidden_destination() -> tuple[str, Any]:
+def _unlaunched_destination() -> HiddenCase:
+    return HiddenCase(
+        "/api/v1/destinations",
+        make_destination(slug="opens-tomorrow", name="Opens Tomorrow", launch_date=TOMORROW),
+    )
+
+
+def _attraction_under_hidden_destination() -> HiddenCase:
     destination = make_destination(slug="closed-market", is_active=False)
-    return "/api/v1/attractions", make_attraction(destination=destination, slug="hidden-ruins")
+    return HiddenCase(
+        "/api/v1/attractions", make_attraction(destination=destination, slug="hidden-ruins")
+    )
 
 
-def _activity_under_hidden_destination() -> tuple[str, Any]:
+def _activity_under_hidden_destination() -> HiddenCase:
     destination = make_destination(slug="closed-market", is_active=False)
-    return "/api/v1/activities", make_activity(destination=destination, slug="hidden-dive")
+    return HiddenCase(
+        "/api/v1/activities", make_activity(destination=destination, slug="hidden-dive")
+    )
 
 
-def _accommodation_under_hidden_destination() -> tuple[str, Any]:
+def _accommodation_under_hidden_destination() -> HiddenCase:
     destination = make_destination(slug="closed-market", is_active=False)
-    return "/api/v1/accommodation", make_accommodation(destination=destination, slug="hidden-lodge")
+    return HiddenCase(
+        "/api/v1/accommodation", make_accommodation(destination=destination, slug="hidden-lodge")
+    )
+
+
+def _hidden_row_is_not_searchable() -> HiddenCase:
+    """§24.7's box is a fifth way to reach every one of the four tables.
+
+    A search that ignored visibility would publish an unlaunched market by
+    name — the one disclosure the listing endpoints are careful about — and it
+    would do it through the endpoint a tourist reaches first.
+    """
+    destination = make_destination(slug="closed-market", name="Sarabande", is_active=False)
+    return HiddenCase("/api/v1/search", destination, {"q": "Sarabande"})
+
+
+def _retired_tag() -> HiddenCase:
+    """A tag has no parent, so it has no visibility chain — `deleted_at` and
+    `is_active` are the whole of its lifecycle, and both must remove it from
+    the chip strip or a retired interest keeps being offered."""
+    tag = make_tag(slug="retired-interest", label="Retired Interest")
+    tag.delete()
+    return HiddenCase("/api/v1/tags", tag)
 
 
 #: One scenario per public catalogue route: something that must not be visible,
-#: and where to look for it. The list and detail routes for an entity share a
-#: scenario — the row is built once and both are checked against it.
+#: and the request that would surface it. The list and detail routes for an
+#: entity share a scenario — the row is built once and both are checked.
 HIDDEN_ROW_CASES: dict[str, Any] = {
     "v1:catalogue:destination-list": _hidden_destination,
     "v1:catalogue:destination-detail": _unlaunched_destination,
@@ -117,6 +156,8 @@ HIDDEN_ROW_CASES: dict[str, Any] = {
     "v1:catalogue:activity-detail": _activity_under_hidden_destination,
     "v1:catalogue:accommodation-list": _accommodation_under_hidden_destination,
     "v1:catalogue:accommodation-detail": _accommodation_under_hidden_destination,
+    "v1:catalogue:search": _hidden_row_is_not_searchable,
+    "v1:catalogue:tag-list": _retired_tag,
 }
 
 
@@ -149,14 +190,14 @@ class TestEveryPublicRouteFiltersByVisibility:
 
     @pytest.mark.parametrize("route", sorted(HIDDEN_ROW_CASES))
     def test_a_hidden_row_is_absent_from_its_endpoint(self, route: str, public: APIClient) -> None:
-        path, row = HIDDEN_ROW_CASES[route]()
+        case = HIDDEN_ROW_CASES[route]()
         if route.endswith("-detail"):
             # A hidden row and a missing one answer identically. Anything else
             # publishes the launch date of a market that has not opened.
-            assert public.get(f"{path}/{row.public_id}").status_code == 404
-            assert public.get(f"{path}/{row.slug}").status_code == 404
+            assert public.get(f"{case.path}/{case.row.public_id}").status_code == 404
+            assert public.get(f"{case.path}/{case.row.slug}").status_code == 404
         else:
-            assert str(row.public_id) not in _ids(public.get(path))
+            assert str(case.row.public_id) not in _ids(public.get(case.path, case.params))
 
     def test_deactivating_a_destination_removes_its_listings_too(self, public: APIClient) -> None:
         """§4.1's Pemba switch, end to end over HTTP.
@@ -464,6 +505,197 @@ class TestAuthenticationIsNotRequired:
         response = public.get("/api/v1/destinations/no-such-place")
         assert response.status_code == 404
         assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+class TestSearch:
+    """§24.7's box, and §7.6's index behind it.
+
+    Two properties dominate, and both are about what arbitrary public text can
+    do. `to_tsquery` raises a database error on a stray `&` or an unbalanced
+    quote — a 500 on an unauthenticated URL, and cheap to trigger in a loop —
+    so nothing reaches it; `websearch_to_tsquery` accepts what a person types.
+    And relevance alone ties constantly across four tables, so the merge falls
+    through to a fixed kind precedence and then to id, because TC-902 requires
+    two identical requests to return identical bytes.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _corpus(self) -> Any:
+        destination = make_destination(slug="nungwi", name="Nungwi")
+        make_attraction(
+            destination=destination, slug="turtle-sanctuary", name="Nungwi Turtle Sanctuary"
+        )
+        make_activity(destination=destination, slug="sunset-dhow", name="Nungwi Sunset Dhow")
+        make_accommodation(destination=destination, slug="beach-lodge", name="Nungwi Beach Lodge")
+        return destination
+
+    def test_it_searches_all_four_tables_at_once(self, public: APIClient) -> None:
+        """One box, four tables. A tourist typing a place name does not know
+        which of them holds what they are looking for."""
+        response = public.get("/api/v1/search", {"q": "Nungwi"})
+        assert response.status_code == 200
+        assert {row["kind"] for row in response.data["data"]} == {
+            "destination",
+            "attraction",
+            "activity",
+            "accommodation",
+        }
+
+    def test_the_container_leads_on_a_tie(self, public: APIClient) -> None:
+        """`KIND_PRECEDENCE`. Somebody searching "Nungwi" wants the page that
+        contains the others, not the seventeenth activity inside it."""
+        [first, *_] = public.get("/api/v1/search", {"q": "Nungwi"}).data["data"]
+        assert first["kind"] == "destination"
+
+    def test_a_kind_filter_narrows_the_search(self, public: APIClient) -> None:
+        response = public.get("/api/v1/search", {"q": "Nungwi", "kind": ["activity"]})
+        assert {row["kind"] for row in response.data["data"]} == {"activity"}
+
+    def test_an_unknown_kind_is_refused(self, public: APIClient) -> None:
+        assert public.get("/api/v1/search", {"q": "Nungwi", "kind": ["hotel"]}).status_code == 422
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "fish & chips",
+            '"Nungwi',
+            "Nungwi | ",
+            "!!!",
+            "a:*",
+            "(((",
+            "Nungwi <-> beach",
+        ],
+    )
+    def test_operator_characters_never_reach_the_database_as_operators(
+        self, query: str, public: APIClient
+    ) -> None:
+        """Every one of these is a `to_tsquery` syntax error, which PostgreSQL
+        raises as a database error — a 500 on a public URL. `websearch_to_
+        tsquery` treats them as text, so the worst outcome is no results."""
+        assert public.get("/api/v1/search", {"q": query}).status_code == 200
+
+    def test_an_unbalanced_quote_still_finds_things(self, public: APIClient) -> None:
+        """An odd quote makes PostgreSQL read the tail as an unterminated
+        phrase and return nothing, which the tourist reads as "no results"
+        rather than as their own typo."""
+        assert public.get("/api/v1/search", {"q": '"Nungwi'}).data["data"]
+
+    def test_a_one_character_query_is_refused_before_the_database(self, public: APIClient) -> None:
+        """§24.7: *"requires two characters"*. A 422 naming `q`, not a scan of
+        every row in the catalogue — and the threshold is
+        `search.min_length` in `system_setting`, not a literal."""
+        response = public.get("/api/v1/search", {"q": "N"})
+        assert response.status_code == 422
+        assert any(detail["field"] == "q" for detail in response.json()["error"]["details"])
+
+    def test_a_missing_query_is_refused(self, public: APIClient) -> None:
+        assert public.get("/api/v1/search").status_code == 422
+
+    def test_an_absurdly_long_query_is_bounded_rather_than_refused(self, public: APIClient) -> None:
+        """`search.max_length` truncates; it does not reject.
+
+        Both answers close the same hole — an unbounded string is a way to
+        make the parser do arbitrary work before the index is consulted, and
+        nothing past the ceiling reaches PostgreSQL either way. Truncating is
+        the kinder of the two: somebody who pastes a paragraph into a search
+        box gets results for the start of it rather than an error telling them
+        their query was too long.
+
+        Asserted against the explicitly truncated form, so this is a statement
+        about the bound being applied rather than about a long string happening
+        to work.
+        """
+        ceiling = 64  # `search.max_length`
+        # Chosen so the cut lands on a token boundary — "Nungwi Beach " is
+        # thirteen characters and sixty-four is a whole number of repeats plus
+        # a whole "Nungwi Beach". Otherwise the truncated tail is half a word,
+        # which matches nothing, and the equality below would hold vacuously
+        # with both sides empty.
+        padded = "Nungwi Beach " * 500
+        long_query = public.get("/api/v1/search", {"q": padded})
+        assert long_query.status_code == 200
+        assert _ids(long_query) == _ids(public.get("/api/v1/search", {"q": padded[:ceiling]}))
+        assert _ids(long_query), "the truncated prefix should still match"
+
+    def test_the_same_query_returns_the_same_order_every_time(self, public: APIClient) -> None:
+        """TC-902, across four tables. A tie broken by whichever query
+        returned first is a result list that reorders itself between two
+        identical requests."""
+        first = _ids(public.get("/api/v1/search", {"q": "Nungwi"}))
+        for _ in range(5):
+            assert _ids(public.get("/api/v1/search", {"q": "Nungwi"})) == first
+
+    def test_a_hit_carries_enough_to_build_a_link_and_nothing_more(self, public: APIClient) -> None:
+        """A hit that carried the whole entity would fan out four
+        `select_related` trees to render a line of text."""
+        [row, *_] = public.get("/api/v1/search", {"q": "Nungwi"}).data["data"]
+        assert set(row) == {"kind", "public_id", "name", "slug", "destination_slug", "rank"}
+
+    def test_a_listing_hit_carries_the_destination_it_belongs_to(self, public: APIClient) -> None:
+        """So the result can be linked without a second request. A destination
+        hit has none, which is why the field is nullable rather than blank."""
+        rows = {
+            row["kind"]: row for row in public.get("/api/v1/search", {"q": "Nungwi"}).data["data"]
+        }
+        assert rows["attraction"]["destination_slug"] == "nungwi"
+        assert rows["destination"]["destination_slug"] is None
+
+    def test_a_query_that_matches_nothing_is_an_empty_list_not_a_404(
+        self, public: APIClient
+    ) -> None:
+        """Nothing was not found; nothing matched. A 404 would make the search
+        box look broken for a perfectly ordinary query."""
+        response = public.get("/api/v1/search", {"q": "hippopotamus"})
+        assert response.status_code == 200
+        assert response.data["data"] == []
+
+
+class TestTags:
+    def test_the_vocabulary_is_curated_order_not_alphabetical(self, public: APIClient) -> None:
+        """§24.7's chip strip is editorial. `sort_order` is the curator's, and
+        §16.5's determinism applies to it as much as to results."""
+        make_tag(slug="diving", label="Diving", sort_order=2)
+        make_tag(slug="culture", label="Culture", sort_order=1)
+        assert [row["slug"] for row in public.get("/api/v1/tags").data["data"]] == [
+            "culture",
+            "diving",
+        ]
+
+    def test_a_new_interest_needs_no_deployment(self, public: APIClient) -> None:
+        """The whole reason the vocabulary is rows. §4.2 forbids the words
+        themselves appearing in application code, so adding one has to be a
+        write, not a release."""
+        assert public.get("/api/v1/tags").data["data"] == []
+        make_tag(slug="birdwatching", label="Birdwatching")
+        assert [row["slug"] for row in public.get("/api/v1/tags").data["data"]] == ["birdwatching"]
+
+    def test_a_deactivated_tag_leaves_the_strip(self, public: APIClient) -> None:
+        tag = make_tag(slug="diving", label="Diving")
+        tag.is_active = False
+        tag.save(update_fields=["is_active"])
+        assert public.get("/api/v1/tags").data["data"] == []
+
+    def test_a_tag_is_addressed_by_identifier_not_by_slug(self, public: APIClient) -> None:
+        """§7.2. The slug is what the chip is called and is free to change,
+        which makes it the wrong thing for the console to edit the row by."""
+        make_tag(slug="diving", label="Diving")
+        [row] = public.get("/api/v1/tags").data["data"]
+        assert uuid.UUID(row["public_id"])
+
+    def test_an_unknown_query_parameter_is_refused(self, public: APIClient) -> None:
+        """`/tags` takes nothing, and "nothing" is still a shape. Ignoring
+        `?is_active=false` would be a 200 that quietly did not do what was
+        asked."""
+        assert public.get("/api/v1/tags", {"is_active": "false"}).status_code == 422
+
+    def test_the_strip_is_one_response_rather_than_a_cursor_walk(self, public: APIClient) -> None:
+        """Deliberate, and asserted so it is not "fixed" into pagination
+        later: a front end should not loop to draw a row of chips."""
+        for index in range(30):
+            make_tag(slug=f"interest-{index:02d}", label=f"Interest {index}", sort_order=index)
+        response = public.get("/api/v1/tags")
+        assert len(response.data["data"]) == 30
+        assert "next_cursor" not in response.data["meta"]
 
 
 def _every_key(payload: Any) -> set[str]:

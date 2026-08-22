@@ -75,13 +75,19 @@ class TestRegister:
                         the ceiling during an incident is the case NFR-M07
                         exists for, and a hard-coded 100 would need a
                         deployment to change.
+            search.     Phase 3, §24.7's `GET /search`. The two-character
+                        minimum is quoted from the SRS, and the ceiling on
+                        results per table is the difference between a search
+                        box and a way to read the whole catalogue.
 
         Adding a namespace is a deliberate edit to this tuple, which is the
         point: it is where somebody notices that a new family of settings has
         appeared.
         """
         extension = set(SETTINGS_REGISTER) - self.APPENDIX_B
-        unnamespaced = {k for k in extension if not k.startswith(("auth.", "ratelimit.", "page."))}
+        unnamespaced = {
+            k for k in extension if not k.startswith(("auth.", "ratelimit.", "page.", "search."))
+        }
         assert not unnamespaced, f"undocumented settings keys: {sorted(unnamespaced)}"
 
     @pytest.mark.parametrize(

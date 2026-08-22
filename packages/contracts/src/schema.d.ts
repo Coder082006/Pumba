@@ -959,6 +959,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search the catalogue
+         * @description Full-text search across destinations, attractions, activities and accommodation, merged into one relevance-ordered list. A bounded top-N rather than a paginated walk: the way to see more of one kind is that kind's listing endpoint.
+         */
+        get: operations["search_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the interest vocabulary
+         * @description The §24.7 category chips. Rows, not code: adding an interest is an administrator action and reaches the chip strip with no deployment, and retiring one removes it the same way.
+         */
+        get: operations["tags_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1528,6 +1568,19 @@ export interface components {
         ResetPasswordRequest: {
             token: string;
             new_password: string;
+        };
+        /** @description One result row. Thin on purpose — §24.7 renders a kind, a name and a
+         *     link, and a hit carrying the whole entity would fan out four
+         *     `select_related` trees to draw a line of text. */
+        SearchHit: {
+            kind: string;
+            /** Format: uuid */
+            public_id: string;
+            name: string;
+            slug: string;
+            destination_slug: string | null;
+            /** Format: decimal */
+            rank: string;
         };
         Tag: {
             /** Format: uuid */
@@ -2748,6 +2801,47 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    search_list: {
+        parameters: {
+            query: {
+                kind?: ("destination" | "attraction" | "activity" | "accommodation")[];
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchHit"][];
+                };
+            };
+        };
+    };
+    tags_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tag"][];
+                };
             };
         };
     };

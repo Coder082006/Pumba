@@ -84,6 +84,8 @@ PUBLIC_BY_DESIGN = {
     "v1:catalogue:activity-detail": "§9.3.2 public catalogue; filtered by visibility.",
     "v1:catalogue:accommodation-list": "§9.3.2 public catalogue; filtered by visibility.",
     "v1:catalogue:accommodation-detail": "§9.3.2 public catalogue; filtered by visibility.",
+    "v1:catalogue:search": "§24.7 search; every kind filtered by visibility.",
+    "v1:catalogue:tag-list": "§24.7 chip vocabulary; retired tags are excluded.",
 }
 
 
