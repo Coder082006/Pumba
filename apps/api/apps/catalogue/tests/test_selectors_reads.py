@@ -120,17 +120,17 @@ class TestWhatTheDtoCarries:
 class TestHiddenAndMissingAreIndistinguishable:
     def test_a_hidden_destination_reads_as_absent(self) -> None:
         hidden = make_destination(is_active=False)
-        assert selectors.get_destination(public_id=hidden.public_id, today=TODAY) is None
+        assert selectors.get_destination(reference=hidden.public_id, today=TODAY) is None
 
     def test_an_unlaunched_destination_reads_as_absent_until_its_date(self) -> None:
         launching = make_destination(is_active=True, launch_date=TOMORROW)
-        assert selectors.get_destination(public_id=launching.public_id, today=TODAY) is None
-        assert selectors.get_destination(public_id=launching.public_id, today=TOMORROW)
+        assert selectors.get_destination(reference=launching.public_id, today=TODAY) is None
+        assert selectors.get_destination(reference=launching.public_id, today=TOMORROW)
 
     def test_a_listing_under_a_hidden_destination_reads_as_absent(self) -> None:
         destination = make_destination(is_active=False)
         stay = make_accommodation(destination=destination)
-        assert selectors.get_accommodation(public_id=stay.public_id, today=TODAY) is None
+        assert selectors.get_accommodation(reference=stay.public_id, today=TODAY) is None
 
     def test_filtering_by_a_hidden_destination_does_not_promote_its_listings(self) -> None:
         """`_destination_id` resolves the §16.5 context term through `visible`.
@@ -140,7 +140,7 @@ class TestHiddenAndMissingAreIndistinguishable:
         """
         hidden = make_destination(is_active=False, slug="pemba-north", name="Pemba North")
         make_activity(destination=hidden, slug="pemba-dive")
-        assert selectors.list_activities(today=TODAY, destination_slug="pemba-north") == ()
+        assert selectors.list_activities(today=TODAY, destination_slug="pemba-north").items == ()
 
 
 class TestQueryCountDoesNotMoveWithRowCount:
@@ -155,8 +155,9 @@ class TestQueryCountDoesNotMoveWithRowCount:
         # Two: the page of rows with its ancestor chain joined, and one gallery
         # query for the whole page. Not three, and never `count + 2`.
         with django_assert_num_queries(2):  # type: ignore[operator]
-            rows = selectors.list_accommodation(today=TODAY)
-        assert len(rows) == count
+            page = selectors.list_accommodation(today=TODAY, limit=count)
+        assert len(page) == count
+        assert page.next_cursor is None
 
     @pytest.mark.parametrize("count", [1, 10])
     def test_listing_activities_is_a_constant_number_of_queries(
@@ -167,8 +168,8 @@ class TestQueryCountDoesNotMoveWithRowCount:
             make_activity(destination=destination, slug=f"activity-{index}")
 
         with django_assert_num_queries(2):  # type: ignore[operator]
-            rows = selectors.list_activities(today=TODAY)
-        assert len(rows) == count
+            page = selectors.list_activities(today=TODAY, limit=count)
+        assert len(page) == count
 
 
 class TestSearch:

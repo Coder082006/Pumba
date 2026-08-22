@@ -39,7 +39,9 @@ evaluated in the destination's zone, and the server's zone is not it.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Collection, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Any, TypeVar
@@ -89,11 +91,17 @@ from apps.catalogue.models import (
     MediaOwnerType,
     Tag,
 )
+from apps.common.pagination import Page, decode_cursor, encode_cursor
 
 __all__ = [
     "visibility_q",
     "visible",
+    "OrderedTerm",
+    "order_plan",
     "apply_order",
+    "ordering_fingerprint",
+    "keyset_after",
+    "reference_q",
     "list_destinations",
     "get_destination",
     "list_attractions",
@@ -229,14 +237,32 @@ _RANK_SOURCES: Mapping[type[Model], Mapping[str, Any]] = {
 }
 
 
-def apply_order(
-    queryset: QuerySet[_M],
+@dataclass(frozen=True, slots=True)
+class OrderedTerm:
+    """One compiled §16.5 term: what to read, which way, where nulls go.
+
+    The compiled form exists because two things need it and they must not
+    disagree: `apply_order` turns it into `ORDER BY`, and `keyset_after` turns
+    it into the `WHERE` that resumes inside that ordering. A cursor built from
+    a different reading of the ordering than the one the query uses does not
+    fail — it silently skips or repeats rows.
+    """
+
+    name: str
+    """The queryset name: a column, or the annotation standing in for one."""
+
+    descending: bool
+    nulls_last: bool
+
+
+def order_plan(
+    model: type[Model],
     *,
     sort: SortOption = SortOption.DEFAULT,
     selected_destination_id: int | None = None,
     interest_tags: Collection[str] = (),
-) -> QuerySet[_M]:
-    """Order `queryset` by §16.5, as `domain.ranking` describes it.
+) -> tuple[dict[str, Any], tuple[OrderedTerm, ...]]:
+    """§16.5 for this model, compiled once: the annotations, and the terms.
 
     The two context terms are annotations rather than columns: "is this row in
     the destination the tourist selected" and "does it carry any of their
@@ -247,19 +273,117 @@ def apply_order(
         selected_destination_id=selected_destination_id,
         interest_tags=interest_tags,
     )
-    sources = _RANK_SOURCES[queryset.model]
+    sources = _RANK_SOURCES[model]
     annotations: dict[str, Any] = {}
-    ordering: list[Any] = []
+    plan: list[OrderedTerm] = []
 
     for term in terms:
         name, annotation = _resolve(term, sources, selected_destination_id, interest_tags)
         if annotation is not None:
             annotations[name] = annotation
-        ordering.append(_direction(F(name), term))
+        plan.append(OrderedTerm(name, term.descending, term.nulls_last))
 
+    return annotations, tuple(plan)
+
+
+def apply_order(
+    queryset: QuerySet[_M],
+    *,
+    sort: SortOption = SortOption.DEFAULT,
+    selected_destination_id: int | None = None,
+    interest_tags: Collection[str] = (),
+) -> QuerySet[_M]:
+    """Order `queryset` by §16.5, as `domain.ranking` describes it."""
+    annotations, plan = order_plan(
+        queryset.model,
+        sort=sort,
+        selected_destination_id=selected_destination_id,
+        interest_tags=interest_tags,
+    )
     if annotations:
         queryset = queryset.annotate(**annotations)
-    return queryset.order_by(*ordering)
+    return queryset.order_by(*(_direction(F(term.name), term) for term in plan))
+
+
+def ordering_fingerprint(model: type[Model], plan: Sequence[OrderedTerm]) -> str:
+    """A short digest of *which* ordering this is.
+
+    Written into every cursor and checked on the way back. A cursor taken from
+    a `?sort=price_asc` page and replayed against `?sort=recommended` names a
+    position in an ordering that no longer exists; without this it would be
+    honoured, and the rows it skipped would never be seen by that caller.
+
+    The model is part of the material because two entities can compile to the
+    same term names — `feature_rank, id` is the whole ordering for both a
+    destination and an accommodation.
+    """
+    material = ";".join(
+        f"{model.__name__}.{term.name}:{int(term.descending)}{int(term.nulls_last)}"
+        for term in plan
+    )
+    return hashlib.blake2s(material.encode(), digest_size=8).hexdigest()
+
+
+def keyset_after(plan: Sequence[OrderedTerm], values: Sequence[object]) -> Q:
+    """Everything strictly after `values` in the ordering `plan` describes.
+
+    The lexicographic expansion, written out:
+
+        (t1 after v1)
+        OR (t1 = v1 AND t2 after v2)
+        OR (t1 = v1 AND t2 = v2 AND t3 after v3) ...
+
+    A row-value comparison — `(a, b, c) > (x, y, z)` — would be one clean
+    predicate and cannot be used here: it requires every term to sort the same
+    way, and §16.5 mixes ascending and descending and puts nulls last on three
+    of them. The expansion is longer and is the only form that says what the
+    `ORDER BY` says.
+
+    The final term is `id`, which is unique and never null, so the last branch
+    always excludes the cursor row itself. Without a unique final term this
+    would loop on a page of ties.
+    """
+    branches: list[Q] = []
+    equals = Q()
+    for term, value in zip(plan, values, strict=True):
+        after = _strictly_after(term, value)
+        if after is not None:
+            branches.append(equals & after)
+        equals &= _equal(term, value)
+
+    if not branches:
+        # Every term of the cursor was null, and nulls sort last: there is
+        # nothing after this row. An empty `Q()` would mean "everything".
+        return Q(pk__in=[])
+
+    combined = branches[0]
+    for branch in branches[1:]:
+        combined |= branch
+    return combined
+
+
+def _strictly_after(term: OrderedTerm, value: object) -> Q | None:
+    """The rows this term places after `value`, or `None` for "none of them".
+
+    Nulls sort last on every term that admits them, so nothing follows a null
+    and the branch is dropped rather than emitted as a predicate matching
+    nothing — one fewer `OR` for the planner to look at.
+    """
+    if not term.nulls_last:
+        # No term declares this today. Failing loudly beats paginating a
+        # NULLS FIRST ordering with NULLS LAST arithmetic, which would drop
+        # every null row from every page after the first.
+        raise NotImplementedError(f"keyset pagination assumes NULLS LAST; {term.name} does not")
+    if value is None:
+        return None
+    comparison = "lt" if term.descending else "gt"
+    return Q(**{f"{term.name}__{comparison}": value}) | Q(**{f"{term.name}__isnull": True})
+
+
+def _equal(term: OrderedTerm, value: object) -> Q:
+    if value is None:
+        return Q(**{f"{term.name}__isnull": True})
+    return Q(**{term.name: value})
 
 
 def _resolve(
@@ -288,7 +412,7 @@ def _resolve(
     return f"rank_{term.expression}", source
 
 
-def _direction(expression: Any, term: OrderTerm) -> Any:
+def _direction(expression: Any, term: OrderedTerm) -> Any:
     """Apply direction and null placement.
 
     `nulls_last` is passed on every term that declares it rather than left to
@@ -502,25 +626,89 @@ def _by_owner(rows: Sequence[Media]) -> dict[int, list[Media]]:
     return grouped
 
 
+def reference_q(reference: str | UUID) -> Q:
+    """Address a public row by `public_id` or by slug.
+
+    §7.2 makes the UUID the identifier the API exchanges, and §24.8 serves its
+    pages from slugs — `/destinations/zanzibar` is what a person reads, links
+    and shares, and a UUID in that position would be a worse URL for no gain.
+    Both resolve to the same row.
+
+    Resolution is here rather than in the view because "which of these two is
+    it" is a question about the data model, and because a view that guessed
+    would be a second place to guess differently.
+    """
+    if isinstance(reference, UUID):
+        return Q(public_id=reference)
+    try:
+        return Q(public_id=UUID(reference))
+    except ValueError:
+        return Q(slug=reference)
+
+
+def _paged(
+    queryset: QuerySet[_M],
+    *,
+    limit: int,
+    cursor: str | None,
+    sort: SortOption = SortOption.DEFAULT,
+    selected_destination_id: int | None = None,
+    interest_tags: Collection[str] = (),
+) -> tuple[list[_M], str | None]:
+    """One page of `queryset` in §16.5 order, and the cursor for the next.
+
+    `limit + 1` rows are fetched and the extra one is discarded. That is what
+    makes `next_cursor` truthful without a second `COUNT(*)` over a filtered,
+    ordered, joined query — and a `next_cursor` present on the last page is a
+    client that renders one empty final screen.
+
+    The ordering is compiled once and used twice: for the `ORDER BY`, and for
+    the cursor's contents. They cannot drift, because they are the same object.
+    """
+    annotations, plan = order_plan(
+        queryset.model,
+        sort=sort,
+        selected_destination_id=selected_destination_id,
+        interest_tags=interest_tags,
+    )
+    fingerprint = ordering_fingerprint(queryset.model, plan)
+    if annotations:
+        queryset = queryset.annotate(**annotations)
+    if cursor:
+        queryset = queryset.filter(keyset_after(plan, decode_cursor(cursor, ordering=fingerprint)))
+    queryset = queryset.order_by(*(_direction(F(term.name), term) for term in plan))
+
+    rows = list(queryset[: limit + 1])
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    if not (has_more and rows):
+        return rows, None
+    position = [getattr(rows[-1], term.name) for term in plan]
+    return rows, encode_cursor(position, ordering=fingerprint)
+
+
 def list_destinations(
     *,
     today: date,
     region_slug: str | None = None,
     is_gateway: bool | None = None,
-    limit: int | None = None,
-) -> tuple[DestinationDTO, ...]:
+    limit: int = 20,
+    cursor: str | None = None,
+) -> Page[DestinationDTO]:
     queryset = visible(Destination.objects.select_related(*_DESTINATION_TREE), today=today)
     if region_slug is not None:
         queryset = queryset.filter(region__slug=region_slug)
     if is_gateway is not None:
         queryset = queryset.filter(is_gateway=is_gateway)
-    queryset = apply_order(queryset)
-    rows = list(queryset[:limit] if limit is not None else queryset)
+    rows, next_cursor = _paged(queryset, limit=limit, cursor=cursor)
     galleries = _by_owner(_media_for(MediaOwnerType.DESTINATION, [row.id for row in rows]))
-    return tuple(to_destination_dto(row, media=galleries.get(row.id, [])) for row in rows)
+    return Page(
+        tuple(to_destination_dto(row, media=galleries.get(row.id, [])) for row in rows),
+        next_cursor,
+    )
 
 
-def get_destination(*, public_id: UUID, today: date) -> DestinationDTO | None:
+def get_destination(*, reference: str | UUID, today: date) -> DestinationDTO | None:
     """`None` where the row does not exist **or is not public**.
 
     The two are deliberately indistinguishable to a caller, for the same reason
@@ -529,7 +717,7 @@ def get_destination(*, public_id: UUID, today: date) -> DestinationDTO | None:
     """
     row = (
         visible(Destination.objects.select_related(*_DESTINATION_TREE), today=today)
-        .filter(public_id=public_id)
+        .filter(reference_q(reference))
         .first()
     )
     if row is None:
@@ -543,26 +731,34 @@ def list_attractions(
     destination_slug: str | None = None,
     tags: Collection[str] = (),
     sort: SortOption = SortOption.DEFAULT,
-    limit: int | None = None,
-) -> tuple[AttractionDTO, ...]:
+    limit: int = 20,
+    cursor: str | None = None,
+) -> Page[AttractionDTO]:
     queryset = visible(Attraction.objects.select_related(*_LISTING_TREE), today=today)
     selected = _destination_id(destination_slug, today=today) if destination_slug else None
     if destination_slug is not None:
         queryset = queryset.filter(destination__slug=destination_slug)
     if tags:
         queryset = queryset.filter(tags__overlap=list(tags))
-    queryset = apply_order(
-        queryset, sort=sort, selected_destination_id=selected, interest_tags=tags
+    rows, next_cursor = _paged(
+        queryset,
+        limit=limit,
+        cursor=cursor,
+        sort=sort,
+        selected_destination_id=selected,
+        interest_tags=tags,
     )
-    rows = list(queryset[:limit] if limit is not None else queryset)
     galleries = _by_owner(_media_for(MediaOwnerType.ATTRACTION, [row.id for row in rows]))
-    return tuple(to_attraction_dto(row, media=galleries.get(row.id, [])) for row in rows)
+    return Page(
+        tuple(to_attraction_dto(row, media=galleries.get(row.id, [])) for row in rows),
+        next_cursor,
+    )
 
 
-def get_attraction(*, public_id: UUID, today: date) -> AttractionDTO | None:
+def get_attraction(*, reference: str | UUID, today: date) -> AttractionDTO | None:
     row = (
         visible(Attraction.objects.select_related(*_LISTING_TREE), today=today)
-        .filter(public_id=public_id)
+        .filter(reference_q(reference))
         .first()
     )
     if row is None:
@@ -576,26 +772,34 @@ def list_activities(
     destination_slug: str | None = None,
     tags: Collection[str] = (),
     sort: SortOption = SortOption.DEFAULT,
-    limit: int | None = None,
-) -> tuple[ActivityDTO, ...]:
+    limit: int = 20,
+    cursor: str | None = None,
+) -> Page[ActivityDTO]:
     queryset = visible(Activity.objects.select_related(*_LISTING_TREE), today=today)
     selected = _destination_id(destination_slug, today=today) if destination_slug else None
     if destination_slug is not None:
         queryset = queryset.filter(destination__slug=destination_slug)
     if tags:
         queryset = queryset.filter(tags__overlap=list(tags))
-    queryset = apply_order(
-        queryset, sort=sort, selected_destination_id=selected, interest_tags=tags
+    rows, next_cursor = _paged(
+        queryset,
+        limit=limit,
+        cursor=cursor,
+        sort=sort,
+        selected_destination_id=selected,
+        interest_tags=tags,
     )
-    rows = list(queryset[:limit] if limit is not None else queryset)
     galleries = _by_owner(_media_for(MediaOwnerType.ACTIVITY, [row.id for row in rows]))
-    return tuple(to_activity_dto(row, media=galleries.get(row.id, [])) for row in rows)
+    return Page(
+        tuple(to_activity_dto(row, media=galleries.get(row.id, [])) for row in rows),
+        next_cursor,
+    )
 
 
-def get_activity(*, public_id: UUID, today: date) -> ActivityDTO | None:
+def get_activity(*, reference: str | UUID, today: date) -> ActivityDTO | None:
     row = (
         visible(Activity.objects.select_related(*_LISTING_TREE), today=today)
-        .filter(public_id=public_id)
+        .filter(reference_q(reference))
         .first()
     )
     if row is None:
@@ -608,8 +812,9 @@ def list_accommodation(
     today: date,
     destination_slug: str | None = None,
     property_types: Collection[str] = (),
-    limit: int | None = None,
-) -> tuple[AccommodationDTO, ...]:
+    limit: int = 20,
+    cursor: str | None = None,
+) -> Page[AccommodationDTO]:
     """The curated location list §24.11 offers before free entry.
 
     No dates, no occupancy, no availability and no sort-by-price parameter:
@@ -622,16 +827,20 @@ def list_accommodation(
         queryset = queryset.filter(destination__slug=destination_slug)
     if property_types:
         queryset = queryset.filter(property_type__in=list(property_types))
-    queryset = apply_order(queryset, selected_destination_id=selected)
-    rows = list(queryset[:limit] if limit is not None else queryset)
+    rows, next_cursor = _paged(
+        queryset, limit=limit, cursor=cursor, selected_destination_id=selected
+    )
     galleries = _by_owner(_media_for(MediaOwnerType.ACCOMMODATION, [row.id for row in rows]))
-    return tuple(to_accommodation_dto(row, media=galleries.get(row.id, [])) for row in rows)
+    return Page(
+        tuple(to_accommodation_dto(row, media=galleries.get(row.id, [])) for row in rows),
+        next_cursor,
+    )
 
 
-def get_accommodation(*, public_id: UUID, today: date) -> AccommodationDTO | None:
+def get_accommodation(*, reference: str | UUID, today: date) -> AccommodationDTO | None:
     row = (
         visible(Accommodation.objects.select_related(*_LISTING_TREE), today=today)
-        .filter(public_id=public_id)
+        .filter(reference_q(reference))
         .first()
     )
     if row is None:

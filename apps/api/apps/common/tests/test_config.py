@@ -65,9 +65,23 @@ class TestRegister:
         Every added key must be namespaced, so the divergence is legible in
         the register itself and a stray unprefixed key cannot slip in
         claiming to be from the appendix.
+
+        The namespaces, and what each was added for:
+
+            auth.       Phase 2, §30.2's credential and session policy.
+            ratelimit.  Phase 2, §9.6's limits.
+            page.       Phase 3, §9.1's `?limit`. A page size is a business
+                        constant like any other — an administrator lowering
+                        the ceiling during an incident is the case NFR-M07
+                        exists for, and a hard-coded 100 would need a
+                        deployment to change.
+
+        Adding a namespace is a deliberate edit to this tuple, which is the
+        point: it is where somebody notices that a new family of settings has
+        appeared.
         """
         extension = set(SETTINGS_REGISTER) - self.APPENDIX_B
-        unnamespaced = {k for k in extension if not k.startswith(("auth.", "ratelimit."))}
+        unnamespaced = {k for k in extension if not k.startswith(("auth.", "ratelimit.", "page."))}
         assert not unnamespaced, f"undocumented settings keys: {sorted(unnamespaced)}"
 
     @pytest.mark.parametrize(

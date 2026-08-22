@@ -16,11 +16,21 @@ is the shape §9.1 already established for `identity`. `restore` is a sub-
 resource of the row rather than a query parameter on the PATCH: undoing a
 deletion is a different operation from amending a row, and §41.13 records them
 under different actions.
+
+The public §9.3.2 routes sit beside them, not beneath them. `<str:reference>`
+rather than `<uuid:public_id>` because a public detail row is addressable by
+either its identifier or its slug (§24.8) — two routes for one resource would
+publish two operations in the OpenAPI document for the same thing, and
+`selectors.reference_q` resolves which is which in one place.
 """
 
 from django.urls import path
 
 from apps.catalogue.views import (
+    AccommodationDetailView,
+    AccommodationListView,
+    ActivityDetailView,
+    ActivityListView,
     AdminAccommodationCreateView,
     AdminAccommodationDetailView,
     AdminAccommodationRestoreView,
@@ -42,6 +52,10 @@ from apps.catalogue.views import (
     AdminTagCreateView,
     AdminTagDetailView,
     AdminTagRestoreView,
+    AttractionDetailView,
+    AttractionListView,
+    DestinationDetailView,
+    DestinationListView,
 )
 
 app_name = "catalogue"
@@ -125,5 +139,22 @@ urlpatterns = [
         "admin/accommodation/<uuid:public_id>/restore",
         AdminAccommodationRestoreView.as_view(),
         name="admin-accommodation-restore",
+    ),
+    # --- the public catalogue, SRS §9.3.2 --------------------------------
+    path("destinations", DestinationListView.as_view(), name="destination-list"),
+    path(
+        "destinations/<str:reference>",
+        DestinationDetailView.as_view(),
+        name="destination-detail",
+    ),
+    path("attractions", AttractionListView.as_view(), name="attraction-list"),
+    path("attractions/<str:reference>", AttractionDetailView.as_view(), name="attraction-detail"),
+    path("activities", ActivityListView.as_view(), name="activity-list"),
+    path("activities/<str:reference>", ActivityDetailView.as_view(), name="activity-detail"),
+    path("accommodation", AccommodationListView.as_view(), name="accommodation-list"),
+    path(
+        "accommodation/<str:reference>",
+        AccommodationDetailView.as_view(),
+        name="accommodation-detail",
     ),
 ]

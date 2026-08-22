@@ -68,7 +68,24 @@ PUBLIC_BY_DESIGN = {
     "v1:identity:password-reset": "Consumes an emailed token; the token is the credential.",
     "schema": "OpenAPI document (§36.2).",
     "swagger-ui": "Renders the OpenAPI document.",
+    # The §9.3.2 catalogue. Public because a tourist reads it before signing
+    # in and because Google indexes it — §24.8's pages are built from exactly
+    # these payloads. They expose rows and have no principal to scope against,
+    # so the control is `domain.visibility`, walked over the whole
+    # country → region → destination → listing chain by `selectors.visible`.
+    # That is not something this file can check statically, so
+    # `tests/test_catalogue_public_api.py` asserts it per route and fails the
+    # build for a public catalogue route that has no such assertion.
+    "v1:catalogue:destination-list": "§9.3.2 public catalogue; filtered by visibility.",
+    "v1:catalogue:destination-detail": "§9.3.2 public catalogue; filtered by visibility.",
+    "v1:catalogue:attraction-list": "§9.3.2 public catalogue; filtered by visibility.",
+    "v1:catalogue:attraction-detail": "§9.3.2 public catalogue; filtered by visibility.",
+    "v1:catalogue:activity-list": "§9.3.2 public catalogue; filtered by visibility.",
+    "v1:catalogue:activity-detail": "§9.3.2 public catalogue; filtered by visibility.",
+    "v1:catalogue:accommodation-list": "§9.3.2 public catalogue; filtered by visibility.",
+    "v1:catalogue:accommodation-detail": "§9.3.2 public catalogue; filtered by visibility.",
 }
+
 
 #: Views that identify no row and therefore need no ownership rule.
 #:
@@ -150,6 +167,19 @@ def _view_class(callback: Any) -> Any:
 
 ROUTE_VIEWS = [(name, _view_class(cb)) for name, _, cb in ROUTES if _view_class(cb) is not None]
 ROUTE_PATHS = {name: path for name, path, _ in ROUTES}
+
+#: Every public catalogue route, derived rather than listed.
+#:
+#: `tests/test_catalogue_public_api.py` requires one visibility assertion per
+#: entry, so a public catalogue endpoint that nobody wrote a hidden-row test
+#: for fails the build. Derived from the URL conf for the reason the module
+#: docstring gives about hand-maintained lists: one that had to be updated by
+#: hand would be updated by whoever remembered to.
+PUBLIC_CATALOGUE_ROUTES = frozenset(
+    name
+    for name, _ in ROUTE_VIEWS
+    if name.startswith("v1:catalogue:") and not name.startswith("v1:catalogue:admin-")
+)
 
 #: A `path()` converter (`<uuid:public_id>`) or a `re_path` named group. Either
 #: is a value the caller chose that the view must resolve to a row.

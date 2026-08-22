@@ -39,6 +39,7 @@ __all__ = [
     "LoginEmailThrottle",
     "RegistrationThrottle",
     "AuthenticatedReadThrottle",
+    "CatalogueReadThrottle",
     "parse_limit",
 ]
 
@@ -137,3 +138,16 @@ class AuthenticatedReadThrottle(SettingsRateThrottle):
     """§9.6: 300 / minute / principal."""
 
     setting_key = "ratelimit.authenticated_read"
+
+
+class CatalogueReadThrottle(SettingsRateThrottle):
+    """§9.6: 60 / minute / IP for the unauthenticated catalogue.
+
+    Keyed by address because there is no principal — these are the §9.3.2
+    endpoints a tourist reaches before signing in. They are also the only
+    unauthenticated endpoints that run a full-text query and a seven-term
+    ordering, which makes them the cheapest thing on the platform to point a
+    script at.
+    """
+
+    setting_key = "ratelimit.catalogue_read"

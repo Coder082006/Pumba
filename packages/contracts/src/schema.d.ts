@@ -4,6 +4,90 @@
  */
 
 export interface paths {
+    "/api/v1/accommodation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List curated accommodation locations
+         * @description Curated location records — ADR 0013. The Platform does not sell the room in v1, so there is no availability, no rate and no date filter: this is the list §24.11 offers a tourist naming where they already intend to stay.
+         */
+        get: operations["accommodation_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/accommodation/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one accommodation location
+         * @description One row, or 404 — whether it is missing or merely not public yet.
+         */
+        get: operations["accommodation_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/activities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List activities
+         * @description Unauthenticated, throttled, and named so the URL-conf audit sees it.
+         *
+         *     §9.3.2 makes these public. §9.6 throttles them by IP, because they are the
+         *     only unauthenticated endpoints that run a seven-term ordering over a joined
+         *     query, which makes them the cheapest thing here to point a script at.
+         */
+        get: operations["activities_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/activities/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one activity
+         * @description One row, or 404 — whether it is missing or merely not public yet.
+         */
+        get: operations["activities_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/accommodation": {
         parameters: {
             query?: never;
@@ -564,6 +648,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/attractions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List attractions
+         * @description Unauthenticated, throttled, and named so the URL-conf audit sees it.
+         *
+         *     §9.3.2 makes these public. §9.6 throttles them by IP, because they are the
+         *     only unauthenticated endpoints that run a seven-term ordering over a joined
+         *     query, which makes them the cheapest thing here to point a script at.
+         */
+        get: operations["attractions_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/attractions/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one attraction
+         * @description One row, or 404 — whether it is missing or merely not public yet.
+         */
+        get: operations["attractions_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -712,6 +840,46 @@ export interface paths {
         put?: never;
         /** @description Unauthenticated by design. Named so the URL-conf audit can see it. */
         post: operations["auth_verify_email_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List published destinations
+         * @description §9.3.2. Also the source `app/sitemap.ts` enumerates (commit 34).
+         */
+        get: operations["destinations_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/destinations/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one destination
+         * @description One row, or 404 — whether it is missing or merely not public yet.
+         */
+        get: operations["destinations_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1427,6 +1595,103 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    accommodation_list: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                destination?: string;
+                limit?: number;
+                property_type?: ("HOTEL" | "RESORT" | "LODGE" | "GUESTHOUSE" | "APARTMENT")[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accommodation"][];
+                };
+            };
+        };
+    };
+    accommodation_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accommodation"];
+                };
+            };
+        };
+    };
+    activities_list: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                destination?: string;
+                limit?: number;
+                /** @description * `recommended` - recommended
+                 *     * `price_asc` - price_asc
+                 *     * `price_desc` - price_desc
+                 *     * `rating` - rating
+                 *     * `duration` - duration
+                 *     * `distance` - distance */
+                sort?: "recommended" | "price_asc" | "price_desc" | "rating" | "duration" | "distance";
+                tags?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Activity"][];
+                };
+            };
+        };
+    };
+    activities_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Activity"];
+                };
+            };
+        };
+    };
     admin_accommodation_create: {
         parameters: {
             query?: never;
@@ -2071,6 +2336,58 @@ export interface operations {
             };
         };
     };
+    attractions_list: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                destination?: string;
+                limit?: number;
+                /** @description * `recommended` - recommended
+                 *     * `price_asc` - price_asc
+                 *     * `price_desc` - price_desc
+                 *     * `rating` - rating
+                 *     * `duration` - duration
+                 *     * `distance` - distance */
+                sort?: "recommended" | "price_asc" | "price_desc" | "rating" | "duration" | "distance";
+                tags?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attraction"][];
+                };
+            };
+        };
+    };
+    attractions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attraction"];
+                };
+            };
+        };
+    };
     auth_login_create: {
         parameters: {
             query?: never;
@@ -2275,6 +2592,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    destinations_list: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                is_gateway?: boolean;
+                limit?: number;
+                region?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Destination"][];
+                };
+            };
+        };
+    };
+    destinations_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Destination"];
                 };
             };
         };

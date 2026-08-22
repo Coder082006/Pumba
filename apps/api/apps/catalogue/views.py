@@ -29,34 +29,66 @@ reader has to execute the module to discover.
 **There is no admin read endpoint here.** A create or an amendment returns the
 row it wrote, which is what a console form needs back; listing and fetching
 curated rows — including the soft-deleted ones an administrator restores from —
-belong with the read API and its pagination, and shipping half of that here
-would mean shipping a gallery-less detail payload that later has to change
-shape.
+belongs with a console-specific read surface and is not part of this commit.
+
+---
+
+The second half of this module is the §9.3.2 **public** catalogue: the
+endpoints a tourist reaches before signing in, and the ones Google indexes.
+
+**Unauthenticated by design, and filtered by visibility rather than by
+ownership.** There is no principal to scope against, so the control is
+`domain.visibility` — walked over the whole country → region → destination →
+listing chain by `selectors.visible`, on every list and every detail. §4.1's
+Pemba switch and a market's `launch_date` are enforced there and nowhere else,
+which is why `tests/test_catalogue_public_api.py` asserts it per route and
+fails the build for a public route that has no such assertion.
+
+**A detail row is addressed by `public_id` or by slug.** §7.2 makes the UUID
+the identifier the API exchanges; §24.8 serves pages from slugs, because
+`/destinations/zanzibar` is what a person links. `selectors.reference_q` owns
+the resolution.
+
+**A hidden row and a missing one answer identically.** Both are 404. A
+distinguishable "exists but not yet public" publishes the launch date of a
+market that has not opened — the same disclosure §30.3 refuses on the
+authenticated side, arrived at from the other direction.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from datetime import date
 from typing import Any, ClassVar
 from uuid import UUID
 
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import generics, status
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import AllowAny, BasePermission
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.serializers import Serializer
+from rest_framework.views import APIView
 
+from apps.catalogue import selectors, services
 from apps.catalogue import serializers as ser
-from apps.catalogue import services
+from apps.catalogue.domain.ranking import SortOption
 from apps.common.authentication import principal_from_request
 from apps.common.authz import Permission
+from apps.common.config import get_setting
 from apps.common.envelope import success_envelope
+from apps.common.errors import NotFoundError
 from apps.common.mixins import ScopedQuerysetMixin
+from apps.common.pagination import Page
 from apps.common.permissions import (
     EmailVerified,
     HasPermission,
     IsAuthenticatedPrincipal,
     MfaSatisfied,
 )
+from apps.common.serializers import StrictSerializer
+from apps.common.throttling import CatalogueReadThrottle
 
 __all__ = [
     "ADMIN_PERMISSIONS",
@@ -81,6 +113,14 @@ __all__ = [
     "AdminAccommodationCreateView",
     "AdminAccommodationDetailView",
     "AdminAccommodationRestoreView",
+    "DestinationListView",
+    "DestinationDetailView",
+    "AttractionListView",
+    "AttractionDetailView",
+    "ActivityListView",
+    "ActivityDetailView",
+    "AccommodationListView",
+    "AccommodationDetailView",
 ]
 
 #: §5.2 grants `CATALOGUE_MANAGE` to CATALOGUE_ADMIN and, by composition, to
@@ -396,3 +436,244 @@ class AdminAccommodationDetailView(_AdminDetailView):
 @_restore_schema("accommodation")
 class AdminAccommodationRestoreView(_AdminRestoreView):
     entity_key = "accommodation"
+
+
+# ---------------------------------------------------------------------------
+# The public catalogue — SRS §9.3.2
+# ---------------------------------------------------------------------------
+
+
+def _today() -> date:
+    """The date the visibility rule is evaluated against.
+
+    UTC, deliberately, and not the destination's local date. A list spans many
+    destinations in many zones, and evaluating each row in its own zone would
+    make one request return a set no single clock agrees with. `launch_date` is
+    an editorial decision measured in days, and `Destination.today_local`
+    exists for the places that genuinely need the local one.
+    """
+    return timezone.now().date()
+
+
+def _page_size(requested: int | None) -> int:
+    """§9.1's `?limit`, bounded by `system_setting` rather than by a constant.
+
+    An unbounded limit on a public endpoint is a way to ask for the whole
+    catalogue, its ancestor chain and its galleries in one query — which is
+    why the ceiling exists, and why an administrator can lower it during an
+    incident without a deployment (NFR-M07).
+    """
+    ceiling = int(get_setting("page.max_size"))
+    if requested is None:
+        return min(int(get_setting("page.default_size")), ceiling)
+    return min(requested, ceiling)
+
+
+class _PublicCatalogueView(APIView):
+    """Unauthenticated, throttled, and named so the URL-conf audit sees it.
+
+    §9.3.2 makes these public. §9.6 throttles them by IP, because they are the
+    only unauthenticated endpoints that run a seven-term ordering over a joined
+    query, which makes them the cheapest thing here to point a script at.
+    """
+
+    authentication_classes: list[Any] = []
+    permission_classes = [AllowAny]
+    throttle_classes = [CatalogueReadThrottle]
+
+    #: What this view accepts in the query string. Strict, so a mistyped
+    #: filter is a 422 naming it rather than a full, unfiltered 200.
+    query_serializer: ClassVar[type[StrictSerializer]]
+
+    def _query(self, request: Request) -> dict[str, Any]:
+        payload = self.query_serializer(data=request.query_params)
+        payload.is_valid(raise_exception=True)
+        return dict(payload.validated_data)
+
+    @staticmethod
+    def _tags(query: Mapping[str, Any]) -> list[str]:
+        return list(query.get("tags", ()))
+
+    @staticmethod
+    def _sort(query: Mapping[str, Any]) -> SortOption:
+        return SortOption(query.get("sort", SortOption.DEFAULT.value))
+
+    def _rendered(self, page: Page[Any], serializer: type[Serializer[Any]]) -> Response:
+        """§9.2's list envelope: the rows in `data`, the cursor in `meta`."""
+        return Response(
+            success_envelope(
+                [dict(serializer(item).data) for item in page.items],
+                {"next_cursor": page.next_cursor},
+            )
+        )
+
+
+class _PublicDetailView(_PublicCatalogueView):
+    """One row, or 404 — whether it is missing or merely not public yet."""
+
+    def _detail(self, dto: Any, serializer: type[Serializer[Any]]) -> Response:
+        if dto is None:
+            raise NotFoundError()
+        return Response(success_envelope(dict(serializer(dto).data)))
+
+
+@extend_schema(
+    parameters=[ser.DestinationQuerySerializer],
+    responses={200: ser.DestinationSerializer(many=True)},
+    summary="List published destinations",
+    tags=["catalogue"],
+    auth=[],
+)
+class DestinationListView(_PublicCatalogueView):
+    """§9.3.2. Also the source `app/sitemap.ts` enumerates (commit 34)."""
+
+    query_serializer = ser.DestinationQuerySerializer
+
+    def get(self, request: Request) -> Response:
+        query = self._query(request)
+        page = selectors.list_destinations(
+            today=_today(),
+            region_slug=query.get("region"),
+            is_gateway=query.get("is_gateway"),
+            limit=_page_size(query.get("limit")),
+            cursor=query.get("cursor"),
+        )
+        return self._rendered(page, ser.DestinationSerializer)
+
+
+@extend_schema(
+    responses={200: ser.DestinationSerializer},
+    summary="Read one destination",
+    tags=["catalogue"],
+    auth=[],
+)
+class DestinationDetailView(_PublicDetailView):
+    query_serializer = ser.DestinationQuerySerializer
+
+    def get(self, request: Request, reference: str) -> Response:
+        return self._detail(
+            selectors.get_destination(reference=reference, today=_today()),
+            ser.DestinationSerializer,
+        )
+
+
+@extend_schema(
+    parameters=[ser.AttractionQuerySerializer],
+    responses={200: ser.AttractionSerializer(many=True)},
+    summary="List attractions",
+    tags=["catalogue"],
+    auth=[],
+)
+class AttractionListView(_PublicCatalogueView):
+    query_serializer = ser.AttractionQuerySerializer
+
+    def get(self, request: Request) -> Response:
+        query = self._query(request)
+        page = selectors.list_attractions(
+            today=_today(),
+            destination_slug=query.get("destination"),
+            tags=self._tags(query),
+            sort=self._sort(query),
+            limit=_page_size(query.get("limit")),
+            cursor=query.get("cursor"),
+        )
+        return self._rendered(page, ser.AttractionSerializer)
+
+
+@extend_schema(
+    responses={200: ser.AttractionSerializer},
+    summary="Read one attraction",
+    tags=["catalogue"],
+    auth=[],
+)
+class AttractionDetailView(_PublicDetailView):
+    query_serializer = ser.AttractionQuerySerializer
+
+    def get(self, request: Request, reference: str) -> Response:
+        return self._detail(
+            selectors.get_attraction(reference=reference, today=_today()),
+            ser.AttractionSerializer,
+        )
+
+
+@extend_schema(
+    parameters=[ser.ActivityQuerySerializer],
+    responses={200: ser.ActivitySerializer(many=True)},
+    summary="List activities",
+    tags=["catalogue"],
+    auth=[],
+)
+class ActivityListView(_PublicCatalogueView):
+    query_serializer = ser.ActivityQuerySerializer
+
+    def get(self, request: Request) -> Response:
+        query = self._query(request)
+        page = selectors.list_activities(
+            today=_today(),
+            destination_slug=query.get("destination"),
+            tags=self._tags(query),
+            sort=self._sort(query),
+            limit=_page_size(query.get("limit")),
+            cursor=query.get("cursor"),
+        )
+        return self._rendered(page, ser.ActivitySerializer)
+
+
+@extend_schema(
+    responses={200: ser.ActivitySerializer},
+    summary="Read one activity",
+    tags=["catalogue"],
+    auth=[],
+)
+class ActivityDetailView(_PublicDetailView):
+    query_serializer = ser.ActivityQuerySerializer
+
+    def get(self, request: Request, reference: str) -> Response:
+        return self._detail(
+            selectors.get_activity(reference=reference, today=_today()),
+            ser.ActivitySerializer,
+        )
+
+
+@extend_schema(
+    parameters=[ser.AccommodationQuerySerializer],
+    responses={200: ser.AccommodationSerializer(many=True)},
+    summary="List curated accommodation locations",
+    description=(
+        "Curated location records — ADR 0013. The Platform does not sell the "
+        "room in v1, so there is no availability, no rate and no date filter: "
+        "this is the list §24.11 offers a tourist naming where they already "
+        "intend to stay."
+    ),
+    tags=["catalogue"],
+    auth=[],
+)
+class AccommodationListView(_PublicCatalogueView):
+    query_serializer = ser.AccommodationQuerySerializer
+
+    def get(self, request: Request) -> Response:
+        query = self._query(request)
+        page = selectors.list_accommodation(
+            today=_today(),
+            destination_slug=query.get("destination"),
+            property_types=list(query.get("property_type", ())),
+            limit=_page_size(query.get("limit")),
+            cursor=query.get("cursor"),
+        )
+        return self._rendered(page, ser.AccommodationSerializer)
+
+
+@extend_schema(
+    responses={200: ser.AccommodationSerializer},
+    summary="Read one accommodation location",
+    tags=["catalogue"],
+    auth=[],
+)
+class AccommodationDetailView(_PublicDetailView):
+    query_serializer = ser.AccommodationQuerySerializer
+
+    def get(self, request: Request, reference: str) -> Response:
+        return self._detail(
+            selectors.get_accommodation(reference=reference, today=_today()),
+            ser.AccommodationSerializer,
+        )

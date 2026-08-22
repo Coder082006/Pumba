@@ -52,6 +52,22 @@ def _reset_request_context():
 
 
 @pytest.fixture(autouse=True)
+def _clear_cache():
+    """Rate-limit buckets live in the cache, and the cache is process-wide.
+
+    Without this, the sixty-first request any test makes to a §9.6-throttled
+    endpoint gets a 429 — and which test that is depends on collection order,
+    so the failure moves every time somebody adds a test. A throttle test that
+    wants a full bucket fills it itself, within one test.
+    """
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_event_subscribers():
     """The event bus is process-global; a subscriber registered by one test
     must not fire during another."""

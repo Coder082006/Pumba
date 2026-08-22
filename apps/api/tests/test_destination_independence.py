@@ -26,14 +26,23 @@ The one thing built outside that rule is the administrator's own account, via
 and asks what they can do with the console. Creating the person who logs in is
 not the thing under test.
 
-**This test is expected to fail until commit 27.** The admin write API, the
-public read endpoints and `/search` are commits 25 to 27; today the first POST
-returns 404. It is marked `xfail(strict=True)` rather than skipped or deleted,
-which means two things. While the endpoints are missing it reports XFAIL and
-the suite stays usable. The moment it passes, `strict=True` turns the build
-red — so it cannot go green quietly, and nobody can mistake "the test started
-passing" for "somebody weakened the test". Removing the marker is then a
-deliberate act that shows up in review.
+**The marker is coming off one assertion at a time, which is what it was for.**
+The criterion was written before any of its endpoints and marked
+`xfail(strict=True)` rather than skipped: while an endpoint is missing the test
+reports XFAIL and the suite stays usable, and the moment it passes the build
+turns red rather than going quietly green.
+
+It has now done that once. Commit 25 gave it the admin write API and commit 26
+gave it the public read endpoints, and at 26 the deactivation half started
+passing on its own — `strict=True` failed the build, which is how anybody found
+out. So the marker moved from the class to the one test still waiting on
+`/search`; the half that works is now an ordinary test that must keep working.
+Had it been a plain `xfail`, that half would have gone on reporting XFAIL
+indefinitely and nobody would have known it had been passing since 26.
+
+What is left is `test_arusha_opens_with_no_engineering_involvement`, which
+calls `GET /api/v1/search` — commit 27. When that lands the same thing happens
+again, and the marker comes off for good in the commit that says so.
 
 Written now, before any of the endpoints it calls, because an acceptance test
 written after the fact tests what was built. This one states what must be true
@@ -99,24 +108,29 @@ def _created(response: Any, what: str) -> dict[str, Any]:
     return dict(response.data["data"])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "§41.12 acceptance criterion. The admin write API (commit 25), the public "
-        "read API (26) and /search (27) do not exist yet, so this cannot pass. "
-        "strict=True so that it cannot pass quietly either: if this XPASSes, "
-        "either the endpoints have landed and the marker should be removed in a "
-        "commit that says so, or the test has been weakened."
-    ),
-)
 class TestAnAdministratorCanOpenANewMarket:
     """The whole criterion as one flow, because that is how it is claimed.
 
     Split into separate tests it would be possible for four of five to pass and
     for the market still not to be open. §41.12 is a single claim about a single
-    sequence, so it is asserted as one.
+    sequence, so the opening flow is asserted as one.
+
+    Closing a market is a second test rather than a continuation of the first,
+    because it is a second claim: §4.1 wants a market withdrawn without a
+    deployment as much as opened without one, and a market that can only be
+    opened by an administrator is destination-independent in one direction.
     """
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "§41.12, the opening flow. Everything up to and including "
+            "GET /api/v1/attractions now works — commits 25 and 26 — and the last "
+            "call is GET /api/v1/search, which is commit 27. strict=True so that "
+            "it cannot pass quietly: when /search lands this turns the build red, "
+            "and the marker comes off in the commit that says so."
+        ),
+    )
     def test_arusha_opens_with_no_engineering_involvement(self) -> None:
         admin = _administrator()
 
@@ -207,11 +221,12 @@ class TestAnAdministratorCanOpenANewMarket:
         assert attraction["public_id"] in _public_ids(public.get("/api/v1/attractions"))
 
     def test_deactivating_the_market_closes_it_again(self) -> None:
-        """The other half of "without a deployment".
+        """The other half of "without a deployment", and it passes as of 26.
 
-        A market that can be opened by an administrator and only closed by an
-        engineer is not destination-independent; it is destination-independent
-        in one direction.
+        Every call this makes now exists: the admin write API from commit 25,
+        and `GET /api/v1/destinations` and its detail route from commit 26. It
+        carries no marker, which means a regression in any of them fails here
+        rather than being absorbed by an expected failure.
         """
         admin = _administrator()
         country = _created(

@@ -42,6 +42,7 @@ from django.contrib.gis.geos import Point
 from rest_framework import serializers
 
 from apps.catalogue.domain.geo import COORDINATE_PRECISION, Coordinates
+from apps.catalogue.domain.ranking import SortOption
 from apps.catalogue.models import (
     ConfirmationMode,
     GatewayTypeChoices,
@@ -67,6 +68,10 @@ __all__ = [
     "AccommodationSerializer",
     "MediaSerializer",
     "READ_SERIALIZERS",
+    "DestinationQuerySerializer",
+    "AttractionQuerySerializer",
+    "ActivityQuerySerializer",
+    "AccommodationQuerySerializer",
 ]
 
 
@@ -429,6 +434,79 @@ class AccommodationSerializer(serializers.Serializer[Any]):
     feature_rank = serializers.IntegerField()
     destination = DestinationSerializer()
     media = MediaSerializer(many=True)
+
+
+# ---------------------------------------------------------------------------
+# Query — what a public list endpoint accepts
+# ---------------------------------------------------------------------------
+#
+# Strict, like the write serializers, and for the same reason rather than out of
+# symmetry. `?tag=diving` instead of `?tags=diving` is a filter that silently
+# does not apply: the caller gets a 200 and a full, unfiltered list, and every
+# layer downstream reports success. A 422 naming the parameter is the only
+# answer that tells them what happened.
+#
+# These endpoints are called by our own web tier and by anyone reading the
+# published contract, not from a browser address bar carrying campaign
+# parameters — so there is no `utm_*` case to be tolerant of.
+
+
+class _PageQuerySerializer(StrictSerializer):
+    """`?limit=&cursor=` — SRS §9.1's pagination parameters.
+
+    `limit` has no bounds here. Its floor and ceiling are `page.default_size`
+    and `page.max_size` in `system_setting` (rule 5), applied in the view,
+    because a page size an administrator can retune during an incident is the
+    whole reason those rows exist.
+    """
+
+    limit = serializers.IntegerField(min_value=1, required=False)
+    cursor = serializers.CharField(required=False, allow_blank=False)
+
+
+class DestinationQuerySerializer(_PageQuerySerializer):
+    region = serializers.SlugField(max_length=140, required=False)
+    is_gateway = serializers.BooleanField(required=False)
+
+
+class _ListingQuerySerializer(_PageQuerySerializer):
+    """The filters §24.7 puts on a listing page.
+
+    `tags` is repeatable (`?tags=diving&tags=culture`) rather than
+    comma-joined: a comma is a legal character in a slug field elsewhere in
+    the API, and two spellings of "a list in a query string" is one more than
+    a contract should have.
+    """
+
+    destination = serializers.SlugField(max_length=140, required=False)
+    tags = serializers.ListField(
+        child=serializers.SlugField(max_length=64), required=False, allow_empty=True
+    )
+    sort = serializers.ChoiceField(choices=[option.value for option in SortOption], required=False)
+
+
+class AttractionQuerySerializer(_ListingQuerySerializer):
+    pass
+
+
+class ActivityQuerySerializer(_ListingQuerySerializer):
+    pass
+
+
+class AccommodationQuerySerializer(_PageQuerySerializer):
+    """§24.11's curated location list.
+
+    No dates, no occupancy, no price sort — ADR 0013. The tourist is naming
+    where they are already staying, not shopping, and a parameter that implied
+    otherwise would be a promise the Platform does not keep in v1.
+    """
+
+    destination = serializers.SlugField(max_length=140, required=False)
+    property_type = serializers.ListField(
+        child=serializers.ChoiceField(choices=PropertyType.choices),
+        required=False,
+        allow_empty=True,
+    )
 
 
 READ_SERIALIZERS: dict[str, type[serializers.Serializer[Any]]] = {

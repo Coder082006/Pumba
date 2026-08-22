@@ -6,6 +6,167 @@ info:
     portal, the administration console and (later) the Flutter applications. No client-specific
     concern may leak into this contract.
 paths:
+  /api/v1/accommodation:
+    get:
+      operationId: accommodation_list
+      description: 'Curated location records — ADR 0013. The Platform does not sell
+        the room in v1, so there is no availability, no rate and no date filter: this
+        is the list §24.11 offers a tourist naming where they already intend to stay.'
+      summary: List curated accommodation locations
+      parameters:
+      - in: query
+        name: cursor
+        schema:
+          type: string
+          minLength: 1
+      - in: query
+        name: destination
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: property_type
+        schema:
+          type: array
+          items:
+            enum:
+            - HOTEL
+            - RESORT
+            - LODGE
+            - GUESTHOUSE
+            - APARTMENT
+            type: string
+            description: |-
+              * `HOTEL` - Hotel
+              * `RESORT` - Resort
+              * `LODGE` - Lodge
+              * `GUESTHOUSE` - Guesthouse
+              * `APARTMENT` - Apartment
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Accommodation'
+          description: ''
+  /api/v1/accommodation/{reference}:
+    get:
+      operationId: accommodation_retrieve
+      description: One row, or 404 — whether it is missing or merely not public yet.
+      summary: Read one accommodation location
+      parameters:
+      - in: path
+        name: reference
+        schema:
+          type: string
+        required: true
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accommodation'
+          description: ''
+  /api/v1/activities:
+    get:
+      operationId: activities_list
+      description: |-
+        Unauthenticated, throttled, and named so the URL-conf audit sees it.
+
+        §9.3.2 makes these public. §9.6 throttles them by IP, because they are the
+        only unauthenticated endpoints that run a seven-term ordering over a joined
+        query, which makes them the cheapest thing here to point a script at.
+      summary: List activities
+      parameters:
+      - in: query
+        name: cursor
+        schema:
+          type: string
+          minLength: 1
+      - in: query
+        name: destination
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: sort
+        schema:
+          enum:
+          - recommended
+          - price_asc
+          - price_desc
+          - rating
+          - duration
+          - distance
+          type: string
+          minLength: 1
+        description: |-
+          * `recommended` - recommended
+          * `price_asc` - price_asc
+          * `price_desc` - price_desc
+          * `rating` - rating
+          * `duration` - duration
+          * `distance` - distance
+      - in: query
+        name: tags
+        schema:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[-a-zA-Z0-9_]+$
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Activity'
+          description: ''
+  /api/v1/activities/{reference}:
+    get:
+      operationId: activities_retrieve
+      description: One row, or 404 — whether it is missing or merely not public yet.
+      summary: Read one activity
+      parameters:
+      - in: path
+        name: reference
+        schema:
+          type: string
+        required: true
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Activity'
+          description: ''
   /api/v1/admin/accommodation:
     post:
       operationId: admin_accommodation_create
@@ -832,6 +993,93 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/attractions:
+    get:
+      operationId: attractions_list
+      description: |-
+        Unauthenticated, throttled, and named so the URL-conf audit sees it.
+
+        §9.3.2 makes these public. §9.6 throttles them by IP, because they are the
+        only unauthenticated endpoints that run a seven-term ordering over a joined
+        query, which makes them the cheapest thing here to point a script at.
+      summary: List attractions
+      parameters:
+      - in: query
+        name: cursor
+        schema:
+          type: string
+          minLength: 1
+      - in: query
+        name: destination
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: sort
+        schema:
+          enum:
+          - recommended
+          - price_asc
+          - price_desc
+          - rating
+          - duration
+          - distance
+          type: string
+          minLength: 1
+        description: |-
+          * `recommended` - recommended
+          * `price_asc` - price_asc
+          * `price_desc` - price_desc
+          * `rating` - rating
+          * `duration` - duration
+          * `distance` - distance
+      - in: query
+        name: tags
+        schema:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[-a-zA-Z0-9_]+$
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Attraction'
+          description: ''
+  /api/v1/attractions/{reference}:
+    get:
+      operationId: attractions_retrieve
+      description: One row, or 404 — whether it is missing or merely not public yet.
+      summary: Read one attraction
+      parameters:
+      - in: path
+        name: reference
+        schema:
+          type: string
+        required: true
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attraction'
+          description: ''
   /api/v1/auth/login:
     post:
       operationId: auth_login_create
@@ -1030,6 +1278,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+          description: ''
+  /api/v1/destinations:
+    get:
+      operationId: destinations_list
+      description: §9.3.2. Also the source `app/sitemap.ts` enumerates (commit 34).
+      summary: List published destinations
+      parameters:
+      - in: query
+        name: cursor
+        schema:
+          type: string
+          minLength: 1
+      - in: query
+        name: is_gateway
+        schema:
+          type: boolean
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: region
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Destination'
+          description: ''
+  /api/v1/destinations/{reference}:
+    get:
+      operationId: destinations_retrieve
+      description: One row, or 404 — whether it is missing or merely not public yet.
+      summary: Read one destination
+      parameters:
+      - in: path
+        name: reference
+        schema:
+          type: string
+        required: true
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Destination'
           description: ''
   /api/v1/health:
     get:
