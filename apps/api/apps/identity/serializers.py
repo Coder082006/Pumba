@@ -17,7 +17,10 @@ from typing import Any, ClassVar
 
 from rest_framework import serializers
 
+from apps.common.serializers import StrictSerializer
+
 __all__ = [
+    "StrictSerializer",
     "RegisterSerializer",
     "VerifyEmailSerializer",
     "LoginSerializer",
@@ -29,23 +32,6 @@ __all__ = [
     "UserSerializer",
     "TokenPairSerializer",
 ]
-
-
-class StrictSerializer(serializers.Serializer[Any]):
-    """Rejects unknown fields — SRS §30.6.
-
-    DRF ignores them by default, which turns a client's typo into silence and
-    lets a renamed field keep "working" while doing nothing.
-    """
-
-    def to_internal_value(self, data: Any) -> Any:
-        if isinstance(data, dict):
-            unknown = set(data) - set(self.fields)
-            if unknown:
-                raise serializers.ValidationError(
-                    {field: "Unrecognised field." for field in sorted(unknown)}
-                )
-        return super().to_internal_value(data)
 
 
 class RegisterSerializer(StrictSerializer):

@@ -472,7 +472,9 @@ def to_accommodation_dto(
 
 
 def to_tag_dto(tag: Tag) -> TagDTO:
-    return TagDTO(slug=tag.slug, label=tag.label, sort_order=tag.sort_order)
+    return TagDTO(
+        public_id=tag.public_id, slug=tag.slug, label=tag.label, sort_order=tag.sort_order
+    )
 
 
 # ---------------------------------------------------------------------------

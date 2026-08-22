@@ -6,6 +6,832 @@ info:
     portal, the administration console and (later) the Flutter applications. No client-specific
     concern may leak into this contract.
 paths:
+  /api/v1/admin/accommodation:
+    post:
+      operationId: admin_accommodation_create
+      description: |-
+        POST one new curated row.
+
+        Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+        yet, so a filter here would provably run against nothing while reporting to
+        the §37.2 matrix that ownership was enforced. What stands between a caller
+        and a new row is the role check, and the matrix records that by name in
+        `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+      summary: Create a accommodation
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccommodationWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AccommodationWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AccommodationWriteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accommodation'
+          description: ''
+  /api/v1/admin/accommodation/{public_id}:
+    patch:
+      operationId: admin_accommodation_partial_update
+      description: |-
+        A partial update — including the one that opens or closes a market.
+
+        §4.1 wants a destination published and withdrawn without a deployment,
+        and both are `is_active` moving in this one call. There is deliberately
+        no separate activate endpoint, so there is no second path that could
+        record the change differently or not at all.
+      summary: Amend a accommodation
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAccommodationWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAccommodationWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAccommodationWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accommodation'
+          description: ''
+    delete:
+      operationId: admin_accommodation_destroy
+      description: §7.7's soft deletion. The row survives; the slug is released.
+      summary: Retire a accommodation
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/accommodation/{public_id}/restore:
+    post:
+      operationId: admin_accommodation_restore_create
+      description: |-
+        Undo a soft deletion.
+
+        A POST to its own resource rather than a PATCH setting `deleted_at`.
+        `deleted_at` is not a writable field, and adding it to the update
+        serializer to support this would open the mass-assignment hole that
+        `repositories._WRITABLE` exists to close.
+      summary: Restore a retired accommodation
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/activities:
+    post:
+      operationId: admin_activities_create
+      description: |-
+        POST one new curated row.
+
+        Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+        yet, so a filter here would provably run against nothing while reporting to
+        the §37.2 matrix that ownership was enforced. What stands between a caller
+        and a new row is the role check, and the matrix records that by name in
+        `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+      summary: Create a activity
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ActivityWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ActivityWriteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Activity'
+          description: ''
+  /api/v1/admin/activities/{public_id}:
+    patch:
+      operationId: admin_activities_partial_update
+      description: |-
+        A partial update — including the one that opens or closes a market.
+
+        §4.1 wants a destination published and withdrawn without a deployment,
+        and both are `is_active` moving in this one call. There is deliberately
+        no separate activate endpoint, so there is no second path that could
+        record the change differently or not at all.
+      summary: Amend a activity
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedActivityWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedActivityWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedActivityWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Activity'
+          description: ''
+    delete:
+      operationId: admin_activities_destroy
+      description: §7.7's soft deletion. The row survives; the slug is released.
+      summary: Retire a activity
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/activities/{public_id}/restore:
+    post:
+      operationId: admin_activities_restore_create
+      description: |-
+        Undo a soft deletion.
+
+        A POST to its own resource rather than a PATCH setting `deleted_at`.
+        `deleted_at` is not a writable field, and adding it to the update
+        serializer to support this would open the mass-assignment hole that
+        `repositories._WRITABLE` exists to close.
+      summary: Restore a retired activity
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/attractions:
+    post:
+      operationId: admin_attractions_create
+      description: |-
+        POST one new curated row.
+
+        Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+        yet, so a filter here would provably run against nothing while reporting to
+        the §37.2 matrix that ownership was enforced. What stands between a caller
+        and a new row is the role check, and the matrix records that by name in
+        `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+      summary: Create a attraction
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttractionWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AttractionWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AttractionWriteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attraction'
+          description: ''
+  /api/v1/admin/attractions/{public_id}:
+    patch:
+      operationId: admin_attractions_partial_update
+      description: |-
+        A partial update — including the one that opens or closes a market.
+
+        §4.1 wants a destination published and withdrawn without a deployment,
+        and both are `is_active` moving in this one call. There is deliberately
+        no separate activate endpoint, so there is no second path that could
+        record the change differently or not at all.
+      summary: Amend a attraction
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAttractionWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAttractionWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAttractionWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attraction'
+          description: ''
+    delete:
+      operationId: admin_attractions_destroy
+      description: §7.7's soft deletion. The row survives; the slug is released.
+      summary: Retire a attraction
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/attractions/{public_id}/restore:
+    post:
+      operationId: admin_attractions_restore_create
+      description: |-
+        Undo a soft deletion.
+
+        A POST to its own resource rather than a PATCH setting `deleted_at`.
+        `deleted_at` is not a writable field, and adding it to the update
+        serializer to support this would open the mass-assignment hole that
+        `repositories._WRITABLE` exists to close.
+      summary: Restore a retired attraction
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/countries:
+    post:
+      operationId: admin_countries_create
+      description: |-
+        POST one new curated row.
+
+        Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+        yet, so a filter here would provably run against nothing while reporting to
+        the §37.2 matrix that ownership was enforced. What stands between a caller
+        and a new row is the role check, and the matrix records that by name in
+        `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+      summary: Create a country
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CountryWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CountryWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CountryWriteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Country'
+          description: ''
+  /api/v1/admin/countries/{public_id}:
+    patch:
+      operationId: admin_countries_partial_update
+      description: |-
+        A partial update — including the one that opens or closes a market.
+
+        §4.1 wants a destination published and withdrawn without a deployment,
+        and both are `is_active` moving in this one call. There is deliberately
+        no separate activate endpoint, so there is no second path that could
+        record the change differently or not at all.
+      summary: Amend a country
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCountryWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCountryWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCountryWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Country'
+          description: ''
+    delete:
+      operationId: admin_countries_destroy
+      description: §7.7's soft deletion. The row survives; the slug is released.
+      summary: Retire a country
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/countries/{public_id}/restore:
+    post:
+      operationId: admin_countries_restore_create
+      description: |-
+        Undo a soft deletion.
+
+        A POST to its own resource rather than a PATCH setting `deleted_at`.
+        `deleted_at` is not a writable field, and adding it to the update
+        serializer to support this would open the mass-assignment hole that
+        `repositories._WRITABLE` exists to close.
+      summary: Restore a retired country
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/destinations:
+    post:
+      operationId: admin_destinations_create
+      description: |-
+        POST one new curated row.
+
+        Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+        yet, so a filter here would provably run against nothing while reporting to
+        the §37.2 matrix that ownership was enforced. What stands between a caller
+        and a new row is the role check, and the matrix records that by name in
+        `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+      summary: Create a destination
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DestinationWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DestinationWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DestinationWriteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Destination'
+          description: ''
+  /api/v1/admin/destinations/{public_id}:
+    patch:
+      operationId: admin_destinations_partial_update
+      description: |-
+        A partial update — including the one that opens or closes a market.
+
+        §4.1 wants a destination published and withdrawn without a deployment,
+        and both are `is_active` moving in this one call. There is deliberately
+        no separate activate endpoint, so there is no second path that could
+        record the change differently or not at all.
+      summary: Amend a destination
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDestinationWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDestinationWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDestinationWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Destination'
+          description: ''
+    delete:
+      operationId: admin_destinations_destroy
+      description: §7.7's soft deletion. The row survives; the slug is released.
+      summary: Retire a destination
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/destinations/{public_id}/restore:
+    post:
+      operationId: admin_destinations_restore_create
+      description: |-
+        Undo a soft deletion.
+
+        A POST to its own resource rather than a PATCH setting `deleted_at`.
+        `deleted_at` is not a writable field, and adding it to the update
+        serializer to support this would open the mass-assignment hole that
+        `repositories._WRITABLE` exists to close.
+      summary: Restore a retired destination
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/regions:
+    post:
+      operationId: admin_regions_create
+      description: |-
+        POST one new curated row.
+
+        Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+        yet, so a filter here would provably run against nothing while reporting to
+        the §37.2 matrix that ownership was enforced. What stands between a caller
+        and a new row is the role check, and the matrix records that by name in
+        `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+      summary: Create a region
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegionWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RegionWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RegionWriteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Region'
+          description: ''
+  /api/v1/admin/regions/{public_id}:
+    patch:
+      operationId: admin_regions_partial_update
+      description: |-
+        A partial update — including the one that opens or closes a market.
+
+        §4.1 wants a destination published and withdrawn without a deployment,
+        and both are `is_active` moving in this one call. There is deliberately
+        no separate activate endpoint, so there is no second path that could
+        record the change differently or not at all.
+      summary: Amend a region
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedRegionWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedRegionWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedRegionWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Region'
+          description: ''
+    delete:
+      operationId: admin_regions_destroy
+      description: §7.7's soft deletion. The row survives; the slug is released.
+      summary: Retire a region
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/regions/{public_id}/restore:
+    post:
+      operationId: admin_regions_restore_create
+      description: |-
+        Undo a soft deletion.
+
+        A POST to its own resource rather than a PATCH setting `deleted_at`.
+        `deleted_at` is not a writable field, and adding it to the update
+        serializer to support this would open the mass-assignment hole that
+        `repositories._WRITABLE` exists to close.
+      summary: Restore a retired region
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/tags:
+    post:
+      operationId: admin_tags_create
+      description: |-
+        POST one new curated row.
+
+        Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+        yet, so a filter here would provably run against nothing while reporting to
+        the §37.2 matrix that ownership was enforced. What stands between a caller
+        and a new row is the role check, and the matrix records that by name in
+        `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+      summary: Create a tag
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TagWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TagWriteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+          description: ''
+  /api/v1/admin/tags/{public_id}:
+    patch:
+      operationId: admin_tags_partial_update
+      description: |-
+        A partial update — including the one that opens or closes a market.
+
+        §4.1 wants a destination published and withdrawn without a deployment,
+        and both are `is_active` moving in this one call. There is deliberately
+        no separate activate endpoint, so there is no second path that could
+        record the change differently or not at all.
+      summary: Amend a tag
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTagWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTagWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTagWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+          description: ''
+    delete:
+      operationId: admin_tags_destroy
+      description: §7.7's soft deletion. The row survives; the slug is released.
+      summary: Retire a tag
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/tags/{public_id}/restore:
+    post:
+      operationId: admin_tags_restore_create
+      description: |-
+        Undo a soft deletion.
+
+        A POST to its own resource rather than a PATCH setting `deleted_at`.
+        `deleted_at` is not a writable field, and adding it to the update
+        serializer to support this would open the mass-assignment hole that
+        `repositories._WRITABLE` exists to close.
+      summary: Restore a retired tag
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/auth/login:
     post:
       operationId: auth_login_create
@@ -307,6 +1133,697 @@ paths:
           description: No response body
 components:
   schemas:
+    Accommodation:
+      type: object
+      description: |-
+        §7.5.7 and §14 as amended — ADR 0013.
+
+        A location record. There is no rate field to suppress, which is the
+        difference between deferring a subsystem and hiding one.
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        summary:
+          type:
+          - string
+          - 'null'
+        description:
+          type: string
+        property_type:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        address_line:
+          type: string
+        check_in_time:
+          type:
+          - string
+          - 'null'
+          format: time
+        check_out_time:
+          type:
+          - string
+          - 'null'
+          format: time
+        feature_rank:
+          type: integer
+        destination:
+          $ref: '#/components/schemas/Destination'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Media'
+      required:
+      - address_line
+      - check_in_time
+      - check_out_time
+      - description
+      - destination
+      - feature_rank
+      - latitude
+      - longitude
+      - media
+      - name
+      - property_type
+      - public_id
+      - slug
+      - summary
+    AccommodationWriteRequest:
+      type: object
+      description: |-
+        §7.5.7 as amended — ADR 0013.
+
+        There is no rate, no room type, no cancellation policy and no provider to
+        send. The field list is the enforcement: a client that posts `base_rate`
+        gets a 422 naming it, rather than a 200 that quietly dropped a price.
+      properties:
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        destination:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 140
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        summary:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        description:
+          type: string
+        property_type:
+          $ref: '#/components/schemas/PropertyTypeEnum'
+        address_line:
+          type: string
+          maxLength: 255
+        check_in_time:
+          type:
+          - string
+          - 'null'
+          format: time
+        check_out_time:
+          type:
+          - string
+          - 'null'
+          format: time
+        feature_rank:
+          type: integer
+          minimum: 1
+        is_active:
+          type: boolean
+      required:
+      - destination
+      - latitude
+      - longitude
+      - name
+      - property_type
+      - slug
+    Activity:
+      type: object
+      description: |-
+        §16.1.
+
+        No converted price appears here. §18.4 puts conversion at quote time, and
+        a display conversion is an `IndicativeAmount` applied over this — which is
+        a different thing with a different label and a different half-life.
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        summary:
+          type:
+          - string
+          - 'null'
+        description:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        meeting_point:
+          type: string
+        duration_minutes:
+          type: integer
+        price_per_person:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        price_per_group:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        currency:
+          type: string
+        min_pax:
+          type: integer
+        max_pax:
+          type: integer
+        min_age:
+          type:
+          - integer
+          - 'null'
+        requirements: {}
+        inclusions: {}
+        exclusions: {}
+        booking_cutoff_hours:
+          type: integer
+        confirmation_mode:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        rating_avg:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,1}(?:\.\d{0,2})?$
+        rating_count:
+          type: integer
+        feature_rank:
+          type: integer
+        destination:
+          $ref: '#/components/schemas/Destination'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Media'
+      required:
+      - booking_cutoff_hours
+      - confirmation_mode
+      - currency
+      - description
+      - destination
+      - duration_minutes
+      - exclusions
+      - feature_rank
+      - inclusions
+      - latitude
+      - longitude
+      - max_pax
+      - media
+      - meeting_point
+      - min_age
+      - min_pax
+      - name
+      - price_per_group
+      - price_per_person
+      - public_id
+      - rating_avg
+      - rating_count
+      - requirements
+      - slug
+      - summary
+      - tags
+    ActivityWriteRequest:
+      type: object
+      description: |-
+        §16.1. Administrator-created until the Phase 11 provider portal.
+
+        `price_per_person` and `currency` are both required on create and are
+        checked against each other by the model's CHECK constraint. §7.2 does not
+        allow an amount without a currency anywhere, and an activity is where that
+        would first cost somebody money.
+      properties:
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        destination:
+          type: string
+          format: uuid
+        attraction:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        cancellation_policy:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 140
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        summary:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        description:
+          type: string
+        meeting_point_text:
+          type: string
+          maxLength: 255
+        duration_minutes:
+          type: integer
+          minimum: 1
+        price_per_person:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        price_per_group:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        min_pax:
+          type: integer
+          minimum: 1
+        max_pax:
+          type: integer
+          minimum: 1
+        min_age:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        requirements: {}
+        inclusions: {}
+        exclusions: {}
+        booking_cutoff_hours:
+          type: integer
+          minimum: 0
+        confirmation_mode:
+          $ref: '#/components/schemas/ConfirmationModeEnum'
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[-a-zA-Z0-9_]+$
+        feature_rank:
+          type: integer
+          minimum: 1
+        is_active:
+          type: boolean
+      required:
+      - currency
+      - destination
+      - duration_minutes
+      - latitude
+      - longitude
+      - max_pax
+      - name
+      - price_per_person
+      - slug
+    Attraction:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        summary:
+          type:
+          - string
+          - 'null'
+        description:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        opening_hours:
+          oneOf:
+          - {}
+          - type: 'null'
+        entrance_fee:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        fee_currency:
+          type:
+          - string
+          - 'null'
+        visit_minutes:
+          type:
+          - integer
+          - 'null'
+        tags:
+          type: array
+          items:
+            type: string
+        accessibility_notes:
+          type: string
+        feature_rank:
+          type: integer
+        destination:
+          $ref: '#/components/schemas/Destination'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Media'
+      required:
+      - accessibility_notes
+      - description
+      - destination
+      - entrance_fee
+      - feature_rank
+      - fee_currency
+      - latitude
+      - longitude
+      - media
+      - name
+      - opening_hours
+      - public_id
+      - slug
+      - summary
+      - tags
+      - visit_minutes
+    AttractionWriteRequest:
+      type: object
+      description: §15.1.
+      properties:
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        destination:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 140
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        summary:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        description:
+          type: string
+        opening_hours:
+          oneOf:
+          - {}
+          - type: 'null'
+        entrance_fee:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        fee_currency:
+          type:
+          - string
+          - 'null'
+          minLength: 3
+          maxLength: 3
+        visit_minutes:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[-a-zA-Z0-9_]+$
+        accessibility_notes:
+          type: string
+        feature_rank:
+          type: integer
+          minimum: 1
+        is_active:
+          type: boolean
+      required:
+      - destination
+      - latitude
+      - longitude
+      - name
+      - slug
+    ConfirmationModeEnum:
+      enum:
+      - INSTANT
+      - ON_REQUEST
+      type: string
+      description: |-
+        * `INSTANT` - Confirms immediately
+        * `ON_REQUEST` - Confirmed by the provider
+    Country:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        iso_code:
+          type: string
+        name:
+          type: string
+        default_currency:
+          type: string
+        default_timezone:
+          type: string
+      required:
+      - default_currency
+      - default_timezone
+      - iso_code
+      - name
+      - public_id
+    CountryWriteRequest:
+      type: object
+      description: §7.3's `country`.
+      properties:
+        iso_code:
+          type: string
+          minLength: 2
+          maxLength: 2
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        default_currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        default_timezone:
+          type: string
+          minLength: 1
+          maxLength: 60
+        is_active:
+          type: boolean
+      required:
+      - default_currency
+      - default_timezone
+      - iso_code
+      - name
+    Destination:
+      type: object
+      description: |-
+        §7.5.6.
+
+        `timezone` is here because §7.2 renders timestamps in the destination's
+        zone and §15.2 evaluates opening hours in it. A client holding a
+        destination never has to make a second call to know either.
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        summary:
+          type:
+          - string
+          - 'null'
+        description:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        timezone:
+          type: string
+        default_currency:
+          type: string
+        is_gateway:
+          type: boolean
+        gateway_type:
+          type:
+          - string
+          - 'null'
+        gateway_code:
+          type:
+          - string
+          - 'null'
+        launch_date:
+          type:
+          - string
+          - 'null'
+          format: date
+        feature_rank:
+          type: integer
+        region:
+          $ref: '#/components/schemas/Region'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Media'
+      required:
+      - default_currency
+      - description
+      - feature_rank
+      - gateway_code
+      - gateway_type
+      - is_gateway
+      - latitude
+      - launch_date
+      - longitude
+      - media
+      - name
+      - public_id
+      - region
+      - slug
+      - summary
+      - timezone
+    DestinationWriteRequest:
+      type: object
+      description: |-
+        §7.5.6.
+
+        `is_active` is optional and the model defaults it to false. A market is
+        staged, then published — §41.12 asks an administrator to open Arusha, and
+        "created" and "open" are two decisions with a review in between.
+      properties:
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        region:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        summary:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        description:
+          type: string
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 60
+        default_currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        is_gateway:
+          type: boolean
+        gateway_type:
+          oneOf:
+          - $ref: '#/components/schemas/GatewayTypeEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        gateway_code:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 10
+        launch_date:
+          type:
+          - string
+          - 'null'
+          format: date
+        feature_rank:
+          type: integer
+          minimum: 1
+        is_active:
+          type: boolean
+      required:
+      - default_currency
+      - latitude
+      - longitude
+      - name
+      - region
+      - slug
+      - timezone
     Device:
       type: object
       properties:
@@ -336,6 +1853,12 @@ components:
 
         DRF ignores them by default, which turns a client's typo into silence and
         lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
       properties:
         platform:
           $ref: '#/components/schemas/PlatformEnum'
@@ -361,6 +1884,12 @@ components:
 
         DRF ignores them by default, which turns a client's typo into silence and
         lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
       properties:
         email:
           type: string
@@ -369,6 +1898,16 @@ components:
           maxLength: 254
       required:
       - email
+    GatewayTypeEnum:
+      enum:
+      - AIRPORT
+      - SEAPORT
+      - LAND_BORDER
+      type: string
+      description: |-
+        * `AIRPORT` - Airport
+        * `SEAPORT` - Seaport
+        * `LAND_BORDER` - Land border
     HealthResponse:
       type: object
       properties:
@@ -417,6 +1956,29 @@ components:
       required:
       - email
       - password
+    Media:
+      type: object
+      description: §7.3 `media`, ordered primary-first by `domain.media.order_media`.
+      properties:
+        file_key:
+          type: string
+        alt_text:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        is_primary:
+          type: boolean
+        sort_order:
+          type: integer
+      required:
+      - alt_text
+      - file_key
+      - height
+      - is_primary
+      - sort_order
+      - width
     MfaConfirmRequest:
       type: object
       description: |-
@@ -424,6 +1986,12 @@ components:
 
         DRF ignores them by default, which turns a client's typo into silence and
         lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
       properties:
         code:
           type: string
@@ -431,6 +1999,361 @@ components:
           maxLength: 10
       required:
       - code
+    NullEnum:
+      type: 'null'
+    PatchedAccommodationWriteRequest:
+      type: object
+      description: |-
+        §7.5.7 as amended — ADR 0013.
+
+        There is no rate, no room type, no cancellation policy and no provider to
+        send. The field list is the enforcement: a client that posts `base_rate`
+        gets a 422 naming it, rather than a 200 that quietly dropped a price.
+      properties:
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        destination:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 140
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        summary:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        description:
+          type: string
+        property_type:
+          $ref: '#/components/schemas/PropertyTypeEnum'
+        address_line:
+          type: string
+          maxLength: 255
+        check_in_time:
+          type:
+          - string
+          - 'null'
+          format: time
+        check_out_time:
+          type:
+          - string
+          - 'null'
+          format: time
+        feature_rank:
+          type: integer
+          minimum: 1
+        is_active:
+          type: boolean
+    PatchedActivityWriteRequest:
+      type: object
+      description: |-
+        §16.1. Administrator-created until the Phase 11 provider portal.
+
+        `price_per_person` and `currency` are both required on create and are
+        checked against each other by the model's CHECK constraint. §7.2 does not
+        allow an amount without a currency anywhere, and an activity is where that
+        would first cost somebody money.
+      properties:
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        destination:
+          type: string
+          format: uuid
+        attraction:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        cancellation_policy:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 140
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        summary:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        description:
+          type: string
+        meeting_point_text:
+          type: string
+          maxLength: 255
+        duration_minutes:
+          type: integer
+          minimum: 1
+        price_per_person:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        price_per_group:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        min_pax:
+          type: integer
+          minimum: 1
+        max_pax:
+          type: integer
+          minimum: 1
+        min_age:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        requirements: {}
+        inclusions: {}
+        exclusions: {}
+        booking_cutoff_hours:
+          type: integer
+          minimum: 0
+        confirmation_mode:
+          $ref: '#/components/schemas/ConfirmationModeEnum'
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[-a-zA-Z0-9_]+$
+        feature_rank:
+          type: integer
+          minimum: 1
+        is_active:
+          type: boolean
+    PatchedAttractionWriteRequest:
+      type: object
+      description: §15.1.
+      properties:
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        destination:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 140
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        summary:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        description:
+          type: string
+        opening_hours:
+          oneOf:
+          - {}
+          - type: 'null'
+        entrance_fee:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        fee_currency:
+          type:
+          - string
+          - 'null'
+          minLength: 3
+          maxLength: 3
+        visit_minutes:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[-a-zA-Z0-9_]+$
+        accessibility_notes:
+          type: string
+        feature_rank:
+          type: integer
+          minimum: 1
+        is_active:
+          type: boolean
+    PatchedCountryWriteRequest:
+      type: object
+      description: §7.3's `country`.
+      properties:
+        iso_code:
+          type: string
+          minLength: 2
+          maxLength: 2
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        default_currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        default_timezone:
+          type: string
+          minLength: 1
+          maxLength: 60
+        is_active:
+          type: boolean
+    PatchedDestinationWriteRequest:
+      type: object
+      description: |-
+        §7.5.6.
+
+        `is_active` is optional and the model defaults it to false. A market is
+        staged, then published — §41.12 asks an administrator to open Arusha, and
+        "created" and "open" are two decisions with a review in between.
+      properties:
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        region:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        summary:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        description:
+          type: string
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 60
+        default_currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        is_gateway:
+          type: boolean
+        gateway_type:
+          oneOf:
+          - $ref: '#/components/schemas/GatewayTypeEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        gateway_code:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 10
+        launch_date:
+          type:
+          - string
+          - 'null'
+          format: date
+        feature_rank:
+          type: integer
+          minimum: 1
+        is_active:
+          type: boolean
+    PatchedRegionWriteRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
+      properties:
+        country:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        is_active:
+          type: boolean
+    PatchedTagWriteRequest:
+      type: object
+      description: §24.7's chip vocabulary. A new interest is a row, never a deployment.
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[-a-zA-Z0-9_]+$
+        label:
+          type: string
+          minLength: 1
+          maxLength: 80
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
     PlatformEnum:
       enum:
       - IOS
@@ -441,6 +2364,20 @@ components:
         * `IOS` - IOS
         * `ANDROID` - ANDROID
         * `WEB` - WEB
+    PropertyTypeEnum:
+      enum:
+      - HOTEL
+      - RESORT
+      - LODGE
+      - GUESTHOUSE
+      - APARTMENT
+      type: string
+      description: |-
+        * `HOTEL` - Hotel
+        * `RESORT` - Resort
+        * `LODGE` - Lodge
+        * `GUESTHOUSE` - Guesthouse
+        * `APARTMENT` - Apartment
     RefreshRequest:
       type: object
       description: |-
@@ -448,9 +2385,64 @@ components:
 
         DRF ignores them by default, which turns a client's typo into silence and
         lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
       properties:
         refresh_token:
           type: string
+    Region:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        country:
+          $ref: '#/components/schemas/Country'
+      required:
+      - country
+      - name
+      - public_id
+      - slug
+    RegionWriteRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
+      properties:
+        country:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        is_active:
+          type: boolean
+      required:
+      - country
+      - name
+      - slug
     RegisterRequest:
       type: object
       description: SRS §9.4.1.
@@ -503,6 +2495,12 @@ components:
 
         DRF ignores them by default, which turns a client's typo into silence and
         lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
       properties:
         token:
           type: string
@@ -515,6 +2513,43 @@ components:
       required:
       - new_password
       - token
+    Tag:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        label:
+          type: string
+        sort_order:
+          type: integer
+      required:
+      - label
+      - public_id
+      - slug
+      - sort_order
+    TagWriteRequest:
+      type: object
+      description: §24.7's chip vocabulary. A new interest is a row, never a deployment.
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[-a-zA-Z0-9_]+$
+        label:
+          type: string
+          minLength: 1
+          maxLength: 80
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+      required:
+      - label
+      - slug
     TokenPair:
       type: object
       properties:
@@ -621,6 +2656,12 @@ components:
 
         DRF ignores them by default, which turns a client's typo into silence and
         lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
       properties:
         token:
           type: string

@@ -35,9 +35,12 @@ neither has to remember to be the other.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any, TypeVar
 from uuid import UUID
 
+from django.contrib.gis.geos import Point
 from django.db import transaction
 from django.db.models import Model
 
@@ -45,27 +48,40 @@ from apps.catalogue.dto import (
     AccommodationDTO,
     ActivityDTO,
     AttractionDTO,
+    CountryDTO,
     DestinationDTO,
+    RegionDTO,
     TagDTO,
 )
 from apps.catalogue.models import (
     Accommodation,
     Activity,
     Attraction,
+    Country,
     Destination,
+    Region,
     Tag,
 )
 from apps.catalogue.selectors import (
     to_accommodation_dto,
     to_activity_dto,
     to_attraction_dto,
+    to_country_dto,
     to_destination_dto,
+    to_region_dto,
     to_tag_dto,
 )
 from apps.common.models import SoftDeleteModel
 
 __all__ = [
     "UnwritableFieldError",
+    "writable_fields",
+    "snapshot",
+    "reference",
+    "create_country",
+    "update_country",
+    "create_region",
+    "update_region",
     "create_destination",
     "update_destination",
     "create_attraction",
@@ -98,6 +114,16 @@ class UnwritableFieldError(ValueError):
 #: design — `rating_avg` and `rating_count` are written by `review`'s domain
 #: event and by nothing else (§16.5).
 _WRITABLE: Mapping[type[Model], frozenset[str]] = {
+    Country: frozenset(
+        {
+            "iso_code",
+            "name",
+            "default_currency",
+            "default_timezone",
+            "is_active",
+        }
+    ),
+    Region: frozenset({"country", "name", "slug", "is_active"}),
     Destination: frozenset(
         {
             "region",
@@ -186,6 +212,87 @@ _WRITABLE: Mapping[type[Model], frozenset[str]] = {
 }
 
 
+def writable_fields(model: type[Model]) -> frozenset[str]:
+    """What an administrator may set on this entity.
+
+    Exposed because §41.13 requires the audit entry to carry before and after
+    *state*, and the state worth recording is exactly the state an
+    administrator could have changed. Deriving the snapshot from this set
+    rather than from a second hand-maintained list means a field added here
+    starts being audited in the same commit that makes it writable.
+    """
+    return _WRITABLE[model]
+
+
+def _json_safe(value: Any) -> Any:
+    """One field value, as something a `JSONField` can hold.
+
+    A related row becomes its `public_id` rather than its primary key. §7.2
+    keeps sequential integers off the wire, and an audit entry is read by a
+    person: `"region": "a1b2..."` can be pasted into the console, where
+    `"region": 41` names a row the reader cannot look up.
+    """
+    if value is None or isinstance(value, bool | int | str):
+        return value
+    if isinstance(value, Decimal):
+        # Decimal is not JSON-serialisable and float would round it. §7.2
+        # forbids float for money anywhere, and an audit entry is where a
+        # disputed amount is checked.
+        return str(value)
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, datetime | date | time):
+        return value.isoformat()
+    if isinstance(value, Model):
+        return str(value.public_id)  # type: ignore[attr-defined]
+    if isinstance(value, list | tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, Point):
+        # Recorded as the pair a person reads and a map accepts, not as WKB.
+        return {"lat": str(Decimal(str(value.y))), "lon": str(Decimal(str(value.x)))}
+    return str(value)
+
+
+def snapshot(model: type[Model], public_id: UUID) -> dict[str, Any] | None:
+    """The writable state of one row, or `None` if there is no such row.
+
+    §41.13 requires every administrative action to carry before and after
+    state. This is that state, and it is derived from `_WRITABLE` rather than
+    from a second list, so a newly writable field is audited by the commit
+    that makes it writable.
+
+    Reads through `all_objects`: the `before` half of a restore is a
+    soft-deleted row, and a snapshot that could not see one would record the
+    interesting case as an empty dict.
+    """
+    try:
+        row = _get(model, public_id)
+    except model.DoesNotExist:  # type: ignore[attr-defined]
+        return None
+    return {name: _json_safe(getattr(row, name)) for name in sorted(_WRITABLE[model])}
+
+
+def reference(model: type[_M], public_id: UUID) -> _M | None:
+    """One row named by another row's field, or `None`.
+
+    The wire carries a reference as the target's `public_id` (§7.2); the ORM
+    wants the instance. This is the only place that conversion happens, so a
+    dangling reference is one failure with one message rather than a different
+    one per entity.
+
+    Reads through `all_objects` deliberately. An administrator repairing a
+    hierarchy attaches a destination to a region that is currently retired,
+    and refusing that would make a soft-deleted parent a dead end rather than
+    a reversible decision.
+    """
+    try:
+        return _get(model, public_id)
+    except model.DoesNotExist:  # type: ignore[attr-defined]
+        return None
+
+
 def _check(model: type[Model], fields: Mapping[str, Any]) -> None:
     offered = set(fields)
     allowed = _WRITABLE[model]
@@ -230,6 +337,37 @@ def _get(model: type[_M], public_id: UUID) -> _M:
     `selectors.visible`, and the separation is the point.
     """
     return model.all_objects.get(public_id=public_id)  # type: ignore[attr-defined,no-any-return]
+
+
+# ---------------------------------------------------------------------------
+# Countries and regions
+# ---------------------------------------------------------------------------
+
+
+@transaction.atomic
+def create_country(**fields: Any) -> CountryDTO:
+    """§7.3's `country`, and the first row §41.12 asks an administrator for.
+
+    `default_currency` and `default_timezone` are defaults a destination may
+    override (§4.2), not constraints on it: a country wide enough to span two
+    zones has destinations that disagree with it, and the destination wins.
+    """
+    return to_country_dto(_create(Country, fields))
+
+
+@transaction.atomic
+def update_country(public_id: UUID, **fields: Any) -> CountryDTO:
+    return to_country_dto(_update(_get(Country, public_id), fields))
+
+
+@transaction.atomic
+def create_region(**fields: Any) -> RegionDTO:
+    return to_region_dto(_create(Region, fields))
+
+
+@transaction.atomic
+def update_region(public_id: UUID, **fields: Any) -> RegionDTO:
+    return to_region_dto(_update(_get(Region, public_id), fields))
 
 
 # ---------------------------------------------------------------------------

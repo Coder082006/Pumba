@@ -1,4 +1,442 @@
-"""Interface layer (SRS §8.2 layer 1). Syntactic validation only.
+"""catalogue module — SRS §6.4.
 
-Phase 1: skeleton only.
+Interface layer (SRS §8.2 layer 1). Syntactic validation only.
+
+What these do is reject input that is the wrong *shape*. Every rule about what
+the values may mean lives in `domain/`, reaches the row through
+`apps.catalogue.validators` and `full_clean`, and is enforced again by a CHECK
+constraint. A timezone is not validated here, because there would then be two
+answers to "is `Africa/Zanzibar` a zone" and the console — which writes through
+`full_clean` and never touches a serializer — would only see one of them.
+
+Three shape decisions are worth stating.
+
+**Coordinates cross the wire as `latitude`/`longitude`, never as GeoJSON or
+WKT.** §13.1 fixes the exchange format: *"decimal degrees with a maximum of
+seven decimal places"*. `DecimalField(decimal_places=7)` is that sentence, and
+it refuses the eighth digit at the boundary rather than letting PostGIS store
+noise. They are converted to a `Point` here and nowhere else.
+
+**A reference crosses as the target's `public_id`.** §7.2: *"Sequential
+integers are never returned to clients"*, and an identifier a client may not
+read is one it may not write either. The UUID is resolved to a row in
+`services`, which is the layer allowed to ask the database anything.
+
+**Every write serializer is a `StrictSerializer` with an explicit field list.**
+§30.6, twice over: an unknown key is a 422 naming the field, and there is no
+path by which a key this file does not name reaches a column.
+
+`_ACTIVITY_PROVIDER` is absent from `ActivityWriteSerializer` deliberately.
+`activity.provider_id` is writable in the repository — the Phase 11 portal
+needs it — but it is an internal integer, and exposing it on an admin endpoint
+would put a sequential id on the wire to satisfy a caller that does not exist
+yet.
 """
+
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import Any
+
+from django.contrib.gis.geos import Point
+from rest_framework import serializers
+
+from apps.catalogue.domain.geo import COORDINATE_PRECISION, Coordinates
+from apps.catalogue.models import (
+    ConfirmationMode,
+    GatewayTypeChoices,
+    PropertyType,
+)
+from apps.common.serializers import StrictSerializer
+
+__all__ = [
+    "CountryWriteSerializer",
+    "RegionWriteSerializer",
+    "DestinationWriteSerializer",
+    "TagWriteSerializer",
+    "AttractionWriteSerializer",
+    "ActivityWriteSerializer",
+    "AccommodationWriteSerializer",
+    "WRITE_SERIALIZERS",
+    "CountrySerializer",
+    "RegionSerializer",
+    "DestinationSerializer",
+    "TagSerializer",
+    "AttractionSerializer",
+    "ActivitySerializer",
+    "AccommodationSerializer",
+    "MediaSerializer",
+    "READ_SERIALIZERS",
+]
+
+
+def _degrees(**kwargs: Any) -> serializers.DecimalField:
+    """§13.1's exchange format: decimal degrees, at most seven places.
+
+    Seven decimal places is roughly 11 mm — finer than any pickup point needs,
+    and the point at which storing more is storing noise. `max_digits` leaves
+    room for the three integer digits of 180.
+    """
+    return serializers.DecimalField(
+        max_digits=COORDINATE_PRECISION + 3, decimal_places=COORDINATE_PRECISION, **kwargs
+    )
+
+
+def _money(**kwargs: Any) -> serializers.DecimalField:
+    """§7.2's money shape: `NUMERIC(14, 2)`, and never a float.
+
+    `coerce_to_string` is left at DRF's default, so the value leaves as a JSON
+    string. A JSON number would be parsed as an IEEE double by every client in
+    the stack, which is the exact representation §7.2 forbids.
+    """
+    return serializers.DecimalField(max_digits=14, decimal_places=2, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Write — what an administrator may send
+# ---------------------------------------------------------------------------
+
+
+class _CoordinateWriteSerializer(StrictSerializer):
+    """A serializer whose entity carries one point.
+
+    The pair is all-or-nothing on a PATCH. Half a coordinate is a location in
+    the sea off West Africa, and accepting one would let a typo move a hotel
+    there while reporting success.
+    """
+
+    #: The model field the pair becomes. `centroid` on a destination,
+    #: `coordinates` on everything else.
+    point_field = "coordinates"
+
+    latitude = _degrees()
+    longitude = _degrees()
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        attrs = super().validate(attrs)
+        latitude = attrs.pop("latitude", None)
+        longitude = attrs.pop("longitude", None)
+        if (latitude is None) != (longitude is None):
+            raise serializers.ValidationError(
+                {"latitude": "Latitude and longitude must be supplied together."}
+            )
+        if latitude is not None:
+            attrs[self.point_field] = _point(latitude, longitude)
+        return attrs
+
+
+def _point(latitude: Decimal, longitude: Decimal) -> Point:
+    """Validate through the domain value object, then build the geometry.
+
+    `Coordinates` is what refuses an out-of-range or over-precise pair, and it
+    is `Decimal`-based, so it is asked first. `Point` takes floats because
+    PostGIS stores double precision — that conversion is a property of the
+    storage type, not a choice, and it happens after the value has been
+    checked rather than before.
+    """
+    try:
+        checked = Coordinates(lat=latitude, lon=longitude)
+    except ValueError as exc:
+        raise serializers.ValidationError({"latitude": str(exc)}) from exc
+    return Point(float(checked.lon), float(checked.lat), srid=4326)
+
+
+class CountryWriteSerializer(StrictSerializer):
+    """§7.3's `country`."""
+
+    iso_code = serializers.CharField(min_length=2, max_length=2)
+    name = serializers.CharField(max_length=80)
+    default_currency = serializers.CharField(min_length=3, max_length=3)
+    default_timezone = serializers.CharField(max_length=60)
+    is_active = serializers.BooleanField(required=False)
+
+
+class RegionWriteSerializer(StrictSerializer):
+    country = serializers.UUIDField()
+    name = serializers.CharField(max_length=120)
+    slug = serializers.SlugField(max_length=140)
+    is_active = serializers.BooleanField(required=False)
+
+
+class DestinationWriteSerializer(_CoordinateWriteSerializer):
+    """§7.5.6.
+
+    `is_active` is optional and the model defaults it to false. A market is
+    staged, then published — §41.12 asks an administrator to open Arusha, and
+    "created" and "open" are two decisions with a review in between.
+    """
+
+    point_field = "centroid"
+
+    region = serializers.UUIDField()
+    name = serializers.CharField(max_length=120)
+    slug = serializers.SlugField(max_length=140)
+    summary = serializers.CharField(allow_null=True, required=False)
+    description = serializers.CharField(allow_blank=True, required=False)
+    timezone = serializers.CharField(max_length=60)
+    default_currency = serializers.CharField(min_length=3, max_length=3)
+    is_gateway = serializers.BooleanField(required=False)
+    gateway_type = serializers.ChoiceField(
+        choices=GatewayTypeChoices.choices, allow_null=True, required=False
+    )
+    gateway_code = serializers.CharField(max_length=10, allow_null=True, required=False)
+    launch_date = serializers.DateField(allow_null=True, required=False)
+    feature_rank = serializers.IntegerField(min_value=1, required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+class TagWriteSerializer(StrictSerializer):
+    """§24.7's chip vocabulary. A new interest is a row, never a deployment."""
+
+    slug = serializers.SlugField(max_length=64)
+    # `label` is also an attribute of DRF's `Field`. `SerializerMetaclass`
+    # pops declared fields out of the class body before the class exists, so
+    # nothing is shadowed at runtime; the checker cannot see that.
+    label = serializers.CharField(max_length=80)  # type: ignore[assignment]
+    sort_order = serializers.IntegerField(required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+class AttractionWriteSerializer(_CoordinateWriteSerializer):
+    """§15.1."""
+
+    destination = serializers.UUIDField()
+    name = serializers.CharField(max_length=140)
+    slug = serializers.SlugField(max_length=140)
+    summary = serializers.CharField(allow_null=True, required=False)
+    description = serializers.CharField(allow_blank=True, required=False)
+    opening_hours = serializers.JSONField(allow_null=True, required=False)
+    entrance_fee = _money(allow_null=True, required=False)
+    fee_currency = serializers.CharField(
+        min_length=3, max_length=3, allow_null=True, required=False
+    )
+    visit_minutes = serializers.IntegerField(min_value=1, allow_null=True, required=False)
+    tags = serializers.ListField(child=serializers.SlugField(max_length=64), required=False)
+    accessibility_notes = serializers.CharField(allow_blank=True, required=False)
+    feature_rank = serializers.IntegerField(min_value=1, required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+class ActivityWriteSerializer(_CoordinateWriteSerializer):
+    """§16.1. Administrator-created until the Phase 11 provider portal.
+
+    `price_per_person` and `currency` are both required on create and are
+    checked against each other by the model's CHECK constraint. §7.2 does not
+    allow an amount without a currency anywhere, and an activity is where that
+    would first cost somebody money.
+    """
+
+    destination = serializers.UUIDField()
+    attraction = serializers.UUIDField(allow_null=True, required=False)
+    cancellation_policy = serializers.UUIDField(allow_null=True, required=False)
+    name = serializers.CharField(max_length=140)
+    slug = serializers.SlugField(max_length=140)
+    summary = serializers.CharField(allow_null=True, required=False)
+    description = serializers.CharField(allow_blank=True, required=False)
+    meeting_point_text = serializers.CharField(max_length=255, allow_blank=True, required=False)
+    duration_minutes = serializers.IntegerField(min_value=1)
+    price_per_person = _money()
+    price_per_group = _money(allow_null=True, required=False)
+    currency = serializers.CharField(min_length=3, max_length=3)
+    min_pax = serializers.IntegerField(min_value=1, required=False)
+    max_pax = serializers.IntegerField(min_value=1)
+    min_age = serializers.IntegerField(min_value=0, allow_null=True, required=False)
+    requirements = serializers.JSONField(required=False)
+    inclusions = serializers.JSONField(required=False)
+    exclusions = serializers.JSONField(required=False)
+    booking_cutoff_hours = serializers.IntegerField(min_value=0, required=False)
+    confirmation_mode = serializers.ChoiceField(choices=ConfirmationMode.choices, required=False)
+    tags = serializers.ListField(child=serializers.SlugField(max_length=64), required=False)
+    feature_rank = serializers.IntegerField(min_value=1, required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+class AccommodationWriteSerializer(_CoordinateWriteSerializer):
+    """§7.5.7 as amended — ADR 0013.
+
+    There is no rate, no room type, no cancellation policy and no provider to
+    send. The field list is the enforcement: a client that posts `base_rate`
+    gets a 422 naming it, rather than a 200 that quietly dropped a price.
+    """
+
+    destination = serializers.UUIDField()
+    name = serializers.CharField(max_length=140)
+    slug = serializers.SlugField(max_length=140)
+    summary = serializers.CharField(allow_null=True, required=False)
+    description = serializers.CharField(allow_blank=True, required=False)
+    property_type = serializers.ChoiceField(choices=PropertyType.choices)
+    address_line = serializers.CharField(max_length=255, allow_blank=True, required=False)
+    #: Local wall times in the destination's zone, which is the only zone they
+    #: mean anything in. Null where the property has not published them.
+    check_in_time = serializers.TimeField(allow_null=True, required=False)
+    check_out_time = serializers.TimeField(allow_null=True, required=False)
+    feature_rank = serializers.IntegerField(min_value=1, required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+WRITE_SERIALIZERS: dict[str, type[StrictSerializer]] = {
+    "country": CountryWriteSerializer,
+    "region": RegionWriteSerializer,
+    "destination": DestinationWriteSerializer,
+    "tag": TagWriteSerializer,
+    "attraction": AttractionWriteSerializer,
+    "activity": ActivityWriteSerializer,
+    "accommodation": AccommodationWriteSerializer,
+}
+
+
+# ---------------------------------------------------------------------------
+# Read — how a DTO is rendered
+# ---------------------------------------------------------------------------
+#
+# Declared over the DTOs rather than over the models. The DTO is where §7.2's
+# "no sequential integers" is already true, so a read serializer cannot leak
+# one by naming a field that happens to exist on the row.
+
+
+class MediaSerializer(serializers.Serializer[Any]):
+    """§7.3 `media`, ordered primary-first by `domain.media.order_media`."""
+
+    file_key = serializers.CharField()
+    alt_text = serializers.CharField()
+    width = serializers.IntegerField()
+    height = serializers.IntegerField()
+    is_primary = serializers.BooleanField()
+    sort_order = serializers.IntegerField()
+
+
+class CountrySerializer(serializers.Serializer[Any]):
+    public_id = serializers.UUIDField()
+    iso_code = serializers.CharField()
+    name = serializers.CharField()
+    default_currency = serializers.CharField()
+    default_timezone = serializers.CharField()
+
+
+class RegionSerializer(serializers.Serializer[Any]):
+    public_id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+    country = CountrySerializer()
+
+
+class TagSerializer(serializers.Serializer[Any]):
+    public_id = serializers.UUIDField()
+    slug = serializers.CharField()
+    label = serializers.CharField()  # type: ignore[assignment]
+    sort_order = serializers.IntegerField()
+
+
+class DestinationSerializer(serializers.Serializer[Any]):
+    """§7.5.6.
+
+    `timezone` is here because §7.2 renders timestamps in the destination's
+    zone and §15.2 evaluates opening hours in it. A client holding a
+    destination never has to make a second call to know either.
+    """
+
+    public_id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+    summary = serializers.CharField(allow_null=True)
+    description = serializers.CharField()
+    latitude = _degrees(source="centroid.lat")
+    longitude = _degrees(source="centroid.lon")
+    timezone = serializers.CharField()
+    default_currency = serializers.CharField()
+    is_gateway = serializers.BooleanField()
+    gateway_type = serializers.CharField(allow_null=True)
+    gateway_code = serializers.CharField(allow_null=True)
+    launch_date = serializers.DateField(allow_null=True)
+    feature_rank = serializers.IntegerField()
+    region = RegionSerializer()
+    media = MediaSerializer(many=True)
+
+
+class AttractionSerializer(serializers.Serializer[Any]):
+    public_id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+    summary = serializers.CharField(allow_null=True)
+    description = serializers.CharField()
+    latitude = _degrees(source="coordinates.lat")
+    longitude = _degrees(source="coordinates.lon")
+    opening_hours = serializers.JSONField(allow_null=True)
+    entrance_fee = _money(allow_null=True)
+    fee_currency = serializers.CharField(allow_null=True)
+    visit_minutes = serializers.IntegerField(allow_null=True)
+    tags = serializers.ListField(child=serializers.CharField())
+    accessibility_notes = serializers.CharField()
+    feature_rank = serializers.IntegerField()
+    destination = DestinationSerializer()
+    media = MediaSerializer(many=True)
+
+
+class ActivitySerializer(serializers.Serializer[Any]):
+    """§16.1.
+
+    No converted price appears here. §18.4 puts conversion at quote time, and
+    a display conversion is an `IndicativeAmount` applied over this — which is
+    a different thing with a different label and a different half-life.
+    """
+
+    public_id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+    summary = serializers.CharField(allow_null=True)
+    description = serializers.CharField()
+    latitude = _degrees(source="coordinates.lat")
+    longitude = _degrees(source="coordinates.lon")
+    meeting_point = serializers.CharField()
+    duration_minutes = serializers.IntegerField()
+    price_per_person = _money()
+    price_per_group = _money(allow_null=True)
+    currency = serializers.CharField()
+    min_pax = serializers.IntegerField()
+    max_pax = serializers.IntegerField()
+    min_age = serializers.IntegerField(allow_null=True)
+    requirements = serializers.JSONField()
+    inclusions = serializers.JSONField()
+    exclusions = serializers.JSONField()
+    booking_cutoff_hours = serializers.IntegerField()
+    confirmation_mode = serializers.CharField()
+    tags = serializers.ListField(child=serializers.CharField())
+    rating_avg = serializers.DecimalField(max_digits=3, decimal_places=2)
+    rating_count = serializers.IntegerField()
+    feature_rank = serializers.IntegerField()
+    destination = DestinationSerializer()
+    media = MediaSerializer(many=True)
+
+
+class AccommodationSerializer(serializers.Serializer[Any]):
+    """§7.5.7 and §14 as amended — ADR 0013.
+
+    A location record. There is no rate field to suppress, which is the
+    difference between deferring a subsystem and hiding one.
+    """
+
+    public_id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+    summary = serializers.CharField(allow_null=True)
+    description = serializers.CharField()
+    property_type = serializers.CharField()
+    latitude = _degrees(source="coordinates.lat")
+    longitude = _degrees(source="coordinates.lon")
+    address_line = serializers.CharField()
+    check_in_time = serializers.TimeField(allow_null=True)
+    check_out_time = serializers.TimeField(allow_null=True)
+    feature_rank = serializers.IntegerField()
+    destination = DestinationSerializer()
+    media = MediaSerializer(many=True)
+
+
+READ_SERIALIZERS: dict[str, type[serializers.Serializer[Any]]] = {
+    "country": CountrySerializer,
+    "region": RegionSerializer,
+    "destination": DestinationSerializer,
+    "tag": TagSerializer,
+    "attraction": AttractionSerializer,
+    "activity": ActivitySerializer,
+    "accommodation": AccommodationSerializer,
+}

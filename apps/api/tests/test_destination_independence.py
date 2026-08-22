@@ -43,7 +43,6 @@ and lets the endpoints be shaped to meet it.
 from __future__ import annotations
 
 import ast
-import uuid
 from typing import Any
 
 import pytest
@@ -51,12 +50,9 @@ from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from apps.common.authz import Role
-from apps.identity import repositories as identity_repo
-from apps.identity import services as identity_services
+from tests.administrators import signed_in_as
 
 pytestmark = pytest.mark.django_db
-
-PASSWORD = "correct-horse-battery-staple-42"
 
 #: Arusha, as §41.12 names it. Deliberately mainland Tanzania: the seeded
 #: market is Zanzibar, so a destination the seed data never mentions is the
@@ -79,24 +75,14 @@ NGORONGORO = {
 
 
 def _administrator() -> APIClient:
-    """A CATALOGUE_ADMIN, logged in. The actor, not the market."""
-    email = f"catalogue-admin-{uuid.uuid4().hex[:8]}@example.com"
-    identity_services.register_tourist(
-        email=email, password=PASSWORD, first_name="Catalogue", last_name="Admin"
-    )
-    user = identity_repo.find_user_by_email(email)
-    assert user is not None
+    """A CATALOGUE_ADMIN, signed in. The actor, not the market.
 
-    from django.utils import timezone
-
-    identity_repo.mark_email_verified(user, now=timezone.now())
-    identity_repo.grant_role(user, Role.CATALOGUE_ADMIN)
-    user.refresh_from_db()
-
-    result = identity_services.authenticate(email=email, password=PASSWORD)
-    client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=f"Bearer {result.tokens.access_token}")
-    return client
+    Includes TOTP enrolment, because §30.2 makes it mandatory for every
+    administrative role and `authenticate` refuses to issue a token without
+    it. An administrator who could reach the console without a second factor
+    would not be the administrator §41.12 is about.
+    """
+    return signed_in_as(Role.CATALOGUE_ADMIN)
 
 
 def _created(response: Any, what: str) -> dict[str, Any]:

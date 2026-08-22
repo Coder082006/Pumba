@@ -17,6 +17,7 @@ import logging
 from typing import Any
 
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404
 from rest_framework import exceptions as drf_exc
 from rest_framework.response import Response
@@ -85,6 +86,21 @@ def _translate(exc: Exception) -> PlatformError:
 
     if isinstance(exc, drf_exc.ValidationError):
         return ValidationError(details=_flatten_drf_detail(exc.detail))
+
+    if isinstance(exc, DjangoValidationError):
+        # §8.6 tier 2 reaching HTTP. `Model.full_clean()` is the one validation
+        # tier that is *not* a serializer — it is what the console, the seed
+        # loader and the admin API all share — so its failures must land as 422
+        # with the field named, exactly like a serializer's. Untranslated they
+        # fall through to `InternalError`, and an administrator typing an
+        # invalid timezone would see a 500 with nothing to act on.
+        # `message_dict` is only available when the error carries field
+        # mapping; a model-wide `ValidationError` — a failed CHECK-mirroring
+        # `clean()` — has messages and no fields, and is reported against the
+        # body rather than invented onto one.
+        if hasattr(exc, "error_dict"):
+            return ValidationError(details=_flatten_drf_detail(exc.message_dict))
+        return ValidationError(details=_flatten_drf_detail(list(exc.messages)))
 
     if isinstance(exc, drf_exc.NotAuthenticated | drf_exc.AuthenticationFailed):
         return AuthenticationError(str(exc.detail))

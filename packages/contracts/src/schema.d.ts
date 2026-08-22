@@ -4,6 +4,566 @@
  */
 
 export interface paths {
+    "/api/v1/admin/accommodation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a accommodation
+         * @description POST one new curated row.
+         *
+         *     Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+         *     yet, so a filter here would provably run against nothing while reporting to
+         *     the §37.2 matrix that ownership was enforced. What stands between a caller
+         *     and a new row is the role check, and the matrix records that by name in
+         *     `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+         */
+        post: operations["admin_accommodation_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/accommodation/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire a accommodation
+         * @description §7.7's soft deletion. The row survives; the slug is released.
+         */
+        delete: operations["admin_accommodation_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Amend a accommodation
+         * @description A partial update — including the one that opens or closes a market.
+         *
+         *     §4.1 wants a destination published and withdrawn without a deployment,
+         *     and both are `is_active` moving in this one call. There is deliberately
+         *     no separate activate endpoint, so there is no second path that could
+         *     record the change differently or not at all.
+         */
+        patch: operations["admin_accommodation_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/accommodation/{public_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a retired accommodation
+         * @description Undo a soft deletion.
+         *
+         *     A POST to its own resource rather than a PATCH setting `deleted_at`.
+         *     `deleted_at` is not a writable field, and adding it to the update
+         *     serializer to support this would open the mass-assignment hole that
+         *     `repositories._WRITABLE` exists to close.
+         */
+        post: operations["admin_accommodation_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/activities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a activity
+         * @description POST one new curated row.
+         *
+         *     Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+         *     yet, so a filter here would provably run against nothing while reporting to
+         *     the §37.2 matrix that ownership was enforced. What stands between a caller
+         *     and a new row is the role check, and the matrix records that by name in
+         *     `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+         */
+        post: operations["admin_activities_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/activities/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire a activity
+         * @description §7.7's soft deletion. The row survives; the slug is released.
+         */
+        delete: operations["admin_activities_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Amend a activity
+         * @description A partial update — including the one that opens or closes a market.
+         *
+         *     §4.1 wants a destination published and withdrawn without a deployment,
+         *     and both are `is_active` moving in this one call. There is deliberately
+         *     no separate activate endpoint, so there is no second path that could
+         *     record the change differently or not at all.
+         */
+        patch: operations["admin_activities_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/activities/{public_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a retired activity
+         * @description Undo a soft deletion.
+         *
+         *     A POST to its own resource rather than a PATCH setting `deleted_at`.
+         *     `deleted_at` is not a writable field, and adding it to the update
+         *     serializer to support this would open the mass-assignment hole that
+         *     `repositories._WRITABLE` exists to close.
+         */
+        post: operations["admin_activities_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/attractions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a attraction
+         * @description POST one new curated row.
+         *
+         *     Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+         *     yet, so a filter here would provably run against nothing while reporting to
+         *     the §37.2 matrix that ownership was enforced. What stands between a caller
+         *     and a new row is the role check, and the matrix records that by name in
+         *     `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+         */
+        post: operations["admin_attractions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/attractions/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire a attraction
+         * @description §7.7's soft deletion. The row survives; the slug is released.
+         */
+        delete: operations["admin_attractions_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Amend a attraction
+         * @description A partial update — including the one that opens or closes a market.
+         *
+         *     §4.1 wants a destination published and withdrawn without a deployment,
+         *     and both are `is_active` moving in this one call. There is deliberately
+         *     no separate activate endpoint, so there is no second path that could
+         *     record the change differently or not at all.
+         */
+        patch: operations["admin_attractions_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/attractions/{public_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a retired attraction
+         * @description Undo a soft deletion.
+         *
+         *     A POST to its own resource rather than a PATCH setting `deleted_at`.
+         *     `deleted_at` is not a writable field, and adding it to the update
+         *     serializer to support this would open the mass-assignment hole that
+         *     `repositories._WRITABLE` exists to close.
+         */
+        post: operations["admin_attractions_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/countries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a country
+         * @description POST one new curated row.
+         *
+         *     Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+         *     yet, so a filter here would provably run against nothing while reporting to
+         *     the §37.2 matrix that ownership was enforced. What stands between a caller
+         *     and a new row is the role check, and the matrix records that by name in
+         *     `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+         */
+        post: operations["admin_countries_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/countries/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire a country
+         * @description §7.7's soft deletion. The row survives; the slug is released.
+         */
+        delete: operations["admin_countries_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Amend a country
+         * @description A partial update — including the one that opens or closes a market.
+         *
+         *     §4.1 wants a destination published and withdrawn without a deployment,
+         *     and both are `is_active` moving in this one call. There is deliberately
+         *     no separate activate endpoint, so there is no second path that could
+         *     record the change differently or not at all.
+         */
+        patch: operations["admin_countries_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/countries/{public_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a retired country
+         * @description Undo a soft deletion.
+         *
+         *     A POST to its own resource rather than a PATCH setting `deleted_at`.
+         *     `deleted_at` is not a writable field, and adding it to the update
+         *     serializer to support this would open the mass-assignment hole that
+         *     `repositories._WRITABLE` exists to close.
+         */
+        post: operations["admin_countries_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a destination
+         * @description POST one new curated row.
+         *
+         *     Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+         *     yet, so a filter here would provably run against nothing while reporting to
+         *     the §37.2 matrix that ownership was enforced. What stands between a caller
+         *     and a new row is the role check, and the matrix records that by name in
+         *     `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+         */
+        post: operations["admin_destinations_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/destinations/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire a destination
+         * @description §7.7's soft deletion. The row survives; the slug is released.
+         */
+        delete: operations["admin_destinations_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Amend a destination
+         * @description A partial update — including the one that opens or closes a market.
+         *
+         *     §4.1 wants a destination published and withdrawn without a deployment,
+         *     and both are `is_active` moving in this one call. There is deliberately
+         *     no separate activate endpoint, so there is no second path that could
+         *     record the change differently or not at all.
+         */
+        patch: operations["admin_destinations_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/destinations/{public_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a retired destination
+         * @description Undo a soft deletion.
+         *
+         *     A POST to its own resource rather than a PATCH setting `deleted_at`.
+         *     `deleted_at` is not a writable field, and adding it to the update
+         *     serializer to support this would open the mass-assignment hole that
+         *     `repositories._WRITABLE` exists to close.
+         */
+        post: operations["admin_destinations_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/regions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a region
+         * @description POST one new curated row.
+         *
+         *     Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+         *     yet, so a filter here would provably run against nothing while reporting to
+         *     the §37.2 matrix that ownership was enforced. What stands between a caller
+         *     and a new row is the role check, and the matrix records that by name in
+         *     `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+         */
+        post: operations["admin_regions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/regions/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire a region
+         * @description §7.7's soft deletion. The row survives; the slug is released.
+         */
+        delete: operations["admin_regions_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Amend a region
+         * @description A partial update — including the one that opens or closes a market.
+         *
+         *     §4.1 wants a destination published and withdrawn without a deployment,
+         *     and both are `is_active` moving in this one call. There is deliberately
+         *     no separate activate endpoint, so there is no second path that could
+         *     record the change differently or not at all.
+         */
+        patch: operations["admin_regions_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/regions/{public_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a retired region
+         * @description Undo a soft deletion.
+         *
+         *     A POST to its own resource rather than a PATCH setting `deleted_at`.
+         *     `deleted_at` is not a writable field, and adding it to the update
+         *     serializer to support this would open the mass-assignment hole that
+         *     `repositories._WRITABLE` exists to close.
+         */
+        post: operations["admin_regions_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a tag
+         * @description POST one new curated row.
+         *
+         *     Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+         *     yet, so a filter here would provably run against nothing while reporting to
+         *     the §37.2 matrix that ownership was enforced. What stands between a caller
+         *     and a new row is the role check, and the matrix records that by name in
+         *     `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+         */
+        post: operations["admin_tags_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tags/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire a tag
+         * @description §7.7's soft deletion. The row survives; the slug is released.
+         */
+        delete: operations["admin_tags_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Amend a tag
+         * @description A partial update — including the one that opens or closes a market.
+         *
+         *     §4.1 wants a destination published and withdrawn without a deployment,
+         *     and both are `is_active` moving in this one call. There is deliberately
+         *     no separate activate endpoint, so there is no second path that could
+         *     record the change differently or not at all.
+         */
+        patch: operations["admin_tags_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/tags/{public_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a retired tag
+         * @description Undo a soft deletion.
+         *
+         *     A POST to its own resource rather than a PATCH setting `deleted_at`.
+         *     `deleted_at` is not a writable field, and adding it to the update
+         *     serializer to support this would open the mass-assignment hole that
+         *     `repositories._WRITABLE` exists to close.
+         */
+        post: operations["admin_tags_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -235,6 +795,254 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description §7.5.7 and §14 as amended — ADR 0013.
+         *
+         *     A location record. There is no rate field to suppress, which is the
+         *     difference between deferring a subsystem and hiding one. */
+        Accommodation: {
+            /** Format: uuid */
+            public_id: string;
+            name: string;
+            slug: string;
+            summary: string | null;
+            description: string;
+            property_type: string;
+            /** Format: decimal */
+            latitude: string;
+            /** Format: decimal */
+            longitude: string;
+            address_line: string;
+            /** Format: time */
+            check_in_time: string | null;
+            /** Format: time */
+            check_out_time: string | null;
+            feature_rank: number;
+            destination: components["schemas"]["Destination"];
+            media: components["schemas"]["Media"][];
+        };
+        /** @description §7.5.7 as amended — ADR 0013.
+         *
+         *     There is no rate, no room type, no cancellation policy and no provider to
+         *     send. The field list is the enforcement: a client that posts `base_rate`
+         *     gets a 422 naming it, rather than a 200 that quietly dropped a price. */
+        AccommodationWriteRequest: {
+            /** Format: decimal */
+            latitude: string;
+            /** Format: decimal */
+            longitude: string;
+            /** Format: uuid */
+            destination: string;
+            name: string;
+            slug: string;
+            summary?: string | null;
+            description?: string;
+            property_type: components["schemas"]["PropertyTypeEnum"];
+            address_line?: string;
+            /** Format: time */
+            check_in_time?: string | null;
+            /** Format: time */
+            check_out_time?: string | null;
+            feature_rank?: number;
+            is_active?: boolean;
+        };
+        /** @description §16.1.
+         *
+         *     No converted price appears here. §18.4 puts conversion at quote time, and
+         *     a display conversion is an `IndicativeAmount` applied over this — which is
+         *     a different thing with a different label and a different half-life. */
+        Activity: {
+            /** Format: uuid */
+            public_id: string;
+            name: string;
+            slug: string;
+            summary: string | null;
+            description: string;
+            /** Format: decimal */
+            latitude: string;
+            /** Format: decimal */
+            longitude: string;
+            meeting_point: string;
+            duration_minutes: number;
+            /** Format: decimal */
+            price_per_person: string;
+            /** Format: decimal */
+            price_per_group: string | null;
+            currency: string;
+            min_pax: number;
+            max_pax: number;
+            min_age: number | null;
+            requirements: unknown;
+            inclusions: unknown;
+            exclusions: unknown;
+            booking_cutoff_hours: number;
+            confirmation_mode: string;
+            tags: string[];
+            /** Format: decimal */
+            rating_avg: string;
+            rating_count: number;
+            feature_rank: number;
+            destination: components["schemas"]["Destination"];
+            media: components["schemas"]["Media"][];
+        };
+        /** @description §16.1. Administrator-created until the Phase 11 provider portal.
+         *
+         *     `price_per_person` and `currency` are both required on create and are
+         *     checked against each other by the model's CHECK constraint. §7.2 does not
+         *     allow an amount without a currency anywhere, and an activity is where that
+         *     would first cost somebody money. */
+        ActivityWriteRequest: {
+            /** Format: decimal */
+            latitude: string;
+            /** Format: decimal */
+            longitude: string;
+            /** Format: uuid */
+            destination: string;
+            /** Format: uuid */
+            attraction?: string | null;
+            /** Format: uuid */
+            cancellation_policy?: string | null;
+            name: string;
+            slug: string;
+            summary?: string | null;
+            description?: string;
+            meeting_point_text?: string;
+            duration_minutes: number;
+            /** Format: decimal */
+            price_per_person: string;
+            /** Format: decimal */
+            price_per_group?: string | null;
+            currency: string;
+            min_pax?: number;
+            max_pax: number;
+            min_age?: number | null;
+            requirements?: unknown;
+            inclusions?: unknown;
+            exclusions?: unknown;
+            booking_cutoff_hours?: number;
+            confirmation_mode?: components["schemas"]["ConfirmationModeEnum"];
+            tags?: string[];
+            feature_rank?: number;
+            is_active?: boolean;
+        };
+        Attraction: {
+            /** Format: uuid */
+            public_id: string;
+            name: string;
+            slug: string;
+            summary: string | null;
+            description: string;
+            /** Format: decimal */
+            latitude: string;
+            /** Format: decimal */
+            longitude: string;
+            opening_hours: unknown | null;
+            /** Format: decimal */
+            entrance_fee: string | null;
+            fee_currency: string | null;
+            visit_minutes: number | null;
+            tags: string[];
+            accessibility_notes: string;
+            feature_rank: number;
+            destination: components["schemas"]["Destination"];
+            media: components["schemas"]["Media"][];
+        };
+        /** @description §15.1. */
+        AttractionWriteRequest: {
+            /** Format: decimal */
+            latitude: string;
+            /** Format: decimal */
+            longitude: string;
+            /** Format: uuid */
+            destination: string;
+            name: string;
+            slug: string;
+            summary?: string | null;
+            description?: string;
+            opening_hours?: unknown | null;
+            /** Format: decimal */
+            entrance_fee?: string | null;
+            fee_currency?: string | null;
+            visit_minutes?: number | null;
+            tags?: string[];
+            accessibility_notes?: string;
+            feature_rank?: number;
+            is_active?: boolean;
+        };
+        /**
+         * @description * `INSTANT` - Confirms immediately
+         *     * `ON_REQUEST` - Confirmed by the provider
+         * @enum {string}
+         */
+        ConfirmationModeEnum: "INSTANT" | "ON_REQUEST";
+        Country: {
+            /** Format: uuid */
+            public_id: string;
+            iso_code: string;
+            name: string;
+            default_currency: string;
+            default_timezone: string;
+        };
+        /** @description §7.3's `country`. */
+        CountryWriteRequest: {
+            iso_code: string;
+            name: string;
+            default_currency: string;
+            default_timezone: string;
+            is_active?: boolean;
+        };
+        /** @description §7.5.6.
+         *
+         *     `timezone` is here because §7.2 renders timestamps in the destination's
+         *     zone and §15.2 evaluates opening hours in it. A client holding a
+         *     destination never has to make a second call to know either. */
+        Destination: {
+            /** Format: uuid */
+            public_id: string;
+            name: string;
+            slug: string;
+            summary: string | null;
+            description: string;
+            /** Format: decimal */
+            latitude: string;
+            /** Format: decimal */
+            longitude: string;
+            timezone: string;
+            default_currency: string;
+            is_gateway: boolean;
+            gateway_type: string | null;
+            gateway_code: string | null;
+            /** Format: date */
+            launch_date: string | null;
+            feature_rank: number;
+            region: components["schemas"]["Region"];
+            media: components["schemas"]["Media"][];
+        };
+        /** @description §7.5.6.
+         *
+         *     `is_active` is optional and the model defaults it to false. A market is
+         *     staged, then published — §41.12 asks an administrator to open Arusha, and
+         *     "created" and "open" are two decisions with a review in between. */
+        DestinationWriteRequest: {
+            /** Format: decimal */
+            latitude: string;
+            /** Format: decimal */
+            longitude: string;
+            /** Format: uuid */
+            region: string;
+            name: string;
+            slug: string;
+            summary?: string | null;
+            description?: string;
+            timezone: string;
+            default_currency: string;
+            is_gateway?: boolean;
+            gateway_type?: components["schemas"]["GatewayTypeEnum"] | components["schemas"]["NullEnum"];
+            gateway_code?: string | null;
+            /** Format: date */
+            launch_date?: string | null;
+            feature_rank?: number;
+            is_active?: boolean;
+        };
         Device: {
             /** Format: uuid */
             readonly public_id: string;
@@ -246,7 +1054,13 @@ export interface components {
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
-         *     lets a renamed field keep "working" while doing nothing. */
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
         DeviceRegisterRequest: {
             platform: components["schemas"]["PlatformEnum"];
             push_token: string;
@@ -258,11 +1072,24 @@ export interface components {
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
-         *     lets a renamed field keep "working" while doing nothing. */
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
         ForgotPasswordRequest: {
             /** Format: email */
             email: string;
         };
+        /**
+         * @description * `AIRPORT` - Airport
+         *     * `SEAPORT` - Seaport
+         *     * `LAND_BORDER` - Land border
+         * @enum {string}
+         */
+        GatewayTypeEnum: "AIRPORT" | "SEAPORT" | "LAND_BORDER";
         HealthResponse: {
             status: string;
             version: string;
@@ -284,12 +1111,173 @@ export interface components {
             password: string;
             mfa_code?: string;
         };
+        /** @description §7.3 `media`, ordered primary-first by `domain.media.order_media`. */
+        Media: {
+            file_key: string;
+            alt_text: string;
+            width: number;
+            height: number;
+            is_primary: boolean;
+            sort_order: number;
+        };
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
-         *     lets a renamed field keep "working" while doing nothing. */
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
         MfaConfirmRequest: {
             code: string;
+        };
+        NullEnum: null;
+        /** @description §7.5.7 as amended — ADR 0013.
+         *
+         *     There is no rate, no room type, no cancellation policy and no provider to
+         *     send. The field list is the enforcement: a client that posts `base_rate`
+         *     gets a 422 naming it, rather than a 200 that quietly dropped a price. */
+        PatchedAccommodationWriteRequest: {
+            /** Format: decimal */
+            latitude?: string;
+            /** Format: decimal */
+            longitude?: string;
+            /** Format: uuid */
+            destination?: string;
+            name?: string;
+            slug?: string;
+            summary?: string | null;
+            description?: string;
+            property_type?: components["schemas"]["PropertyTypeEnum"];
+            address_line?: string;
+            /** Format: time */
+            check_in_time?: string | null;
+            /** Format: time */
+            check_out_time?: string | null;
+            feature_rank?: number;
+            is_active?: boolean;
+        };
+        /** @description §16.1. Administrator-created until the Phase 11 provider portal.
+         *
+         *     `price_per_person` and `currency` are both required on create and are
+         *     checked against each other by the model's CHECK constraint. §7.2 does not
+         *     allow an amount without a currency anywhere, and an activity is where that
+         *     would first cost somebody money. */
+        PatchedActivityWriteRequest: {
+            /** Format: decimal */
+            latitude?: string;
+            /** Format: decimal */
+            longitude?: string;
+            /** Format: uuid */
+            destination?: string;
+            /** Format: uuid */
+            attraction?: string | null;
+            /** Format: uuid */
+            cancellation_policy?: string | null;
+            name?: string;
+            slug?: string;
+            summary?: string | null;
+            description?: string;
+            meeting_point_text?: string;
+            duration_minutes?: number;
+            /** Format: decimal */
+            price_per_person?: string;
+            /** Format: decimal */
+            price_per_group?: string | null;
+            currency?: string;
+            min_pax?: number;
+            max_pax?: number;
+            min_age?: number | null;
+            requirements?: unknown;
+            inclusions?: unknown;
+            exclusions?: unknown;
+            booking_cutoff_hours?: number;
+            confirmation_mode?: components["schemas"]["ConfirmationModeEnum"];
+            tags?: string[];
+            feature_rank?: number;
+            is_active?: boolean;
+        };
+        /** @description §15.1. */
+        PatchedAttractionWriteRequest: {
+            /** Format: decimal */
+            latitude?: string;
+            /** Format: decimal */
+            longitude?: string;
+            /** Format: uuid */
+            destination?: string;
+            name?: string;
+            slug?: string;
+            summary?: string | null;
+            description?: string;
+            opening_hours?: unknown | null;
+            /** Format: decimal */
+            entrance_fee?: string | null;
+            fee_currency?: string | null;
+            visit_minutes?: number | null;
+            tags?: string[];
+            accessibility_notes?: string;
+            feature_rank?: number;
+            is_active?: boolean;
+        };
+        /** @description §7.3's `country`. */
+        PatchedCountryWriteRequest: {
+            iso_code?: string;
+            name?: string;
+            default_currency?: string;
+            default_timezone?: string;
+            is_active?: boolean;
+        };
+        /** @description §7.5.6.
+         *
+         *     `is_active` is optional and the model defaults it to false. A market is
+         *     staged, then published — §41.12 asks an administrator to open Arusha, and
+         *     "created" and "open" are two decisions with a review in between. */
+        PatchedDestinationWriteRequest: {
+            /** Format: decimal */
+            latitude?: string;
+            /** Format: decimal */
+            longitude?: string;
+            /** Format: uuid */
+            region?: string;
+            name?: string;
+            slug?: string;
+            summary?: string | null;
+            description?: string;
+            timezone?: string;
+            default_currency?: string;
+            is_gateway?: boolean;
+            gateway_type?: components["schemas"]["GatewayTypeEnum"] | components["schemas"]["NullEnum"];
+            gateway_code?: string | null;
+            /** Format: date */
+            launch_date?: string | null;
+            feature_rank?: number;
+            is_active?: boolean;
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
+        PatchedRegionWriteRequest: {
+            /** Format: uuid */
+            country?: string;
+            name?: string;
+            slug?: string;
+            is_active?: boolean;
+        };
+        /** @description §24.7's chip vocabulary. A new interest is a row, never a deployment. */
+        PatchedTagWriteRequest: {
+            slug?: string;
+            label?: string;
+            sort_order?: number;
+            is_active?: boolean;
         };
         /**
          * @description * `IOS` - IOS
@@ -298,12 +1286,51 @@ export interface components {
          * @enum {string}
          */
         PlatformEnum: "IOS" | "ANDROID" | "WEB";
+        /**
+         * @description * `HOTEL` - Hotel
+         *     * `RESORT` - Resort
+         *     * `LODGE` - Lodge
+         *     * `GUESTHOUSE` - Guesthouse
+         *     * `APARTMENT` - Apartment
+         * @enum {string}
+         */
+        PropertyTypeEnum: "HOTEL" | "RESORT" | "LODGE" | "GUESTHOUSE" | "APARTMENT";
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
-         *     lets a renamed field keep "working" while doing nothing. */
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
         RefreshRequest: {
             refresh_token?: string;
+        };
+        Region: {
+            /** Format: uuid */
+            public_id: string;
+            name: string;
+            slug: string;
+            country: components["schemas"]["Country"];
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
+        RegionWriteRequest: {
+            /** Format: uuid */
+            country: string;
+            name: string;
+            slug: string;
+            is_active?: boolean;
         };
         /** @description SRS §9.4.1. */
         RegisterRequest: {
@@ -323,10 +1350,30 @@ export interface components {
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
-         *     lets a renamed field keep "working" while doing nothing. */
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
         ResetPasswordRequest: {
             token: string;
             new_password: string;
+        };
+        Tag: {
+            /** Format: uuid */
+            public_id: string;
+            slug: string;
+            label: string;
+            sort_order: number;
+        };
+        /** @description §24.7's chip vocabulary. A new interest is a row, never a deployment. */
+        TagWriteRequest: {
+            slug: string;
+            label: string;
+            sort_order?: number;
+            is_active?: boolean;
         };
         TokenPair: {
             readonly access_token: string;
@@ -361,7 +1408,13 @@ export interface components {
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
-         *     lets a renamed field keep "working" while doing nothing. */
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
         VerifyEmailRequest: {
             token: string;
         };
@@ -374,6 +1427,650 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    admin_accommodation_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccommodationWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AccommodationWriteRequest"];
+                "multipart/form-data": components["schemas"]["AccommodationWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accommodation"];
+                };
+            };
+        };
+    };
+    admin_accommodation_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_accommodation_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedAccommodationWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAccommodationWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedAccommodationWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accommodation"];
+                };
+            };
+        };
+    };
+    admin_accommodation_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_activities_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivityWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ActivityWriteRequest"];
+                "multipart/form-data": components["schemas"]["ActivityWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Activity"];
+                };
+            };
+        };
+    };
+    admin_activities_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_activities_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedActivityWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedActivityWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedActivityWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Activity"];
+                };
+            };
+        };
+    };
+    admin_activities_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_attractions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttractionWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AttractionWriteRequest"];
+                "multipart/form-data": components["schemas"]["AttractionWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attraction"];
+                };
+            };
+        };
+    };
+    admin_attractions_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_attractions_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedAttractionWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAttractionWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedAttractionWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attraction"];
+                };
+            };
+        };
+    };
+    admin_attractions_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_countries_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CountryWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CountryWriteRequest"];
+                "multipart/form-data": components["schemas"]["CountryWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Country"];
+                };
+            };
+        };
+    };
+    admin_countries_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_countries_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedCountryWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedCountryWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedCountryWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Country"];
+                };
+            };
+        };
+    };
+    admin_countries_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_destinations_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DestinationWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DestinationWriteRequest"];
+                "multipart/form-data": components["schemas"]["DestinationWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Destination"];
+                };
+            };
+        };
+    };
+    admin_destinations_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_destinations_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedDestinationWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedDestinationWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedDestinationWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Destination"];
+                };
+            };
+        };
+    };
+    admin_destinations_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_regions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegionWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RegionWriteRequest"];
+                "multipart/form-data": components["schemas"]["RegionWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Region"];
+                };
+            };
+        };
+    };
+    admin_regions_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_regions_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedRegionWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedRegionWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedRegionWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Region"];
+                };
+            };
+        };
+    };
+    admin_regions_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_tags_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TagWriteRequest"];
+                "multipart/form-data": components["schemas"]["TagWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tag"];
+                };
+            };
+        };
+    };
+    admin_tags_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_tags_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedTagWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedTagWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedTagWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tag"];
+                };
+            };
+        };
+    };
+    admin_tags_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     auth_login_create: {
         parameters: {
             query?: never;

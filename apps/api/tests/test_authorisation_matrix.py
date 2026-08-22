@@ -60,6 +60,19 @@ NO_ROWS_EXPOSED = {
     "v1:identity:device-list": "Delegates to a scoped selector.",
     "v1:identity:device-detail": "Delegates to a scoped selector.",
     "v1:common:health": "No data.",
+    # The §27.8 catalogue console's create endpoints. A POST to a collection
+    # looks up no row, so there is nothing for an ownership predicate to
+    # filter: what stands between a caller and a new curated row is the role
+    # check, `HasPermission.for_(Permission.CATALOGUE_MANAGE)`. Listed one per
+    # entity rather than matched by prefix, so that adding an eighth curated
+    # table is a line in this file that a reviewer sees.
+    "v1:catalogue:admin-country-create": "Creates a row; looks none up.",
+    "v1:catalogue:admin-region-create": "Creates a row; looks none up.",
+    "v1:catalogue:admin-destination-create": "Creates a row; looks none up.",
+    "v1:catalogue:admin-tag-create": "Creates a row; looks none up.",
+    "v1:catalogue:admin-attraction-create": "Creates a row; looks none up.",
+    "v1:catalogue:admin-activity-create": "Creates a row; looks none up.",
+    "v1:catalogue:admin-accommodation-create": "Creates a row; looks none up.",
 }
 
 

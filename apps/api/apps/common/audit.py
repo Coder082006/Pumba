@@ -75,6 +75,21 @@ class AuditAction(StrEnum):
     DEVICE_REMOVED = "device.removed"
     AUTHORISATION_DENIED = "authorisation.denied"
 
+    # Phase 3 — the catalogue console (§27.8, §41.13). Generic over the entity
+    # rather than one member per table, because `AuditRecord.entity_type`
+    # already carries which table it was: `catalogue.updated` on `destination`
+    # says everything `destination.updated` would, and does not multiply into
+    # twenty-eight members that the console filter has to enumerate.
+    #
+    # Activation is not a member of its own. Publishing a market is an update
+    # whose `before`/`after` differ in `is_active`, and inventing a separate
+    # action for it would make the diff the less trustworthy of two records of
+    # the same fact.
+    CATALOGUE_CREATED = "catalogue.created"
+    CATALOGUE_UPDATED = "catalogue.updated"
+    CATALOGUE_DELETED = "catalogue.deleted"
+    CATALOGUE_RESTORED = "catalogue.restored"
+
 
 @dataclass(frozen=True, slots=True)
 class AuditRecord:

@@ -72,8 +72,14 @@ class MediaDTO:
 
 @dataclass(frozen=True, slots=True)
 class TagDTO:
-    """The §24.7 chip vocabulary. Data, never a branch in code."""
+    """The §24.7 chip vocabulary. Data, never a branch in code.
 
+    Carries `public_id` because a tag is an administered row and §27.8's
+    console edits it by identifier: a slug is what the chip is called and is
+    free to change, which makes it the wrong thing to address the row by.
+    """
+
+    public_id: UUID
     slug: str
     label: str
     sort_order: int
