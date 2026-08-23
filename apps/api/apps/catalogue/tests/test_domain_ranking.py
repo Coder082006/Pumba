@@ -53,6 +53,15 @@ def row(
 
 
 def order(rows: list[RankInputs], **kwargs: object) -> list[int]:
+    """Sort by the expression, with the rating gate open unless a test closes it.
+
+    `min_display_count=0` means "state every mean", which is the ordering these
+    tests were written against and is still exactly what §16.5 says once a
+    subject has enough reviews. `TestTheRatingGate` below closes it, because
+    that is the behaviour ADR 0017 added and it deserves its own tests rather
+    than being folded into every other one.
+    """
+    kwargs.setdefault("min_display_count", 0)  # type: ignore[attr-defined]
     return [r.id for r in sorted(rows, key=lambda r: rank_key(r, **kwargs))]  # type: ignore[arg-type]
 
 
@@ -160,7 +169,7 @@ class TestInjectivity:
 
     def test_rank_key_is_injective_over_rows_differing_only_by_id(self) -> None:
         rows = [row(i) for i in range(1, 51)]
-        keys = {rank_key(r) for r in rows}
+        keys = {rank_key(r, min_display_count=0) for r in rows}
         assert len(keys) == len(rows)
 
     def test_rank_key_is_injective_across_a_generated_cross_product(self) -> None:
@@ -179,7 +188,10 @@ class TestInjectivity:
             for i, (d, t, f, ra, rc, p) in enumerate(combos, start=1)
         ]
         keys = {
-            rank_key(r, selected_destination_id=ZANZIBAR, interest_tags=["nature"]) for r in rows
+            rank_key(
+                r, min_display_count=0, selected_destination_id=ZANZIBAR, interest_tags=["nature"]
+            )
+            for r in rows
         }
         assert len(keys) == len(rows)
 
@@ -236,7 +248,7 @@ class TestExplicitSortOverrides:
     @pytest.mark.parametrize("sort", list(SortOption))
     def test_every_sort_option_produces_a_total_order(self, sort: SortOption) -> None:
         rows = [row(i, feature_rank=10) for i in range(1, 11)]
-        keys = {rank_key(r, sort=sort) for r in rows}
+        keys = {rank_key(r, min_display_count=0, sort=sort) for r in rows}
         assert len(keys) == len(rows)
 
     @pytest.mark.parametrize("sort", list(SortOption))
@@ -281,7 +293,10 @@ class TestOrderTermsDeclaration:
         # an optimisation and must not be a behaviour change.
         rows = [row(i, feature_rank=(i * 7) % 5 + 1) for i in range(1, 11)]
         with_context = [
-            r.id for r in sorted(rows, key=lambda r: rank_key(r, selected_destination_id=None))
+            r.id
+            for r in sorted(
+                rows, key=lambda r: rank_key(r, min_display_count=0, selected_destination_id=None)
+            )
         ]
         assert with_context == order(rows)
 
@@ -320,12 +335,19 @@ class TestBr127:
         with pytest.raises(ValueError, match="negative"):
             displayable_rating(Decimal("4.00"), 10, min_display_count=-1)
 
-    def test_it_does_not_alter_the_ranking_inputs(self) -> None:
-        """The tension ADR 0015 records, asserted so it cannot be quietly
-        closed. §16.5 ranks on the raw mean; BR-127 suppresses the display.
-        One five-star review still outranks fifty averaging 4.8 — and shows
-        "New". If somebody decides to resolve that, this test is what tells
-        them they are changing a published ordering."""
+    def test_a_thin_five_star_does_not_outrank_an_established_four_eight(self) -> None:
+        """ADR 0017, and the inverse of what this test asserted before it.
+
+        It used to pin the opposite — that §16.5 ranked on the raw mean while
+        BR-127 suppressed the display, so one five-star review bought top
+        placement on a page that showed "New". That was recorded as a Product
+        Owner decision and has now been taken: ranking uses the *displayable*
+        mean, so a subject with too few reviews ranks as unrated.
+
+        The test is kept rather than deleted because the pair of them is the
+        record. It was doing its job when it failed — it is what said, in the
+        commit that changed this, that a published ordering was moving.
+        """
         loud = RankInputs(
             id=1,
             destination_id=1,
@@ -344,6 +366,31 @@ class TestBr127:
             rating_count=50,
             price=Decimal("100.00"),
         )
-        ranked = sorted([established, loud], key=lambda row: rank_key(row))
-        assert [row.id for row in ranked] == [1, 2]
-        assert displayable_rating(loud.rating_avg, loud.rating_count, min_display_count=3) is None
+        ranked = sorted([established, loud], key=lambda r: rank_key(r, min_display_count=3))
+        assert [row.id for row in ranked] == [2, 1], "the thin five-star must not lead"
+
+    def test_ranking_and_display_are_the_same_rule(self) -> None:
+        """The property that makes this unviolatable rather than documented.
+
+        A subject ranks on exactly the value it is allowed to show. If those
+        two ever diverge again it is because somebody changed one of them, and
+        this is the test that says so.
+        """
+        for count in (0, 1, 2, 3, 50):
+            row = RankInputs(
+                id=count + 1,
+                destination_id=1,
+                tags=frozenset(),
+                feature_rank=100,
+                rating_avg=Decimal("4.20"),
+                rating_count=count,
+                price=Decimal("10.00"),
+            )
+            shown = displayable_rating(row.rating_avg, row.rating_count, min_display_count=3)
+            # With no destination and no tags selected, both context terms are
+            # dropped, so the key is (feature_rank, rating_avg, rating_count,
+            # price, id) and the rating term is at index 1. Each element is
+            # `(null_rank, magnitude)`; a null_rank of 1 is the NULLS LAST
+            # sentinel.
+            null_rank, _ = rank_key(row, min_display_count=3)[1]
+            assert (null_rank == 1) == (shown is None), f"count={count}"

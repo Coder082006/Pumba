@@ -50,6 +50,7 @@ from uuid import UUID
 from django.contrib.postgres.search import SearchQuery, SearchRank
 from django.db.models import (
     BooleanField,
+    Case,
     DecimalField,
     ExpressionWrapper,
     F,
@@ -58,6 +59,7 @@ from django.db.models import (
     Q,
     QuerySet,
     Value,
+    When,
 )
 from django.db.models.functions import Cast
 
@@ -211,10 +213,24 @@ _NO_RATING = Cast(Value(None), output_field=DecimalField(max_digits=3, decimal_p
 _NO_COUNT = Cast(Value(0), output_field=IntegerField())
 _NO_MINUTES = Cast(Value(None), output_field=IntegerField())
 
+
+class _DisplayableRating:
+    """Marker for a rating term that is gated by `review.min_display_count`.
+
+    Not the raw `rating_avg` column. ADR 0017: a subject with too few published
+    reviews to state a mean ranks as unrated, so ranking and display are the
+    same rule and one five-star review cannot buy top placement while the page
+    shows "New". Resolved into a `CASE` at plan time because the threshold is a
+    setting and this table is a module constant.
+    """
+
+
+DISPLAYABLE_RATING = _DisplayableRating()
+
 _RANK_SOURCES: Mapping[type[Model], Mapping[str, Any]] = {
     Activity: {
         "feature_rank": "feature_rank",
-        "rating_avg": "rating_avg",
+        "rating_avg": DISPLAYABLE_RATING,
         "rating_count": "rating_count",
         "price": "price_per_person",
         "duration_minutes": "duration_minutes",
@@ -267,6 +283,7 @@ class OrderedTerm:
 def order_plan(
     model: type[Model],
     *,
+    min_display_count: int,
     sort: SortOption = SortOption.DEFAULT,
     selected_destination_id: int | None = None,
     interest_tags: Collection[str] = (),
@@ -287,7 +304,9 @@ def order_plan(
     plan: list[OrderedTerm] = []
 
     for term in terms:
-        name, annotation = _resolve(term, sources, selected_destination_id, interest_tags)
+        name, annotation = _resolve(
+            term, sources, selected_destination_id, interest_tags, min_display_count
+        )
         if annotation is not None:
             annotations[name] = annotation
         plan.append(OrderedTerm(name, term.descending, term.nulls_last))
@@ -298,13 +317,17 @@ def order_plan(
 def apply_order(
     queryset: QuerySet[_M],
     *,
+    min_display_count: int | None = None,
     sort: SortOption = SortOption.DEFAULT,
     selected_destination_id: int | None = None,
     interest_tags: Collection[str] = (),
 ) -> QuerySet[_M]:
     """Order `queryset` by §16.5, as `domain.ranking` describes it."""
+    if min_display_count is None:
+        min_display_count = int(get_setting("review.min_display_count"))
     annotations, plan = order_plan(
         queryset.model,
+        min_display_count=min_display_count,
         sort=sort,
         selected_destination_id=selected_destination_id,
         interest_tags=interest_tags,
@@ -314,7 +337,9 @@ def apply_order(
     return queryset.order_by(*(_direction(F(term.name), term) for term in plan))
 
 
-def ordering_fingerprint(model: type[Model], plan: Sequence[OrderedTerm]) -> str:
+def ordering_fingerprint(
+    model: type[Model], plan: Sequence[OrderedTerm], *, min_display_count: int
+) -> str:
     """A short digest of *which* ordering this is.
 
     Written into every cursor and checked on the way back. A cursor taken from
@@ -325,12 +350,21 @@ def ordering_fingerprint(model: type[Model], plan: Sequence[OrderedTerm]) -> str
     The model is part of the material because two entities can compile to the
     same term names — `feature_rank, id` is the whole ordering for both a
     destination and an accommodation.
+
+    `min_display_count` is part of it for the same reason the sort is. It does
+    not change which terms there are, it changes what one of them *evaluates
+    to* (ADR 0017): an administrator lowering the threshold mid-scroll gives
+    previously-unrated subjects a rank, which moves rows across a page boundary
+    that has already been issued. Honouring the old cursor would then skip
+    them silently, which is the failure this digest exists to prevent.
     """
     material = ";".join(
         f"{model.__name__}.{term.name}:{int(term.descending)}{int(term.nulls_last)}"
         for term in plan
     )
-    return hashlib.blake2s(material.encode(), digest_size=8).hexdigest()
+    return hashlib.blake2s(
+        f"{material}|min_display={min_display_count}".encode(), digest_size=8
+    ).hexdigest()
 
 
 def keyset_after(plan: Sequence[OrderedTerm], values: Sequence[object]) -> Q:
@@ -400,6 +434,7 @@ def _resolve(
     sources: Mapping[str, Any],
     selected_destination_id: int | None,
     interest_tags: Collection[str],
+    min_display_count: int,
 ) -> tuple[str, Any | None]:
     """The queryset name for a term, plus the annotation it needs, if any."""
     if term.expression == "matches_selected_destination":
@@ -414,6 +449,15 @@ def _resolve(
         return "id", None
 
     source = sources[term.expression]
+    if isinstance(source, _DisplayableRating):
+        # `domain.ranking.displayable_rating`, as SQL. The two are asserted to
+        # agree by `test_selectors_ranking_db.py`, which sorts a fixture with
+        # the pure function and requires PostgreSQL to return that sequence.
+        return "rank_rating_avg", Case(
+            When(rating_count__gte=min_display_count, then=F("rating_avg")),
+            default=Value(None),
+            output_field=DecimalField(max_digits=3, decimal_places=2),
+        )
     if isinstance(source, str):
         return source, None
     # A constant standing in for an absent column. It is annotated under the
@@ -701,13 +745,15 @@ def _paged(
     The ordering is compiled once and used twice: for the `ORDER BY`, and for
     the cursor's contents. They cannot drift, because they are the same object.
     """
+    min_display_count = int(get_setting("review.min_display_count"))
     annotations, plan = order_plan(
         queryset.model,
+        min_display_count=min_display_count,
         sort=sort,
         selected_destination_id=selected_destination_id,
         interest_tags=interest_tags,
     )
-    fingerprint = ordering_fingerprint(queryset.model, plan)
+    fingerprint = ordering_fingerprint(queryset.model, plan, min_display_count=min_display_count)
     if annotations:
         queryset = queryset.annotate(**annotations)
     if cursor:

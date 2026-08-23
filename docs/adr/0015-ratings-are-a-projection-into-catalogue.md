@@ -106,6 +106,11 @@ supply may reasonably want to move.
 
 ## The tension this leaves, stated rather than hidden
 
+> **Resolved by [ADR 0017](0017-ranking-uses-the-displayable-rating.md), 2026-08-23.**
+> The second option below was taken — ranking uses the displayable rating, so a
+> subject below the threshold ranks as unrated. The section is kept as written
+> because it is the record of what was open and why. SRS §16.5 amended to v1.4.
+
 BR-127 governs **display**. §16.5 governs **ranking**, and it ranks on the true
 `rating_avg` before `rating_count` breaks the tie. So an activity with a single
 five-star review outranks one with fifty reviews averaging 4.8 — and, under the

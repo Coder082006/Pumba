@@ -173,6 +173,7 @@ def _apply_context(
 def rank_key(
     row: RankInputs,
     *,
+    min_display_count: int,
     sort: SortOption = SortOption.DEFAULT,
     selected_destination_id: int | None = None,
     interest_tags: Collection[str] = (),
@@ -190,7 +191,16 @@ def rank_key(
         "matches_selected_destination": row.destination_id == selected_destination_id,
         "matches_interest_tags": bool(row.tags & wanted),
         "feature_rank": row.feature_rank,
-        "rating_avg": row.rating_avg,
+        # ADR 0017: the *displayable* mean, not the raw one. A subject with too
+        # few reviews to state a mean ranks as unrated rather than on a figure
+        # nothing is allowed to show — which is why `min_display_count` is a
+        # required keyword here. A default would let a caller silently rank on
+        # the raw column and reopen the gap.
+        "rating_avg": displayable_rating(
+            row.rating_avg, row.rating_count, min_display_count=min_display_count
+        )
+        if row.rating_avg is not None
+        else None,
         "rating_count": row.rating_count,
         "price": row.price,
         "duration_minutes": row.duration_minutes,

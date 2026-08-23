@@ -36,7 +36,7 @@ import pytest
 
 from apps.catalogue.domain.ranking import RankInputs, SortOption, rank_key
 from apps.catalogue.models import Accommodation, Activity
-from apps.catalogue.selectors import apply_order, visible
+from apps.catalogue.selectors import apply_order, order_plan, ordering_fingerprint, visible
 from apps.catalogue.tests.factories import (
     make_accommodation,
     make_activity,
@@ -81,11 +81,21 @@ def _accommodation_inputs(row: Accommodation) -> RankInputs:
     )
 
 
+#: The gate is held open by default so these tests keep asserting what they
+#: were written to assert — that the pure key and PostgreSQL agree term for
+#: term. `TestTheRatingGateAgreesWithTheDomain` closes it, which is the case
+#: where the two implementations could most easily diverge: one is a `CASE`
+#: in SQL, the other an `if` in Python.
+_GATE_OPEN = 0
+
+
 def _expected(rows: list[RankInputs], **kwargs: object) -> list[int]:
+    kwargs.setdefault("min_display_count", _GATE_OPEN)  # type: ignore[attr-defined]
     return [row.id for row in sorted(rows, key=lambda r: rank_key(r, **kwargs))]  # type: ignore[arg-type]
 
 
 def _actual(queryset: object, **kwargs: object) -> list[int]:
+    kwargs.setdefault("min_display_count", _GATE_OPEN)  # type: ignore[attr-defined]
     return list(apply_order(queryset, **kwargs).values_list("id", flat=True))  # type: ignore[arg-type,attr-defined]
 
 
@@ -282,3 +292,115 @@ class TestAccommodationRanksByTheSameExpression:
             first.pk,
             second.pk,
         ]
+
+
+@pytest.mark.django_db
+class TestTheRatingGateAgreesWithTheDomain:
+    """ADR 0017's rule exists twice — a `CASE` in SQL and an `if` in Python.
+
+    Two implementations of one rule is a liability unless something pins them
+    together, which is the same argument the module docstring makes about
+    `rank_key` and `order_terms`. This is that pin for the gate specifically:
+    the interesting rows are the ones whose ranking *changes* when it closes,
+    and those are exactly the rows a divergence would misplace.
+    """
+
+    @pytest.fixture
+    def mixed(self) -> tuple[object, list[Activity]]:
+        destination = make_destination()
+        rows = [
+            # A thin five-star. Ranks first with the gate open, last with it
+            # closed — the whole point of the decision.
+            make_activity(
+                destination=destination,
+                slug="thin-five-star",
+                rating_avg=Decimal("5.00"),
+                rating_count=1,
+                price_per_person=Decimal("100.00"),
+            ),
+            make_activity(
+                destination=destination,
+                slug="established",
+                rating_avg=Decimal("4.80"),
+                rating_count=50,
+                price_per_person=Decimal("100.00"),
+            ),
+            make_activity(
+                destination=destination,
+                slug="exactly-at-the-threshold",
+                rating_avg=Decimal("4.90"),
+                rating_count=3,
+                price_per_person=Decimal("100.00"),
+            ),
+            make_activity(
+                destination=destination,
+                slug="never-reviewed",
+                rating_avg=Decimal("0.00"),
+                rating_count=0,
+                price_per_person=Decimal("100.00"),
+            ),
+        ]
+        return visible(Activity.objects.all(), today=TODAY), rows
+
+    def _inputs(self, rows: list[Activity]) -> list[RankInputs]:
+        return [
+            RankInputs(
+                id=row.pk,
+                destination_id=row.destination_id,
+                tags=frozenset(row.tags),
+                feature_rank=row.feature_rank,
+                rating_avg=row.rating_avg,
+                rating_count=row.rating_count,
+                price=row.price_per_person,
+                duration_minutes=row.duration_minutes,
+            )
+            for row in rows
+        ]
+
+    @pytest.mark.parametrize("threshold", [0, 1, 2, 3, 4, 51])
+    def test_postgres_returns_what_the_pure_key_says(
+        self, mixed: tuple[object, list[Activity]], threshold: int
+    ) -> None:
+        queryset, rows = mixed
+        assert _actual(queryset, min_display_count=threshold) == _expected(
+            self._inputs(rows), min_display_count=threshold
+        )
+
+    def test_closing_the_gate_demotes_the_thin_five_star(
+        self, mixed: tuple[object, list[Activity]]
+    ) -> None:
+        """Non-vacuous: the two thresholds must actually produce different
+        orders, or the parametrised agreement above proves nothing."""
+        queryset, rows = mixed
+        by_slug = {row.pk: row.slug for row in rows}
+        open_gate = [by_slug[pk] for pk in _actual(queryset, min_display_count=0)]
+        closed = [by_slug[pk] for pk in _actual(queryset, min_display_count=3)]
+        assert open_gate[0] == "thin-five-star"
+        assert closed[0] == "exactly-at-the-threshold"
+        assert closed.index("thin-five-star") > closed.index("established")
+
+
+class TestTheCursorNoticesTheThresholdMoving:
+    """A cursor encodes a position in an ordering, so it has to encode which.
+
+    `min_display_count` does not change *which* terms there are — it changes
+    what one of them evaluates to. An administrator lowering it mid-scroll
+    gives previously-unrated subjects a rank and moves rows across a page
+    boundary that has already been issued. Honouring the old cursor would then
+    skip them, and a page of ordinary-looking rows with an arbitrary set
+    missing is the failure nothing downstream can detect.
+    """
+
+    def test_two_thresholds_give_two_fingerprints(self) -> None:
+        digests = set()
+        for threshold in (0, 3):
+            _, plan = order_plan(Activity, min_display_count=threshold)
+            digests.add(ordering_fingerprint(Activity, plan, min_display_count=threshold))
+        assert len(digests) == 2
+
+    def test_the_same_threshold_is_stable(self) -> None:
+        """Otherwise every cursor would be refused on its first use."""
+        _, plan = order_plan(Activity, min_display_count=3)
+        first = ordering_fingerprint(Activity, plan, min_display_count=3)
+        _, plan_again = order_plan(Activity, min_display_count=3)
+        assert ordering_fingerprint(Activity, plan_again, min_display_count=3) == first
