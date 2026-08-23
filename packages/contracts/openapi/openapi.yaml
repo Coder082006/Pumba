@@ -1397,6 +1397,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/User'
           description: ''
+  /api/v1/config:
+    get:
+      operationId: config
+      description: 'Resolves the values a client needs before it can show anything:
+        the minimum supported client version (SRS §23.13), the currencies a tourist
+        may choose, the base-map tile URL and its required attribution, and the feature-flag
+        set (§35). The response carries an explicit allow-list of settings and never
+        the wider `system_setting` register.'
+      summary: Client configuration and feature flags
+      tags:
+      - config
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+          description: ''
   /api/v1/destinations:
     get:
       operationId: destinations_list
@@ -2206,6 +2224,29 @@ components:
       - code
       - name
       - tiers
+    ConfigResponse:
+      type: object
+      properties:
+        min_supported_version:
+          type: string
+        enabled_currencies:
+          type: array
+          items:
+            type: string
+        map_tile_url:
+          type: string
+        map_tile_attribution:
+          type: string
+        features:
+          type: object
+          additionalProperties:
+            type: boolean
+      required:
+      - enabled_currencies
+      - features
+      - map_tile_attribution
+      - map_tile_url
+      - min_supported_version
     ConfirmationModeEnum:
       enum:
       - INSTANT

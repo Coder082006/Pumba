@@ -1,4 +1,4 @@
-"""Health endpoint — the only route Phase 1 exposes.
+"""Health and public configuration — the two routes that need no principal.
 
 SRS §37.1 acceptance: "a single health endpoint passing the full pipeline".
 
@@ -20,7 +20,11 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-__all__ = ["HealthView"]
+from apps.common.envelope import success_envelope
+from apps.common.public_config import public_config
+from apps.common.throttling import CatalogueReadThrottle
+
+__all__ = ["HealthView", "ConfigView"]
 
 
 def _check_database() -> tuple[bool, str | None]:
@@ -96,3 +100,59 @@ class HealthView(APIView):
             },
             status=status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE,
         )
+
+
+class ConfigView(APIView):
+    """GET /api/v1/config — SRS §23.13, §24.1, §35.
+
+    §24.1 makes this the first call every client makes: the splash screen
+    resolves configuration *before showing anything else*, and blocks on a
+    forced upgrade when the client is below `min_supported_version`. The driver
+    app's splash (§26.1) calls it too.
+
+    Unauthenticated by necessity rather than by choice — a client that has not
+    signed in still needs to know whether it is too old to run, and a version
+    floor that only reachable after login cannot retire a broken client
+    generation.
+
+    **What it may say is decided in `public_config.py`, not here.** This view
+    calls one function and serialises what it returns. It never reaches for
+    `get_setting` itself, because a view that could would make the allow-list
+    advisory — and the table behind it holds every dispatch weight, fraud
+    threshold and commission rate on the platform.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list[Any] = []
+    # §24.1 has every client calling this on launch, so it is the most-hit
+    # unauthenticated route on the platform. Shares the catalogue's per-IP
+    # bucket: it is the same population of unauthenticated callers.
+    throttle_classes = [CatalogueReadThrottle]
+
+    @extend_schema(
+        operation_id="config",
+        summary="Client configuration and feature flags",
+        description=(
+            "Resolves the values a client needs before it can show anything: "
+            "the minimum supported client version (SRS §23.13), the currencies "
+            "a tourist may choose, the base-map tile URL and its required "
+            "attribution, and the feature-flag set (§35). "
+            "The response carries an explicit allow-list of settings and never "
+            "the wider `system_setting` register."
+        ),
+        auth=[],
+        responses={
+            200: inline_serializer(
+                name="ConfigResponse",
+                fields={
+                    "min_supported_version": serializers.CharField(),
+                    "enabled_currencies": serializers.ListField(child=serializers.CharField()),
+                    "map_tile_url": serializers.CharField(),
+                    "map_tile_attribution": serializers.CharField(),
+                    "features": serializers.DictField(child=serializers.BooleanField()),
+                },
+            )
+        },
+    )
+    def get(self, request: Request) -> Response:
+        return Response(success_envelope(public_config()))

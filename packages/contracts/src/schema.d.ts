@@ -926,6 +926,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Client configuration and feature flags
+         * @description Resolves the values a client needs before it can show anything: the minimum supported client version (SRS §23.13), the currencies a tourist may choose, the base-map tile URL and its required attribution, and the feature-flag set (§35). The response carries an explicit allow-list of settings and never the wider `system_setting` register.
+         */
+        get: operations["config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/destinations": {
         parameters: {
             query?: never;
@@ -1300,6 +1320,15 @@ export interface components {
             description?: string;
             tiers: components["schemas"]["CancellationPolicyTierRequest"][];
             is_active?: boolean;
+        };
+        ConfigResponse: {
+            min_supported_version: string;
+            enabled_currencies: string[];
+            map_tile_url: string;
+            map_tile_attribution: string;
+            features: {
+                [key: string]: boolean;
+            };
         };
         /**
          * @description * `INSTANT` - Confirms immediately
@@ -2912,6 +2941,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigResponse"];
                 };
             };
         };

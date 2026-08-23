@@ -60,6 +60,16 @@ pytestmark = pytest.mark.django_db
 #: Adding a name here is a deliberate act and shows up in review.
 PUBLIC_BY_DESIGN = {
     "v1:common:health": "Liveness probe; discloses no data (SRS §35.6).",
+    # §24.1 makes this the first call every client makes — the splash resolves
+    # configuration *before showing anything else*, and blocks on a forced
+    # upgrade. A version floor only reachable after signing in could not retire
+    # a broken client generation, which is the thing §23.13 built it for.
+    #
+    # What it discloses is a closed allow-list in `apps.common.public_config`,
+    # not the `system_setting` register behind it, and
+    # `tests/test_public_config.py` fails the build if anything outside that
+    # list reaches the payload — including a setting that does not exist yet.
+    "v1:common:config": "Client bootstrap (§23.13, §24.1); serves an allow-listed subset only.",
     "v1:identity:register": "Account creation — there is no principal yet (§9.4.1).",
     "v1:identity:verify-email": "Consumes an emailed token; the token is the credential.",
     "v1:identity:login": "Issues the credential (§9.4.2).",
@@ -104,6 +114,7 @@ NO_ROWS_EXPOSED = {
     "v1:identity:logout": "Acts on the caller's own sessions only.",
     "v1:identity:device-list": "Lists by principal; there is no id to supply.",
     "v1:common:health": "No data.",
+    "v1:common:config": "Returns settings, not rows; there is no identifier to supply.",
     # The §27.8 catalogue console's create endpoints. A POST to a collection
     # looks up no row, so there is nothing for an ownership predicate to
     # filter: what stands between a caller and a new curated row is the role

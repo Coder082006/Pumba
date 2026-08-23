@@ -86,6 +86,19 @@ class TestRegister:
                         the three is a judgement about statistical confidence
                         rather than a law — a market with thinner supply may
                         want it lower. ADR 0015.
+            client.     Phase 3, §23.13. `min_supported_version`, the floor a
+                        client is forced above — a setting rather than a
+                        constant because raising it is how a broken client
+                        generation is retired, and that must not need an API
+                        deployment.
+            currency.   Phase 3, §24.1. Which currencies a tourist may choose.
+            feature.    Phase 3, §35 — the flag set served through GET /config.
+                        Open by construction: everything under this prefix is
+                        public, which is safe only because the prefix means
+                        "client-visible switch" and nothing else.
+                        `tests/test_public_config.py` enforces that by
+                        requiring every default here to be a bool, so a
+                        threshold cannot hide under it.
             map.        Phase 3, ADR 0016 / Appendix D9. The tile URL and its
                         attribution string. Held as settings so changing map
                         provider is an administrator action rather than a
@@ -101,7 +114,19 @@ class TestRegister:
         unnamespaced = {
             k
             for k in extension
-            if not k.startswith(("auth.", "ratelimit.", "page.", "search.", "review.", "map."))
+            if not k.startswith(
+                (
+                    "auth.",
+                    "ratelimit.",
+                    "page.",
+                    "search.",
+                    "review.",
+                    "map.",
+                    "client.",
+                    "currency.",
+                    "feature.",
+                )
+            )
         }
         assert not unnamespaced, f"undocumented settings keys: {sorted(unnamespaced)}"
 

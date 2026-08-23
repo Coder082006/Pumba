@@ -125,6 +125,28 @@ SETTINGS_REGISTER: dict[str, Setting] = {
         Setting("provider_response_hours", 24, "On-request activity response window"),
         Setting("review.window_days", 30, "Review submission window"),
         Setting("review.min_display_count", 3, "BR-127: below this, show New not a mean"),
+        # -- Client release management and the splash payload (§23.13, §24.1) --
+        # Served by GET /config. §23.13 makes the version a floor a client is
+        # forced above, so it is a setting rather than a constant: raising it
+        # is how a broken client generation is retired, and that must not need
+        # a deployment of the API to do.
+        Setting("client.min_supported_version", "1.0.0", "§23.13 forced-upgrade floor"),
+        Setting(
+            "currency.enabled",
+            ["USD", "EUR", "GBP", "TZS"],
+            "§24.1 currencies a tourist may choose",
+        ),
+        # -- Feature flags (§35: the set is served through GET /config) --
+        # Everything under `feature.` is public by construction, so nothing
+        # here may be a threshold, a weight or a rate. First real flag: ADR
+        # 0013 makes the Booking.com affiliate deep link an optional §38.2
+        # SHOULD-HAVE with no v1 dependency, which is exactly a capability
+        # that ships dark until D10 resolves.
+        Setting(
+            "feature.accommodation_affiliate_links",
+            False,
+            "§38.2 deep links from curated accommodation (D10)",
+        ),
         # -- Map tiles (ADR 0016, Appendix D9) --
         # A development default. OpenStreetMap's tile usage policy does not
         # permit commercial production traffic, so pointing these at a licensed
