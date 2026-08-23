@@ -326,6 +326,12 @@ forbidden_modules =
 ; module's internals in an import statement. `from apps.catalogue.models import
 ; Destination` fails here exactly as before. What is now permitted is the one
 ; thing §6.5 requires — `from apps.catalogue import services`.
+;
+; This narrows what a green run of these fourteen contracts asserts, and the
+; ORM-instance property it stops covering moves to §6.5 rule 5's architecture
+; test. Both are recorded in docs/adr/0014-module-privacy-contracts-check-
+; direct-imports.md. The `deps-*` and layer contracts are NOT changed: those are
+; genuinely about reachability and keep the default semantics.
 ; ---------------------------------------------------------------------------
 
 [importlinter:contract:private-identity]
