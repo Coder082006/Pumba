@@ -41,16 +41,16 @@ export interface MapProps {
   attribution: string;
   pins: MapPin[];
   /** Where to centre when there is nothing to fit. Ignored once pins exist. */
-  center?: { latitude: number; longitude: number };
-  zoom?: number;
+  center?: { latitude: number; longitude: number } | undefined;
+  zoom?: number | undefined;
   /**
    * Reserved box, as a CSS aspect-ratio. Set on the server-rendered wrapper,
    * so changing it changes the space held before hydration.
    */
-  aspectRatio?: string;
+  aspectRatio?: string | undefined;
   /** Announced as the region's name. */
-  title?: string;
-  className?: string;
+  title?: string | undefined;
+  className?: string | undefined;
 }
 
 export function Map({

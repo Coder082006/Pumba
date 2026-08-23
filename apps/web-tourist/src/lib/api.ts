@@ -73,3 +73,58 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   return (payload as ApiEnvelope<T>).data;
 }
+
+/** One page of a keyset-paginated list (SRS §9.1). */
+export interface Page<T> {
+  items: T[];
+  /**
+   * Opaque. Pass back verbatim or not at all.
+   *
+   * The server encodes the ordering the cursor was issued under and refuses
+   * one replayed against a different `?sort=`, so a client that parses or
+   * reconstructs a cursor is building on a refusal. `null` means this was the
+   * last page — the API fetches one row beyond the limit to know that, so a
+   * client never renders an empty final screen.
+   */
+  nextCursor: string | null;
+}
+
+/**
+ * Like `apiFetch`, but keeps `meta.next_cursor`.
+ *
+ * `apiFetch` unwraps to `data` because that is what almost every caller wants.
+ * A paginated list is the exception: dropping `meta` there would silently make
+ * every list one page long, which looks like a short catalogue rather than a
+ * bug.
+ */
+export async function apiFetchPage<T>(path: string, options: RequestOptions = {}): Promise<Page<T>> {
+  // `idempotencyKey` is pulled out and discarded rather than ignored: it must
+  // not reach `fetch` as an unknown init field, and a GET list has nothing to
+  // make idempotent — §9.1 requires the header only on mutating POSTs.
+  const { body, idempotencyKey: _idempotencyKey, headers, ...rest } = options;
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...rest,
+    headers: { 'Content-Type': 'application/json', ...headers },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+  const payload: unknown = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const error = (payload as ApiError | null)?.error;
+    throw new ApiRequestError(
+      response.status,
+      error ?? {
+        code: 'UNKNOWN',
+        message: 'The server returned an unreadable error.',
+        details: [],
+        request_id: response.headers.get('X-Request-Id'),
+        retryable: response.status >= 500,
+      },
+    );
+  }
+
+  const envelope = payload as ApiEnvelope<T[]>;
+  return { items: envelope.data, nextCursor: envelope.meta?.next_cursor ?? null };
+}
