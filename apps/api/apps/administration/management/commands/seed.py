@@ -40,11 +40,41 @@ from django.db import transaction
 
 from apps.catalogue import services as catalogue
 
-__all__ = ["Command"]
+__all__ = ["Command", "find_seed_root", "DEFAULT_ROOT"]
 
-#: Repo-relative, resolved from this file so the command works from any
-#: working directory — `make seed`, a container shell and CI all differ.
-DEFAULT_ROOT = Path(__file__).resolve().parents[5] / "database" / "seeds"
+
+#: Every ancestor of this file, each asked whether it holds `database/seeds`.
+#:
+#: Two layouts are real and neither is wrong. In a checkout this file is
+#: `<repo>/apps/api/apps/administration/management/commands/seed.py` and the
+#: seeds are `<repo>/database/seeds`. In the container image it is
+#: `/app/apps/administration/...` and the repository's `database/` is
+#: bind-mounted at `/database` — so the number of hops differs by one, and the
+#: container has fewer ancestors than the checkout has.
+#:
+#: A fixed `parents[N]` satisfies exactly one of them. `parents[5]` satisfied
+#: the container and silently resolved to `<repo>/apps/database/seeds` on a
+#: host, so `make seed` and the seed tests failed everywhere CI runs while
+#: every container run stayed green. Searching is not cleverness here; it is
+#: the only thing that is true in both layouts.
+def find_seed_root(start: Path) -> Path:
+    """The nearest ancestor of `start` holding `database/seeds`.
+
+    A function rather than an inline expression so it can be tested against a
+    synthetic tree. "It resolves correctly on this machine" is precisely the
+    evidence that hid the original defect — the container answered right and
+    nothing else did.
+
+    Falls back to the filesystem-root candidate rather than raising: Django
+    imports every management command at startup, so a deployment without the
+    seed directory mounted must not fail to boot. `handle` reports the missing
+    directory by name instead.
+    """
+    candidates = tuple(parent / "database" / "seeds" for parent in start.resolve().parents)
+    return next((c for c in candidates if c.is_dir()), candidates[-1])
+
+
+DEFAULT_ROOT = find_seed_root(Path(__file__))
 
 
 class Command(BaseCommand):

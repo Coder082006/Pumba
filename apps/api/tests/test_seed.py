@@ -34,11 +34,12 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from django.core.management import call_command
 
-from apps.administration.management.commands.seed import DEFAULT_ROOT
+from apps.administration.management.commands.seed import DEFAULT_ROOT, find_seed_root
 from apps.administration.models import AuditLog
 from apps.catalogue.domain.geo import BoundingBox, Coordinates
 from apps.catalogue.models import (
@@ -116,6 +117,57 @@ def _coordinates_by_country() -> list[tuple[str, BoundingBox, Coordinates]]:
             )
     assert found, "no seeded coordinates found — the walk above is broken"
     return found
+
+
+class TestTheSeedDirectoryIsFoundInEitherLayout:
+    """The repository and the image put `database/` in different places.
+
+    In a checkout this command is `<repo>/apps/api/apps/administration/...`
+    and the seeds are `<repo>/database/seeds`. In the image it is
+    `/app/apps/administration/...` with `database/` bind-mounted at
+    `/database` — one hop fewer, and fewer ancestors in total.
+
+    A fixed `parents[N]` satisfied the container and resolved to
+    `<repo>/apps/database/seeds` everywhere else, so CI ran red while every
+    container run stayed green. These tests build both trees rather than
+    trusting whichever one happens to be underneath the runner.
+    """
+
+    def test_it_finds_the_root_from_a_checkout_layout(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        (repo / "database" / "seeds" / "catalogue").mkdir(parents=True)
+        command = repo / "apps" / "api" / "apps" / "administration" / "management" / "commands"
+        command.mkdir(parents=True)
+        assert find_seed_root(command / "seed.py") == repo / "database" / "seeds"
+
+    def test_it_finds_the_root_from_the_container_layout(self, tmp_path: Path) -> None:
+        """`/app` beside `/database`, rather than inside a repository."""
+        (tmp_path / "database" / "seeds" / "catalogue").mkdir(parents=True)
+        command = tmp_path / "app" / "apps" / "administration" / "management" / "commands"
+        command.mkdir(parents=True)
+        assert find_seed_root(command / "seed.py") == tmp_path / "database" / "seeds"
+
+    def test_it_takes_the_nearest_one_when_a_tree_holds_two(self, tmp_path: Path) -> None:
+        """A nested checkout must not reach past its own seeds to an outer set,
+        which is how a developer ends up loading somebody else's data."""
+        (tmp_path / "database" / "seeds").mkdir(parents=True)
+        inner = tmp_path / "workspace" / "repo"
+        (inner / "database" / "seeds").mkdir(parents=True)
+        start = inner / "apps" / "api" / "apps" / "x" / "y"
+        start.mkdir(parents=True)
+        assert find_seed_root(start / "seed.py") == inner / "database" / "seeds"
+
+    def test_a_missing_directory_names_somewhere_rather_than_raising(self, tmp_path: Path) -> None:
+        """Django imports every management command at startup, so a deployment
+        with no seeds mounted must still boot; `handle` reports it by name."""
+        start = tmp_path / "app" / "apps" / "x"
+        start.mkdir(parents=True)
+        assert find_seed_root(start / "seed.py").name == "seeds"
+
+    def test_the_resolved_root_is_the_one_that_ships(self) -> None:
+        """And the running environment really does resolve to real files."""
+        assert DEFAULT_ROOT.is_dir(), DEFAULT_ROOT
+        assert (DEFAULT_ROOT / "catalogue").is_dir()
 
 
 class TestTheCommittedFiles:
