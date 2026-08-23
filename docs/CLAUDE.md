@@ -121,6 +121,33 @@ Three consequences that bind day-to-day work:
   not 403.
 - Update the OpenAPI spec in the same commit as any API change.
 
+### Verification runs on the same surface as CI
+
+**A narrower run is never evidence for a wider claim.** `pnpm verify` is what CI
+runs; anything less proves only what it covered. Reporting "the gate passed"
+after a subset is a false statement about the build, not a shorthand for one.
+
+**A difference between surfaces is a hypothesis, not an explanation.** When a
+defect appears on one surface and not another — host versus container, one test
+target versus another, random ordering versus fixed — the difference is where
+the bug probably is. Test it. Do not use it to explain the symptom away.
+
+Both rules exist because both were broken, in the same way, twice:
+
+- Commit 28 resolved `database/seeds` with a fixed `parents[5]`, correct only in
+  the container image. The symptom was seen at the time and the correct
+  observation was written down — *"the two paths differ between the host and
+  the container"* — and then the **test was edited to agree with the command's
+  wrong answer** instead of the path being fixed. CI was red for three commits.
+- Commit 30 was reported green after the web test target alone. Backend was red
+  and the web target could not have detected it.
+
+Practical consequences: run `pnpm verify` before pushing anything that touches
+more than documentation; run backend tests without `-p no:randomly` at least
+once, because CI does; and when a fix depends on where a file sits, test the
+resolution against a synthetic tree rather than the machine you are on —
+"it resolves here" is precisely the evidence that misleads.
+
 ## Commands
 
 ```
