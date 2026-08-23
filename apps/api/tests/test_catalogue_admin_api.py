@@ -640,6 +640,14 @@ class TestTheAuditTrailCoversEveryCuratedEntity:
         }
         bodies = {
             "tag": ("/api/v1/admin/tags", {"slug": "wildlife", "label": "Wildlife"}),
+            "cancellation_policy": (
+                "/api/v1/admin/cancellation-policies",
+                {
+                    "code": "FLEX_24H",
+                    "name": "Flexible",
+                    "tiers": [{"hours_before": 24, "refund_percent": 100}],
+                },
+            ),
             "attraction": (
                 "/api/v1/admin/attractions",
                 {"name": "Ngorongoro Crater", "slug": "ngorongoro-crater", **located},

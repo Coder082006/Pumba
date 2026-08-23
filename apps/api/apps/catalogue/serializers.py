@@ -54,6 +54,8 @@ __all__ = [
     "RegionWriteSerializer",
     "DestinationWriteSerializer",
     "TagWriteSerializer",
+    "CancellationPolicyTierSerializer",
+    "CancellationPolicyWriteSerializer",
     "AttractionWriteSerializer",
     "ActivityWriteSerializer",
     "AccommodationWriteSerializer",
@@ -62,6 +64,7 @@ __all__ = [
     "RegionSerializer",
     "DestinationSerializer",
     "TagSerializer",
+    "CancellationPolicySerializer",
     "AttractionSerializer",
     "ActivitySerializer",
     "AccommodationSerializer",
@@ -199,6 +202,38 @@ class TagWriteSerializer(StrictSerializer):
     is_active = serializers.BooleanField(required=False)
 
 
+class CancellationPolicyTierSerializer(StrictSerializer):
+    """One rung of the §14.6 ladder.
+
+    Bounded here as well as by `domain.cancellation.parse_tiers`, because the
+    domain rejects rather than repairs and an administrator who typed 150 in a
+    percent field deserves to be told which field, not handed a refusal about
+    the whole list.
+    """
+
+    hours_before = serializers.IntegerField(min_value=0)
+    refund_percent = serializers.IntegerField(min_value=0, max_value=100)
+
+
+class CancellationPolicyWriteSerializer(StrictSerializer):
+    """§14.6. Four policies ship as rows; a fifth is a console form.
+
+    `tiers` is ordered most generous first and is validated by
+    `domain.cancellation.parse_tiers` at the model tier, which is the one that
+    also runs for the seed loader. What this adds is a per-field message.
+
+    BR-106 is why editing this is safe: a booking snapshots the policy in force
+    at confirmation, so a change here alters what future bookings are offered
+    and never what past ones were sold.
+    """
+
+    code = serializers.RegexField(r"^[A-Z0-9_]+$", max_length=32)
+    name = serializers.CharField(max_length=120)
+    description = serializers.CharField(max_length=2000, required=False, allow_blank=True)
+    tiers = CancellationPolicyTierSerializer(many=True)
+    is_active = serializers.BooleanField(required=False)
+
+
 class AttractionWriteSerializer(_CoordinateWriteSerializer):
     """§15.1."""
 
@@ -281,6 +316,7 @@ WRITE_SERIALIZERS: dict[str, type[StrictSerializer]] = {
     "region": RegionWriteSerializer,
     "destination": DestinationWriteSerializer,
     "tag": TagWriteSerializer,
+    "cancellation_policy": CancellationPolicyWriteSerializer,
     "attraction": AttractionWriteSerializer,
     "activity": ActivityWriteSerializer,
     "accommodation": AccommodationWriteSerializer,
@@ -327,6 +363,16 @@ class TagSerializer(serializers.Serializer[Any]):
     slug = serializers.CharField()
     label = serializers.CharField()  # type: ignore[assignment]
     sort_order = serializers.IntegerField()
+
+
+class CancellationPolicySerializer(serializers.Serializer[Any]):
+    """§14.6. `tiers` travels whole: a tourist needs the ladder, not the code."""
+
+    public_id = serializers.UUIDField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+    description = serializers.CharField()
+    tiers = CancellationPolicyTierSerializer(many=True)
 
 
 class DestinationSerializer(serializers.Serializer[Any]):
@@ -560,6 +606,7 @@ READ_SERIALIZERS: dict[str, type[serializers.Serializer[Any]]] = {
     "region": RegionSerializer,
     "destination": DestinationSerializer,
     "tag": TagSerializer,
+    "cancellation_policy": CancellationPolicySerializer,
     "attraction": AttractionSerializer,
     "activity": ActivitySerializer,
     "accommodation": AccommodationSerializer,

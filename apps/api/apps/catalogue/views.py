@@ -105,6 +105,9 @@ __all__ = [
     "AdminTagCreateView",
     "AdminTagDetailView",
     "AdminTagRestoreView",
+    "AdminCancellationPolicyCreateView",
+    "AdminCancellationPolicyDetailView",
+    "AdminCancellationPolicyRestoreView",
     "AdminAttractionCreateView",
     "AdminAttractionDetailView",
     "AdminAttractionRestoreView",
@@ -394,6 +397,21 @@ class AdminTagDetailView(_AdminDetailView):
 @_restore_schema("tag")
 class AdminTagRestoreView(_AdminRestoreView):
     entity_key = "tag"
+
+
+@_create_schema("cancellation_policy")
+class AdminCancellationPolicyCreateView(_AdminCreateView):
+    entity_key = "cancellation_policy"
+
+
+@_detail_schema("cancellation_policy")
+class AdminCancellationPolicyDetailView(_AdminDetailView):
+    entity_key = "cancellation_policy"
+
+
+@_restore_schema("cancellation_policy")
+class AdminCancellationPolicyRestoreView(_AdminRestoreView):
+    entity_key = "cancellation_policy"
 
 
 @_create_schema("attraction")

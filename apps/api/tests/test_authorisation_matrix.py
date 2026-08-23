@@ -114,6 +114,7 @@ NO_ROWS_EXPOSED = {
     "v1:catalogue:admin-region-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-destination-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-tag-create": "Creates a row; looks none up.",
+    "v1:catalogue:admin-cancellation-policy-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-attraction-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-activity-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-accommodation-create": "Creates a row; looks none up.",

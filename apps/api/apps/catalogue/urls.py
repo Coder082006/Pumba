@@ -40,6 +40,9 @@ from apps.catalogue.views import (
     AdminAttractionCreateView,
     AdminAttractionDetailView,
     AdminAttractionRestoreView,
+    AdminCancellationPolicyCreateView,
+    AdminCancellationPolicyDetailView,
+    AdminCancellationPolicyRestoreView,
     AdminCountryCreateView,
     AdminCountryDetailView,
     AdminCountryRestoreView,
@@ -104,6 +107,21 @@ urlpatterns = [
         "admin/tags/<uuid:public_id>/restore",
         AdminTagRestoreView.as_view(),
         name="admin-tag-restore",
+    ),
+    path(
+        "admin/cancellation-policies",
+        AdminCancellationPolicyCreateView.as_view(),
+        name="admin-cancellation-policy-create",
+    ),
+    path(
+        "admin/cancellation-policies/<uuid:public_id>",
+        AdminCancellationPolicyDetailView.as_view(),
+        name="admin-cancellation-policy-detail",
+    ),
+    path(
+        "admin/cancellation-policies/<uuid:public_id>/restore",
+        AdminCancellationPolicyRestoreView.as_view(),
+        name="admin-cancellation-policy-restore",
     ),
     path("admin/attractions", AdminAttractionCreateView.as_view(), name="admin-attraction-create"),
     path(

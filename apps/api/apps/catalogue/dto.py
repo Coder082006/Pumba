@@ -27,6 +27,7 @@ document and becomes something a serializer cannot get wrong.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, time
 from decimal import Decimal
@@ -37,6 +38,7 @@ from apps.catalogue.domain.geo import Coordinates
 __all__ = [
     "MediaDTO",
     "TagDTO",
+    "CancellationPolicyDTO",
     "CountryDTO",
     "RegionDTO",
     "DestinationDTO",
@@ -83,6 +85,24 @@ class TagDTO:
     slug: str
     label: str
     sort_order: int
+
+
+@dataclass(frozen=True, slots=True)
+class CancellationPolicyDTO:
+    """§14.6, as rows rather than as four names in code.
+
+    `tiers` travels as the ordered list it is stored as — most generous first,
+    `{hours_before, refund_percent}` — because a client showing a tourist what
+    they get back needs the whole ladder, not the code. BR-106 is why the
+    booking snapshots it: this DTO describes the policy *now*, and a booking
+    confirmed last month was sold against whatever it said then.
+    """
+
+    public_id: UUID
+    code: str
+    name: str
+    description: str
+    tiers: tuple[Mapping[str, int], ...]
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,0 +1,38 @@
+[
+  {
+    "code": "FLEX_48H",
+    "name": "Flexible",
+    "description": "Full refund up to 48 hours before the activity starts. No refund thereafter.",
+    "tiers": [
+      { "hours_before": 48, "refund_percent": 100 }
+    ],
+    "is_active": true
+  },
+  {
+    "code": "MODERATE_7D",
+    "name": "Moderate",
+    "description": "Full refund up to 7 days before. Half refund between 7 days and 48 hours. No refund thereafter.",
+    "tiers": [
+      { "hours_before": 168, "refund_percent": 100 },
+      { "hours_before": 48, "refund_percent": 50 }
+    ],
+    "is_active": true
+  },
+  {
+    "code": "STRICT_14D",
+    "name": "Strict",
+    "description": "Full refund up to 14 days before. Half refund between 14 and 7 days. No refund thereafter.",
+    "tiers": [
+      { "hours_before": 336, "refund_percent": 100 },
+      { "hours_before": 168, "refund_percent": 50 }
+    ],
+    "is_active": true
+  },
+  {
+    "code": "NON_REFUNDABLE",
+    "name": "Non-refundable",
+    "description": "No refund once booked.",
+    "tiers": [],
+    "is_active": true
+  }
+]

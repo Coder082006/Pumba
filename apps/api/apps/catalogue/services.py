@@ -147,6 +147,14 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
             ),
             CatalogueEntity("tag", Tag, Resource.TAG, repo.create_tag, repo.update_tag),
             CatalogueEntity(
+                "cancellation_policy",
+                CancellationPolicy,
+                Resource.CANCELLATION_POLICY,
+                repo.create_cancellation_policy,
+                repo.update_cancellation_policy,
+                natural_key="code",
+            ),
+            CatalogueEntity(
                 "attraction",
                 Attraction,
                 Resource.ATTRACTION,
@@ -535,6 +543,12 @@ SEED_FILES: tuple[tuple[str, str], ...] = (
     ("04-tags", "tag"),
     ("05-attractions", "attraction"),
     ("06-accommodation", "accommodation"),
+    # Last by number and independent of everything above it: the four §14.6
+    # policies are referenced by `activity`, and activities are provider-
+    # supplied rather than seeded (Appendix C as amended by ADR 0013). They are
+    # seeded anyway because they are the vocabulary a provider picks from — a
+    # portal offering an empty policy list is a portal nobody can list on.
+    ("07-cancellation-policies", "cancellation_policy"),
 )
 
 

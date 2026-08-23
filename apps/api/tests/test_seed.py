@@ -44,6 +44,7 @@ from apps.catalogue.domain.geo import BoundingBox, Coordinates
 from apps.catalogue.models import (
     Accommodation,
     Attraction,
+    CancellationPolicy,
     Country,
     Destination,
     Region,
@@ -67,6 +68,7 @@ APPENDIX_C = {
     Destination: 10,
     Attraction: 26,  # "~25"
     Accommodation: 43,  # "~40"
+    CancellationPolicy: 4,  # FLEX_48H, MODERATE_7D, STRICT_14D, NON_REFUNDABLE
 }
 
 
@@ -193,6 +195,30 @@ class TestTheCommittedFiles:
                 f"transposed, so a swapped pair would be written silently"
             )
 
+    def test_the_four_policies_appendix_c_names_are_the_ones_that_ship(self) -> None:
+        """§14.6 names four and then says the thing that matters — a policy is
+        an ordered tier list, so a market with different consumer law gets rows
+        rather than a release. The codes are asserted because Appendix C
+        commits to them, not because anything branches on one."""
+        assert {row["code"] for row in _rows("07-cancellation-policies")} == {
+            "FLEX_48H",
+            "MODERATE_7D",
+            "STRICT_14D",
+            "NON_REFUNDABLE",
+        }
+
+    def test_every_policy_ladder_descends(self) -> None:
+        """§14.6's list is ordered most generous first. A ladder that climbs
+        would refund more the later you cancel, which no test downstream would
+        read as wrong — it would just quietly overpay."""
+        for row in _rows("07-cancellation-policies"):
+            tiers = row["tiers"]
+            hours = [tier["hours_before"] for tier in tiers]
+            refunds = [tier["refund_percent"] for tier in tiers]
+            assert hours == sorted(hours, reverse=True), row["code"]
+            assert refunds == sorted(refunds, reverse=True), row["code"]
+            assert all(0 <= percent <= 100 for percent in refunds), row["code"]
+
     def test_pemba_ships_inactive(self) -> None:
         """§4.1: *"Deferred; record created but is_active = false"*.
 
@@ -272,6 +298,7 @@ class TestLoadingIt:
             "tag",
             "attraction",
             "accommodation",
+            "cancellation_policy",
         }
 
     def test_a_seeded_market_is_immediately_public(self) -> None:

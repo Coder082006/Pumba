@@ -75,6 +75,7 @@ from apps.catalogue.dto import (
     AccommodationDTO,
     ActivityDTO,
     AttractionDTO,
+    CancellationPolicyDTO,
     CountryDTO,
     DestinationDTO,
     MediaDTO,
@@ -86,6 +87,7 @@ from apps.catalogue.models import (
     Accommodation,
     Activity,
     Attraction,
+    CancellationPolicy,
     Destination,
     Media,
     MediaOwnerType,
@@ -94,6 +96,7 @@ from apps.catalogue.models import (
 from apps.common.pagination import Page, decode_cursor, encode_cursor
 
 __all__ = [
+    "to_cancellation_policy_dto",
     "visibility_q",
     "visible",
     "OrderedTerm",
@@ -592,6 +595,16 @@ def to_accommodation_dto(
         feature_rank=accommodation.feature_rank,
         destination=to_destination_dto(accommodation.destination),
         media=_gallery(MediaOwnerType.ACCOMMODATION, media),
+    )
+
+
+def to_cancellation_policy_dto(policy: CancellationPolicy) -> CancellationPolicyDTO:
+    return CancellationPolicyDTO(
+        public_id=policy.public_id,
+        code=policy.code,
+        name=policy.name,
+        description=policy.description,
+        tiers=tuple(policy.tiers),
     )
 
 

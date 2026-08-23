@@ -328,6 +328,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/cancellation-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a cancellation policy
+         * @description POST one new curated row.
+         *
+         *     Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+         *     yet, so a filter here would provably run against nothing while reporting to
+         *     the §37.2 matrix that ownership was enforced. What stands between a caller
+         *     and a new row is the role check, and the matrix records that by name in
+         *     `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+         */
+        post: operations["admin_cancellation_policies_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/cancellation-policies/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire a cancellation policy
+         * @description §7.7's soft deletion. The row survives; the slug is released.
+         */
+        delete: operations["admin_cancellation_policies_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Amend a cancellation policy
+         * @description A partial update — including the one that opens or closes a market.
+         *
+         *     §4.1 wants a destination published and withdrawn without a deployment,
+         *     and both are `is_active` moving in this one call. There is deliberately
+         *     no separate activate endpoint, so there is no second path that could
+         *     record the change differently or not at all.
+         */
+        patch: operations["admin_cancellation_policies_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/cancellation-policies/{public_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a retired cancellation policy
+         * @description Undo a soft deletion.
+         *
+         *     A POST to its own resource rather than a PATCH setting `deleted_at`.
+         *     `deleted_at` is not a writable field, and adding it to the update
+         *     serializer to support this would open the mass-assignment hole that
+         *     `repositories._WRITABLE` exists to close.
+         */
+        post: operations["admin_cancellation_policies_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/countries": {
         parameters: {
             query?: never;
@@ -1176,6 +1256,51 @@ export interface components {
             feature_rank?: number;
             is_active?: boolean;
         };
+        /** @description §14.6. `tiers` travels whole: a tourist needs the ladder, not the code. */
+        CancellationPolicy: {
+            /** Format: uuid */
+            public_id: string;
+            code: string;
+            name: string;
+            description: string;
+            tiers: components["schemas"]["CancellationPolicyTier"][];
+        };
+        /** @description One rung of the §14.6 ladder.
+         *
+         *     Bounded here as well as by `domain.cancellation.parse_tiers`, because the
+         *     domain rejects rather than repairs and an administrator who typed 150 in a
+         *     percent field deserves to be told which field, not handed a refusal about
+         *     the whole list. */
+        CancellationPolicyTier: {
+            hours_before: number;
+            refund_percent: number;
+        };
+        /** @description One rung of the §14.6 ladder.
+         *
+         *     Bounded here as well as by `domain.cancellation.parse_tiers`, because the
+         *     domain rejects rather than repairs and an administrator who typed 150 in a
+         *     percent field deserves to be told which field, not handed a refusal about
+         *     the whole list. */
+        CancellationPolicyTierRequest: {
+            hours_before: number;
+            refund_percent: number;
+        };
+        /** @description §14.6. Four policies ship as rows; a fifth is a console form.
+         *
+         *     `tiers` is ordered most generous first and is validated by
+         *     `domain.cancellation.parse_tiers` at the model tier, which is the one that
+         *     also runs for the seed loader. What this adds is a per-field message.
+         *
+         *     BR-106 is why editing this is safe: a booking snapshots the policy in force
+         *     at confirmation, so a change here alters what future bookings are offered
+         *     and never what past ones were sold. */
+        CancellationPolicyWriteRequest: {
+            code: string;
+            name: string;
+            description?: string;
+            tiers: components["schemas"]["CancellationPolicyTierRequest"][];
+            is_active?: boolean;
+        };
         /**
          * @description * `INSTANT` - Confirms immediately
          *     * `ON_REQUEST` - Confirmed by the provider
@@ -1444,6 +1569,22 @@ export interface components {
             tags?: string[];
             accessibility_notes?: string;
             feature_rank?: number;
+            is_active?: boolean;
+        };
+        /** @description §14.6. Four policies ship as rows; a fifth is a console form.
+         *
+         *     `tiers` is ordered most generous first and is validated by
+         *     `domain.cancellation.parse_tiers` at the model tier, which is the one that
+         *     also runs for the seed loader. What this adds is a per-field message.
+         *
+         *     BR-106 is why editing this is safe: a booking snapshots the policy in force
+         *     at confirmation, so a change here alters what future bookings are offered
+         *     and never what past ones were sold. */
+        PatchedCancellationPolicyWriteRequest: {
+            code?: string;
+            name?: string;
+            description?: string;
+            tiers?: components["schemas"]["CancellationPolicyTierRequest"][];
             is_active?: boolean;
         };
         /** @description §7.3's `country`.
@@ -2036,6 +2177,98 @@ export interface operations {
         };
     };
     admin_attractions_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_cancellation_policies_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancellationPolicyWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CancellationPolicyWriteRequest"];
+                "multipart/form-data": components["schemas"]["CancellationPolicyWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancellationPolicy"];
+                };
+            };
+        };
+    };
+    admin_cancellation_policies_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_cancellation_policies_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedCancellationPolicyWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedCancellationPolicyWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedCancellationPolicyWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancellationPolicy"];
+                };
+            };
+        };
+    };
+    admin_cancellation_policies_restore_create: {
         parameters: {
             query?: never;
             header?: never;

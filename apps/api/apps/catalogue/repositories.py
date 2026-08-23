@@ -48,6 +48,7 @@ from apps.catalogue.dto import (
     AccommodationDTO,
     ActivityDTO,
     AttractionDTO,
+    CancellationPolicyDTO,
     CountryDTO,
     DestinationDTO,
     RegionDTO,
@@ -57,6 +58,7 @@ from apps.catalogue.models import (
     Accommodation,
     Activity,
     Attraction,
+    CancellationPolicy,
     Country,
     Destination,
     Region,
@@ -66,6 +68,7 @@ from apps.catalogue.selectors import (
     to_accommodation_dto,
     to_activity_dto,
     to_attraction_dto,
+    to_cancellation_policy_dto,
     to_country_dto,
     to_destination_dto,
     to_region_dto,
@@ -93,6 +96,8 @@ __all__ = [
     "update_accommodation",
     "create_tag",
     "update_tag",
+    "create_cancellation_policy",
+    "update_cancellation_policy",
     "set_active",
     "soft_delete",
     "restore",
@@ -133,6 +138,7 @@ _WRITABLE: Mapping[type[Model], frozenset[str]] = {
         }
     ),
     Region: frozenset({"country", "name", "slug", "is_active"}),
+    CancellationPolicy: frozenset({"code", "name", "description", "tiers", "is_active"}),
     Destination: frozenset(
         {
             "region",
@@ -478,6 +484,25 @@ def update_accommodation(public_id: UUID, **fields: Any) -> AccommodationDTO:
 # ---------------------------------------------------------------------------
 # Tags
 # ---------------------------------------------------------------------------
+
+
+@transaction.atomic
+def create_cancellation_policy(**fields: Any) -> CancellationPolicyDTO:
+    """§14.6's four policies, and any a later market needs.
+
+    The codes are rows and appear nowhere in executable code, so a jurisdiction
+    with different consumer law gets new rows rather than a release.
+    """
+    return to_cancellation_policy_dto(_create(CancellationPolicy, fields))
+
+
+@transaction.atomic
+def update_cancellation_policy(public_id: UUID, **fields: Any) -> CancellationPolicyDTO:
+    """BR-106: editing a policy changes what future bookings are offered and
+    never what past ones were sold, because a booking snapshots its policy at
+    confirmation. That is a property of the booking path, not of this write —
+    which is exactly why it is safe to let an administrator edit tiers."""
+    return to_cancellation_policy_dto(_update(_get(CancellationPolicy, public_id), fields))
 
 
 @transaction.atomic
