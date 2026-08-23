@@ -125,6 +125,20 @@ SETTINGS_REGISTER: dict[str, Setting] = {
         Setting("provider_response_hours", 24, "On-request activity response window"),
         Setting("review.window_days", 30, "Review submission window"),
         Setting("review.min_display_count", 3, "BR-127: below this, show New not a mean"),
+        # -- Map tiles (ADR 0016, Appendix D9) --
+        # A development default. OpenStreetMap's tile usage policy does not
+        # permit commercial production traffic, so pointing these at a licensed
+        # provider is a go-live checklist item that no test can detect.
+        Setting(
+            "map.tile_url",
+            "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            "Base map tile template (D9)",
+        ),
+        Setting(
+            "map.tile_attribution",
+            "© OpenStreetMap contributors",
+            "Attribution rendered with the tiles; a licence term, not decoration",
+        ),
         # -------------------------------------------------------------------
         # Appendix B extension — authentication and rate limiting (Phase 2).
         #

@@ -26,6 +26,7 @@ Intended Audience Revision History Version	Date | Software architects, backend e
 1.0	— | Architecture Team | Consolidated baseline release for development | 
 1.1	2026-08-18 | Product Owner | MVP client scope re-baselined on the tourist web application. Flutter tourist application deferred to v1.1; Flutter driver application retained in MVP. Amends §38.1, §38.2 and §41.10. Rationale and consequences in docs/adr/0002-web-first-tourist-client.md. | 
 1.2	2026-08-21 | Product Owner | Accommodation re-scoped from a bookable product to a location reference. room_type and room_availability deferred to v2 and removed from the v1 schema; a STAY item becomes a stay anchor carrying location and dates, with no provider, price, booking or inventory. Amends §2.2, §3.3, §5.1, §5.3, §6.4, §7.2–§7.6, §8.4, §8.10, §9.2, §9.4, §10.6, §10.7, §14, §17, §18.2, §18.4, §20.2, §20.3, §22.1, §24.11–§24.13, §26.4, §26.5, §28.2.5, §33.12, §37.5, §38.1–§38.5, §41.4, §42.2, Appendix B, Appendix C and Appendix D. Rationale and consequences in docs/adr/0013-accommodation-is-a-location-reference-in-v1.md.
+1.3	2026-08-23 | Product Owner | Map tile provider added to the decisions register as D9. Tiles are separately licensed from routing (D2) and are named nowhere in §34.6; the tourist web client renders them with MapLibre GL JS against a tile URL and attribution string held as system_setting rows, so the provider is a configuration change rather than a deployment. Amends Appendix D. Rationale and consequences in docs/adr/0016-map-tiles-are-a-configured-url-behind-maplibre.md.
 Approvals Role | Responsibility | Signature | Date
 Product Owner | Business scope, MVP boundary, prioritisation
 Solution Architect | Architecture, technology stack, integration design
@@ -4021,6 +4022,7 @@ None of these decisions changes the architecture; each is isolated behind a port
 <<<TABLE>>>
 # | Decision | Owner | Blocking
 D 8 | Support operating hours and escalation contacts | Operations | Phase 13
+D 9 | Map tile provider — which vendor serves the base map for the four tourist-web screens that show one, and on what commercial terms. Separate from D2: routing and tiles are separately licensed and separately priced even where one vendor sells both. The client uses MapLibre GL JS (BSD) against a tile URL template and attribution string held in system_setting, so no code depends on the choice. The development default is OpenStreetMap, whose tile usage policy does not permit commercial production traffic. | Commercial / Architecture | Blocks production launch; does not block Phase 3 — ADR 0016.
 D 10 | Booking.com affiliate enrolment — whether to join the affiliate programme and surface deep links from curated accommodation records at roughly 4% on completed stays. Airbnb offers no public API or affiliate route; Booking.com’s Demand API is approval-gated and unavailable pre-launch. | Commercial / Product Owner | Non-blocking. No v1 dependency — ADR 0013.
 <<<END TABLE>>>
 Appendix E — Document Conventions

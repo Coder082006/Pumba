@@ -86,6 +86,12 @@ class TestRegister:
                         the three is a judgement about statistical confidence
                         rather than a law — a market with thinner supply may
                         want it lower. ADR 0015.
+            map.        Phase 3, ADR 0016 / Appendix D9. The tile URL and its
+                        attribution string. Held as settings so changing map
+                        provider is an administrator action rather than a
+                        deployment, and paired so a swap cannot change the URL
+                        without the attribution — which is a licence term, not
+                        decoration.
 
         Adding a namespace is a deliberate edit to this tuple, which is the
         point: it is where somebody notices that a new family of settings has
@@ -95,7 +101,7 @@ class TestRegister:
         unnamespaced = {
             k
             for k in extension
-            if not k.startswith(("auth.", "ratelimit.", "page.", "search.", "review."))
+            if not k.startswith(("auth.", "ratelimit.", "page.", "search.", "review.", "map."))
         }
         assert not unnamespaced, f"undocumented settings keys: {sorted(unnamespaced)}"
 
