@@ -839,10 +839,124 @@ Roughly 34 commits, each one logical change, each pushed.
 
 ## 10. Notes back to you
 
-- **D9 (map tiles)** is new and needs adding to the register — see Q5.
+- **D9 (map tiles)** — **resolved and registered.** Appendix D gains D9 in SRS
+  v1.3; the decision is [ADR 0016](adr/0016-map-tiles-are-a-configured-url-behind-maplibre.md).
 - **D3** covers cloud and region, and key management follows from it. Correcting
   myself: I labelled key management "D8" in the Phase 2 report, but Appendix D
   already has a D8 (support operating hours). Your framing is the right one — it
   is not a new decision, it is a consequence of D3.
 - **D1** and **D2** unchanged. D2 still blocks Phase 4 completion, and the
   distance-from-airport chip in §7.2 above is labelled indicative until it lands.
+
+---
+
+## 11. What the build found
+
+### Defects the tests caught rather than review
+
+1. **The §41.12 acceptance test could never have passed the way it was
+   written.** `_administrator()` from commit 24 registered and granted a role,
+   then called `authenticate` — but §30.2 makes TOTP mandatory for
+   `CATALOGUE_ADMIN`, so it raised `MfaRequiredError` at login. The test was
+   failing before the POST it existed to assert against, so its `xfail` was
+   reporting the wrong reason. Fixed by enrolling and confirming TOTP; the
+   strict marker was kept through the change.
+
+2. **Moving the `Point` construction out of the serializer dropped a 422.**
+   `to_orm_fields` became the single place degrees become geometry — right,
+   because two conversions are two chances to disagree about which of latitude
+   and longitude is a `Point`'s `x` — but the `ValueError → 422` translation did
+   not come with it, so an out-of-range latitude became a 500. Caught by
+   `test_an_out_of_range_coordinate_is_refused`, which already existed.
+
+3. **BR-127 was implemented nowhere.** The read API had served `rating_avg`
+   unconditionally since commit 26, so any client could render `5.0 ★` for an
+   activity with one review — with four screens about to be built against that
+   payload. Found by writing [ADR 0015](adr/0015-ratings-are-a-projection-into-catalogue.md),
+   not by a test, because no test asserted a rule nobody had implemented.
+
+4. **`cancellation_policy` shipped as a model in commit 20 and stopped there.**
+   No entity, no write API, no audit path, no seed file — while Appendix C
+   commits to four and §5 above names a console screen for it. The plan did not
+   defer it; commits 25 and 28 missed it. Found while checking that Appendix C's
+   *later-phase* rows had been left alone.
+
+   What makes it a good outcome rather than only a bug is that the phase's own
+   guards found it and not a reviewer.
+   `test_every_entity_with_a_create_route_writes_an_entry` compares its request
+   bodies against `ENTITIES` and failed the moment an eighth appeared; the §37.2
+   matrix then refused the new create route until it was named in
+   `NO_ROWS_EXPOSED`, where commit 25's guard re-proved it create-shaped. The
+   comment there had predicted exactly this — *"adding an eighth curated table is
+   a line in this file that a reviewer sees"*.
+
+### Controls that were green without asserting anything
+
+5. **§6.5 rule 1 was unsatisfiable as encoded.** The fourteen `private-*`
+   import-linter contracts used reachability semantics, so
+   `administration → catalogue.services → catalogue.models` was a violation —
+   produced by doing exactly what the rule *requires*. It survived all of Phases
+   1 and 2 and twenty-eight commits of Phase 3 because no code had ever made a
+   cross-module `services.py` call. The contracts were green the whole time and
+   proved nothing about the property they exist to protect; the first attempt to
+   comply broke them.
+   [ADR 0014](adr/0014-module-privacy-contracts-check-direct-imports.md).
+
+6. **`v1:identity:device-detail` had been wrongly exempt since Phase 2.** It sat
+   on `NO_ROWS_EXPOSED` with a `<uuid:public_id>` path parameter and an exemption
+   reason that did not apply to it. Found by the self-policing guard on its first
+   run — the list was already rotting before anyone was tempted to abuse it.
+
+7. **`catalogue/0007` had to write a vacuously-passing default.** Adding NOT NULL
+   bounding-box columns to an existing table needs a value for the rows already
+   there, and there is no correct one, so it writes the whole-world box — which
+   passes every bounds check. Closed by
+   `test_the_shipped_data_would_notice_a_swap`, which transposes every coordinate
+   in the seed set and requires its country to reject it; the world box fails
+   that for every row at once. Mutation-tested in both directions.
+
+### Known-unproven
+
+8. **The §6.5 rule 5 architecture test reads annotations, not values.**
+   `test_services_never_return_orm_instances` resolves each public service
+   function's return annotation and fails on a `Model` or `QuerySet`. A function
+   annotated `-> Any`, left unannotated, or returning a dataclass that holds a
+   `Model` in a field passes it. Since ADR 0014 narrowed the privacy contracts to
+   direct imports, this test is now the **only** thing standing between us and an
+   ORM instance crossing a module seam, and it is weaker than its name suggests.
+   Two rules follow that nothing currently enforces: a service function must
+   carry a real return annotation, and a DTO must not hold an ORM instance.
+   Worth enforcing the next time this area is touched.
+
+9. **A country's bounding box only catches a transposed pair where that
+   country's latitude and longitude ranges do not overlap.** True for Tanzania
+   (−11.7..−1.0 against 29.3..40.4) and for most countries, but a property of the
+   geography rather than a guarantee of the technique. The check is a cheap net
+   with a known hole, and the shipped-data test asserts the net holds for the
+   rows that actually ship rather than assuming it.
+
+### Corrections to this plan
+
+10. **Q4's recommendation was wrong against the SRS.** It proposed
+    `rating_avg NUMERIC(2,1) NULL`. SRS §7.5's column table specifies
+    `NUMERIC(3,2) NOT NULL DEFAULT 0.00`, which is what commit 20 shipped. ADR
+    0015 adopts the SRS and says so rather than ratifying the plan.
+
+11. **Seed data restates `timezone` and `default_currency` on all ten
+    destinations**, identically to the country's defaults. A loader-only
+    inheritance rule would have been a second write path behaving differently
+    from the console, and §4.2 is explicit that these are *defaults a destination
+    may override*. Repetition is the correct cost.
+
+12. **`xfail(strict=True)` on the §41.12 test fired twice**, which is the whole
+    reason for the strictness. At commit 26 the deactivation half XPASSed and
+    forced a split; at commit 27 the opening flow XPASSed and the marker was
+    removed. Under a plain `xfail` this acceptance criterion would have read as
+    unmet while actually passing since commit 26.
+
+13. **Two test assertions were corrected rather than the code.** DRF reads an
+    empty query parameter on a non-required field as absent, so `?cursor=` is
+    correctly the first page, not a 422; and `normalise_query` truncates at
+    `search.max_length` rather than refusing, which closes the same DoS hole —
+    nothing past the ceiling reaches PostgreSQL — and is kinder to someone
+    pasting a paragraph.
