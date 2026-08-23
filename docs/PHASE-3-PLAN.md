@@ -960,3 +960,24 @@ Roughly 34 commits, each one logical change, each pushed.
     `search.max_length` rather than refusing, which closes the same DoS hole —
     nothing past the ceiling reaches PostgreSQL — and is kinder to someone
     pasting a paragraph.
+
+14. **§7.2's "57 km from ZNZ" chip was specified here and not built.** The
+    mockup in this document shows a distance on the Explore cards and on the
+    Destination page, and the JSON-LD block was to carry `geo` alongside it.
+    The figure does not exist yet: D2 is unresolved, the routing adapter is a
+    fake, and every distance the platform can currently produce is a haversine
+    estimate that §12.6 requires be rendered with an explicit *"approximate"*
+    label.
+
+    On a page that is fine — a label can be shown. In **structured data it is
+    not**: `schema.org` has nowhere to carry "this number is approximate", so
+    publishing it would send a fabricated figure to search engines as fact,
+    about the most-indexed page in the product, to a tourist deciding where to
+    stay. `domain.geo.Distance.may_be_stated_as_fact` already encodes exactly
+    this rule — it returns `True` only for a `MEASURED` distance — and commit
+    31 is the first place it had to be obeyed rather than merely tested.
+
+    So the JSON-LD carries only measured facts: `geo` from the row, and the
+    `containedInPlace` chain. The chip returns when D2 lands and distances
+    become `MEASURED`, and not before. **A plan is not evidence that the data
+    supports what it specifies**, which is the general form worth keeping.
