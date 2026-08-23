@@ -4,6 +4,10 @@
     "name": "Tanzania",
     "default_currency": "TZS",
     "default_timezone": "Africa/Dar_es_Salaam",
-    "is_active": true
+    "is_active": true,
+    "min_latitude": "-11.7500000",
+    "min_longitude": "29.3200000",
+    "max_latitude": "-0.9500000",
+    "max_longitude": "40.4500000"
   }
 ]

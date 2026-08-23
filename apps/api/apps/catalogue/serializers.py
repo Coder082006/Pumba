@@ -132,13 +132,27 @@ class _CoordinateWriteSerializer(StrictSerializer):
 
 
 class CountryWriteSerializer(StrictSerializer):
-    """§7.3's `country`."""
+    """§7.3's `country`.
+
+    `min_latitude`, `min_longitude`, `max_latitude` and `max_longitude` are the
+    bounding box of this market. Every coordinate written to a destination,
+    attraction, activity or accommodation beneath this country is required to
+    fall inside it, which is what catches a latitude and longitude entered the
+    wrong way round — both halves of a transposed pair are individually valid.
+
+    Set `min_longitude` greater than `max_longitude` for a country that crosses
+    the antimeridian.
+    """
 
     iso_code = serializers.CharField(min_length=2, max_length=2)
     name = serializers.CharField(max_length=80)
     default_currency = serializers.CharField(min_length=3, max_length=3)
     default_timezone = serializers.CharField(max_length=60)
     is_active = serializers.BooleanField(required=False)
+    min_latitude = _degrees()
+    min_longitude = _degrees()
+    max_latitude = _degrees()
+    max_longitude = _degrees()
 
 
 class RegionWriteSerializer(StrictSerializer):

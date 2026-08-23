@@ -28,6 +28,16 @@ __all__ = ["make_activity_id", "make_activity_schedule_id"]
 
 ZONE = "Pacific/Auckland"
 
+#: New Zealand's bounding box - see `_destination`. NOT NULL on `country`
+#: since `catalogue/0007`, because a country with no bounds would silently
+#: disable the transposed-coordinate guard for every row beneath it.
+BOUNDS = {
+    "min_latitude": Decimal("-47.3000000"),
+    "min_longitude": Decimal("166.4000000"),
+    "max_latitude": Decimal("-34.3000000"),
+    "max_longitude": Decimal("178.6000000"),
+}
+
 
 def _model(name: str) -> Any:
     return apps.get_model("catalogue", name)
@@ -35,7 +45,16 @@ def _model(name: str) -> Any:
 
 def _destination() -> Any:
     country = _model("Country").objects.create(
-        iso_code="NZ", name="New Zealand", default_currency="NZD", default_timezone=ZONE
+        iso_code="NZ",
+        name="New Zealand",
+        default_currency="NZD",
+        default_timezone=ZONE,
+        # Restated rather than shared, because importing catalogue's factories
+        # would relax the very boundary this file exists to respect. The
+        # numbers match `apps.catalogue.tests.factories.make_country` and the
+        # coordinates below sit inside them, so these rows stay valid if they
+        # are ever written through the service instead of the ORM.
+        **BOUNDS,
     )
     region = _model("Region").objects.create(country=country, name="Northland", slug="northland")
     return _model("Destination").objects.create(

@@ -2017,7 +2017,17 @@ components:
       - public_id
     CountryWriteRequest:
       type: object
-      description: §7.3's `country`.
+      description: |-
+        §7.3's `country`.
+
+        `min_latitude`, `min_longitude`, `max_latitude` and `max_longitude` are the
+        bounding box of this market. Every coordinate written to a destination,
+        attraction, activity or accommodation beneath this country is required to
+        fall inside it, which is what catches a latitude and longitude entered the
+        wrong way round — both halves of a transposed pair are individually valid.
+
+        Set `min_longitude` greater than `max_longitude` for a country that crosses
+        the antimeridian.
       properties:
         iso_code:
           type: string
@@ -2037,10 +2047,30 @@ components:
           maxLength: 60
         is_active:
           type: boolean
+        min_latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        min_longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        max_latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        max_longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
       required:
       - default_currency
       - default_timezone
       - iso_code
+      - max_latitude
+      - max_longitude
+      - min_latitude
+      - min_longitude
       - name
     Destination:
       type: object
@@ -2589,7 +2619,17 @@ components:
           type: boolean
     PatchedCountryWriteRequest:
       type: object
-      description: §7.3's `country`.
+      description: |-
+        §7.3's `country`.
+
+        `min_latitude`, `min_longitude`, `max_latitude` and `max_longitude` are the
+        bounding box of this market. Every coordinate written to a destination,
+        attraction, activity or accommodation beneath this country is required to
+        fall inside it, which is what catches a latitude and longitude entered the
+        wrong way round — both halves of a transposed pair are individually valid.
+
+        Set `min_longitude` greater than `max_longitude` for a country that crosses
+        the antimeridian.
       properties:
         iso_code:
           type: string
@@ -2609,6 +2649,22 @@ components:
           maxLength: 60
         is_active:
           type: boolean
+        min_latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        min_longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        max_latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        max_longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
     PatchedDestinationWriteRequest:
       type: object
       description: |-

@@ -33,12 +33,14 @@ other half — that the loader is generic enough to have loaded Arusha instead.
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 import pytest
 from django.core.management import call_command
 
 from apps.administration.management.commands.seed import DEFAULT_ROOT
 from apps.administration.models import AuditLog
+from apps.catalogue.domain.geo import BoundingBox, Coordinates
 from apps.catalogue.models import (
     Accommodation,
     Attraction,
@@ -70,6 +72,48 @@ APPENDIX_C = {
 
 def _rows(stem: str) -> list[dict]:
     return json.loads((SEEDS / f"{stem}.json").read_text(encoding="utf-8"))
+
+
+def _coordinates_by_country() -> list[tuple[str, BoundingBox, Coordinates]]:
+    """Every coordinate in the seed set, paired with its own country's box.
+
+    Walks the hierarchy out of the files rather than assuming one country, so
+    this keeps working the day a second market is seeded — which is the same
+    property §41.12 measures, checked from the data's side.
+    """
+    boxes = {
+        row["iso_code"]: BoundingBox(
+            min_lat=Decimal(row["min_latitude"]),
+            min_lon=Decimal(row["min_longitude"]),
+            max_lat=Decimal(row["max_latitude"]),
+            max_lon=Decimal(row["max_longitude"]),
+        )
+        for row in _rows("01-countries")
+    }
+    region_country = {row["slug"]: row["country"] for row in _rows("02-regions")}
+    destination_country = {
+        row["slug"]: region_country[row["region"]] for row in _rows("03-destinations")
+    }
+
+    found: list[tuple[str, BoundingBox, Coordinates]] = []
+    for stem, parent in (
+        ("03-destinations", "region"),
+        ("05-attractions", "destination"),
+        ("06-accommodation", "destination"),
+    ):
+        lookup = region_country if parent == "region" else destination_country
+        for row in _rows(stem):
+            if "latitude" not in row:
+                continue
+            found.append(
+                (
+                    row["slug"],
+                    boxes[lookup[row[parent]]],
+                    Coordinates(Decimal(row["latitude"]), Decimal(row["longitude"])),
+                )
+            )
+    assert found, "no seeded coordinates found — the walk above is broken"
+    return found
 
 
 class TestTheCommittedFiles:
@@ -116,6 +160,38 @@ class TestTheCommittedFiles:
                     if axis in row:
                         _, _, fraction = row[axis].partition(".")
                         assert len(fraction) <= 7, f"{row.get('slug')}.{axis}"
+
+    def test_every_seeded_coordinate_falls_inside_its_country(self) -> None:
+        """The bounding-box guard, applied to the data that actually ships.
+
+        The loader enforces this on every row it writes, so this test is not
+        the enforcement — it is the shorter feedback loop. A coordinate pasted
+        in from a mapping tool with the axes the wrong way round fails here
+        naming the row, rather than failing `make seed` on somebody's first day
+        with a message about a transaction.
+        """
+        for slug, box, point in _coordinates_by_country():
+            assert box.contains(point), f"{slug} at {point} is outside its country"
+
+    def test_the_shipped_data_would_notice_a_swap(self) -> None:
+        """The guard-tests-the-guard case, and the reason the boxes are tight.
+
+        A bounding box only catches a transposed pair when the country's
+        latitude range and longitude range do not overlap. That is a property
+        of the geography, not of the technique — so it is asserted for the data
+        that ships rather than assumed.
+
+        This is also what stops a country from silently keeping the whole-world
+        placeholder that `catalogue/0007` fills existing rows with: the world
+        box contains every swapped pair, so it fails this test for every row at
+        once.
+        """
+        for slug, box, point in _coordinates_by_country():
+            transposed = Coordinates(lat=point.lon, lon=point.lat)
+            assert not box.contains(transposed), (
+                f"{slug}: the country box accepts this row's coordinates "
+                f"transposed, so a swapped pair would be written silently"
+            )
 
     def test_pemba_ships_inactive(self) -> None:
         """§4.1: *"Deferred; record created but is_active = false"*.
@@ -257,6 +333,10 @@ class TestTheLoaderIsNotZanzibarShaped:
                     "name": "Kenya",
                     "default_currency": "KES",
                     "default_timezone": "Africa/Nairobi",
+                    "min_latitude": "-4.7000000",
+                    "min_longitude": "33.9000000",
+                    "max_latitude": "5.1000000",
+                    "max_longitude": "41.9100000",
                 }
             ],
         )

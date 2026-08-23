@@ -40,6 +40,7 @@ from django.contrib.postgres.search import SearchVector, SearchVectorField
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.catalogue.domain.geo import COORDINATE_PRECISION, BoundingBox
 from apps.catalogue.domain.hierarchy import GatewayType
 from apps.catalogue.domain.requirements import RequirementsError, parse_requirements
 from apps.catalogue.validators import (
@@ -69,6 +70,19 @@ __all__ = [
 ]
 
 
+def _degrees() -> models.DecimalField[Decimal, Decimal]:
+    """One decimal-degree column, at §13.1's precision.
+
+    Three integer digits so 180 fits, seven fractional so the column cannot
+    hold more precision than §13.1 permits to be exchanged — storing more would
+    mean a value that survives a round trip through the database but not
+    through the API.
+    """
+    return models.DecimalField(
+        max_digits=COORDINATE_PRECISION + 3, decimal_places=COORDINATE_PRECISION
+    )
+
+
 class GatewayTypeChoices(models.TextChoices):
     """§7.5.6: AIRPORT, SEAPORT or LAND_BORDER.
 
@@ -95,6 +109,21 @@ class Country(SoftDeleteModel):
     default_timezone = models.CharField(max_length=60, validators=[validate_iana_timezone])
     is_active = models.BooleanField(default=True)
 
+    # The rectangle every coordinate in this market must fall inside. Four
+    # columns rather than a PolygonField because this *is* a box — a polygon
+    # would invite someone to store a real border, which is a different thing
+    # with a different maintenance cost, and `contains` would then reject a
+    # legitimate offshore pickup point a few hundred metres out to sea.
+    #
+    # NOT NULL, deliberately. A nullable bound with a "skip the check if it is
+    # absent" rule is an exemption that disables the guard for every row
+    # beneath that country, and disables it silently. Opening a market means
+    # stating where it is.
+    min_latitude = _degrees()
+    min_longitude = _degrees()
+    max_latitude = _degrees()
+    max_longitude = _degrees()
+
     class Meta:
         db_table = "country"
         ordering = ["name"]
@@ -106,10 +135,34 @@ class Country(SoftDeleteModel):
                 condition=models.Q(deleted_at__isnull=True),
                 name="country_iso_code_unique_alive",
             ),
+            # A box with its corners swapped contains nothing, so every write
+            # beneath it would fail with a message about the destination rather
+            # than about the country that is actually wrong.
+            models.CheckConstraint(
+                condition=models.Q(min_latitude__lt=models.F("max_latitude")),
+                name="country_bounds_latitude_ordered",
+            ),
+            # Longitude is NOT ordered: min > max is how a box crossing the
+            # antimeridian is written (see `geo.BoundingBox`). Only equality is
+            # refused, because a zero-width box is a typo in every case.
+            models.CheckConstraint(
+                condition=~models.Q(min_longitude=models.F("max_longitude")),
+                name="country_bounds_longitude_not_degenerate",
+            ),
         ]
 
     def __str__(self) -> str:
         return self.iso_code
+
+    @property
+    def bounds(self) -> BoundingBox:
+        """The four columns as the domain object that knows what they mean."""
+        return BoundingBox(
+            min_lat=self.min_latitude,
+            min_lon=self.min_longitude,
+            max_lat=self.max_latitude,
+            max_lon=self.max_longitude,
+        )
 
 
 class Region(SoftDeleteModel):

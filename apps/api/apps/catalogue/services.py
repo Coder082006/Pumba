@@ -106,6 +106,14 @@ class CatalogueEntity:
     natural_key: str = "slug"
     """What a seed file identifies this entity by. See `load_seed`."""
 
+    country_path: tuple[str, ...] = ()
+    """Attribute chain from this row to the country whose bounds apply to it.
+
+    Empty for an entity that carries no coordinate. The first element is
+    always a key of `references`, which is what lets the country be found from
+    the request body on a create — before the row it belongs to exists.
+    """
+
 
 ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
     {
@@ -135,6 +143,7 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
                 repo.update_destination,
                 {"region": Region},
                 point_field="centroid",
+                country_path=("region", "country"),
             ),
             CatalogueEntity("tag", Tag, Resource.TAG, repo.create_tag, repo.update_tag),
             CatalogueEntity(
@@ -145,6 +154,7 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
                 repo.update_attraction,
                 {"destination": Destination},
                 point_field="coordinates",
+                country_path=("destination", "region", "country"),
             ),
             CatalogueEntity(
                 "activity",
@@ -158,6 +168,7 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
                     "cancellation_policy": CancellationPolicy,
                 },
                 point_field="coordinates",
+                country_path=("destination", "region", "country"),
             ),
             CatalogueEntity(
                 "accommodation",
@@ -167,6 +178,7 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
                 repo.update_accommodation,
                 {"destination": Destination},
                 point_field="coordinates",
+                country_path=("destination", "region", "country"),
             ),
         )
     }
@@ -177,7 +189,12 @@ def entity_for(key: str) -> CatalogueEntity:
     return ENTITIES[key]
 
 
-def to_orm_fields(entity: CatalogueEntity, fields: Mapping[str, Any]) -> dict[str, Any]:
+def to_orm_fields(
+    entity: CatalogueEntity,
+    fields: Mapping[str, Any],
+    *,
+    existing: SoftDeleteModel | None = None,
+) -> dict[str, Any]:
     """Wire shape to ORM shape: references resolved, degrees made a geometry.
 
     Both halves are here rather than in the serializer because the serializer
@@ -186,12 +203,20 @@ def to_orm_fields(entity: CatalogueEntity, fields: Mapping[str, Any]) -> dict[st
     which of `latitude` and `longitude` is the `x` of a `Point`. Getting that
     backwards puts a Zanzibar hotel in the Gulf of Guinea, and every test that
     only checks a row was written still passes.
+
+    `existing` is the row being updated, if there is one. It is needed only to
+    find the country whose bounds apply when a PATCH moves a coordinate without
+    restating the parent.
     """
-    resolved = _fold_coordinates(entity, resolve_references(entity, fields))
-    return resolved
+    return _fold_coordinates(entity, resolve_references(entity, fields), existing=existing)
 
 
-def _fold_coordinates(entity: CatalogueEntity, fields: dict[str, Any]) -> dict[str, Any]:
+def _fold_coordinates(
+    entity: CatalogueEntity,
+    fields: dict[str, Any],
+    *,
+    existing: SoftDeleteModel | None = None,
+) -> dict[str, Any]:
     """`latitude` + `longitude` become the entity's point column.
 
     Absent on a PATCH that does not touch the location, in which case the
@@ -219,8 +244,74 @@ def _fold_coordinates(entity: CatalogueEntity, fields: dict[str, Any]) -> dict[s
         checked = Coordinates(lat=Decimal(str(latitude)), lon=Decimal(str(longitude)))
     except ValueError as exc:
         raise ValidationError(str(exc), details=[{"field": "latitude", "issue": str(exc)}]) from exc
+    _require_within_country(entity, checked, fields, existing)
     fields[entity.point_field] = Point(float(checked.lon), float(checked.lat), srid=4326)
     return fields
+
+
+def _require_within_country(
+    entity: CatalogueEntity,
+    point: Coordinates,
+    fields: Mapping[str, Any],
+    existing: SoftDeleteModel | None,
+) -> None:
+    """Refuse a coordinate outside the bounding box of its own country.
+
+    The error this catches is a swapped pair, and it is the one geographic
+    mistake that looks exactly like success. `Coordinates` rejects a latitude
+    of 91; it cannot reject a latitude of 39.19, which is a real latitude in
+    Turkey and a Zanzibar *longitude*. Nothing downstream notices — the row
+    writes, the audit entry records it, the API serves it, and the property
+    appears on the map six thousand kilometres out to sea in the Gulf of
+    Guinea. §13.2's confirmed-pin flow guards the tourist's own free entry;
+    this guards curated data, which no tourist confirms.
+
+    The box comes from the `country` row, never from a constant. §4.2 forbids
+    this module knowing where the market is, and `test_it_loads_a_market_the_
+    seed_files_never_mention` opens Kenya through this same code path.
+    """
+    country = _country_for(entity, fields, existing)
+    if country is None or country.bounds.contains(point):
+        return
+    box = country.bounds
+    raise ValidationError(
+        f"Coordinate lies outside {country.iso_code}: "
+        f"latitude must be between {box.min_lat} and {box.max_lat}, "
+        f"longitude between {box.min_lon} and {box.max_lon}. "
+        "Check that latitude and longitude have not been transposed.",
+        details=[
+            {"field": "latitude", "issue": f"{point.lat} is outside {country.iso_code}."},
+            {"field": "longitude", "issue": f"{point.lon} is outside {country.iso_code}."},
+        ],
+    )
+
+
+def _country_for(
+    entity: CatalogueEntity,
+    fields: Mapping[str, Any],
+    existing: SoftDeleteModel | None,
+) -> Country | None:
+    """Walk `country_path` to the country this row belongs to.
+
+    Two starting points, because a create has no row yet. On a create — and on
+    an update that moves the row to a new parent — the first hop is the
+    reference already resolved into `fields`, so the coordinate is checked
+    against the country it is *becoming* part of rather than the one it is
+    leaving. Otherwise the walk starts from the stored row.
+
+    Returns `None` only when neither is available, which is a create whose
+    required parent is missing. That request is about to fail on the parent;
+    reporting a bounds error for it would name the wrong field.
+    """
+    if not entity.country_path:
+        return None
+    head, *rest = entity.country_path
+    node: Any = fields.get(head) or (getattr(existing, head, None) if existing else None)
+    for attribute in rest:
+        if node is None:
+            return None
+        node = getattr(node, attribute, None)
+    return node if isinstance(node, Country) else None
 
 
 def resolve_references(entity: CatalogueEntity, fields: Mapping[str, Any]) -> dict[str, Any]:
@@ -355,7 +446,10 @@ def update(
     and who turned it.
     """
     before = _require(entity, public_id)
-    dto = entity.update(public_id, **to_orm_fields(entity, fields))
+    dto = entity.update(
+        public_id,
+        **to_orm_fields(entity, fields, existing=repo.reference(entity.model, public_id)),
+    )
     _audit(
         AuditAction.CATALOGUE_UPDATED,
         entity,

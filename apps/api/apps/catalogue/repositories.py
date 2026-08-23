@@ -122,6 +122,14 @@ _WRITABLE: Mapping[type[Model], frozenset[str]] = {
             "default_currency",
             "default_timezone",
             "is_active",
+            # Writable, so opening a market outside Tanzania is a console form
+            # rather than a migration (§4.2). Being writable also makes it
+            # audited: `snapshot` derives from this set, so widening a bounding
+            # box leaves an entry saying who widened it and by how much.
+            "min_latitude",
+            "min_longitude",
+            "max_latitude",
+            "max_longitude",
         }
     ),
     Region: frozenset({"country", "name", "slug", "is_active"}),

@@ -13,6 +13,7 @@ import pytest
 
 from apps.catalogue.domain.geo import (
     COORDINATE_PRECISION,
+    BoundingBox,
     Coordinates,
     Distance,
     EstimateQuality,
@@ -73,6 +74,124 @@ class TestCoordinates:
             Decimal("1.0"), Decimal("2.0")
         )
         assert len({ZNZ, ZNZ}) == 1
+
+
+#: Tanzania, as the seed set states it.
+TANZANIA = BoundingBox(
+    min_lat=Decimal("-11.7500000"),
+    min_lon=Decimal("29.3200000"),
+    max_lat=Decimal("-0.9500000"),
+    max_lon=Decimal("40.4500000"),
+)
+
+
+class TestBoundingBox:
+    """The guard against a transposed pair — see the class docstring in `geo`."""
+
+    @pytest.mark.parametrize("point", [ZNZ, STONE_TOWN, NUNGWI])
+    def test_a_real_anchor_is_inside_its_country(self, point: Coordinates) -> None:
+        assert TANZANIA.contains(point)
+
+    @pytest.mark.parametrize("point", [ZNZ, STONE_TOWN, NUNGWI])
+    def test_the_same_anchor_transposed_is_not(self, point: Coordinates) -> None:
+        """The whole reason this class exists.
+
+        Both halves are individually legal — `Coordinates` accepts the swapped
+        pair without complaint — and the result is a point in the Gulf of
+        Guinea. Only the country box can tell the difference.
+        """
+        swapped = Coordinates(lat=point.lon, lon=point.lat)
+        assert not TANZANIA.contains(swapped)
+
+    def test_the_edges_are_inclusive(self) -> None:
+        """A box is a closed interval. A destination sitting exactly on a
+        stated bound is inside it — the alternative is a guard that rejects
+        the very coordinate somebody chose the bound to admit."""
+        corner = Coordinates(lat=TANZANIA.min_lat, lon=TANZANIA.max_lon)
+        assert TANZANIA.contains(corner)
+
+    @pytest.mark.parametrize(
+        "lat,lon",
+        [
+            ("-12.0000000", "35.0000000"),  # south of it
+            ("-0.5000000", "35.0000000"),  # north of it
+            ("-6.0000000", "29.0000000"),  # west of it
+            ("-6.0000000", "41.0000000"),  # east of it
+        ],
+    )
+    def test_a_point_outside_any_edge_is_refused(self, lat: str, lon: str) -> None:
+        assert not TANZANIA.contains(Coordinates(Decimal(lat), Decimal(lon)))
+
+    def test_a_box_with_its_latitudes_the_wrong_way_round_is_refused(self) -> None:
+        """A box built upside down contains nothing, so every write beneath it
+        would fail with a message about the destination rather than about the
+        country that is actually wrong."""
+        with pytest.raises(ValueError, match="south of"):
+            BoundingBox(
+                min_lat=Decimal("0"),
+                min_lon=Decimal("29"),
+                max_lat=Decimal("-11"),
+                max_lon=Decimal("40"),
+            )
+
+    def test_a_zero_width_box_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="must differ"):
+            BoundingBox(
+                min_lat=Decimal("-11"),
+                min_lon=Decimal("39"),
+                max_lat=Decimal("-1"),
+                max_lon=Decimal("39"),
+            )
+
+    @pytest.mark.parametrize("value", ["91", "-91"])
+    def test_a_latitude_bound_outside_the_globe_is_refused(self, value: str) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            BoundingBox(
+                min_lat=Decimal("-90") if value == "91" else Decimal(value),
+                min_lon=Decimal("0"),
+                max_lat=Decimal(value) if value == "91" else Decimal("90"),
+                max_lon=Decimal("1"),
+            )
+
+    def test_a_longitude_bound_outside_the_globe_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            BoundingBox(
+                min_lat=Decimal("-1"),
+                min_lon=Decimal("-181"),
+                max_lat=Decimal("1"),
+                max_lon=Decimal("1"),
+            )
+
+
+class TestABoxThatCrossesTheAntimeridian:
+    """Fiji, Kiribati, and the Chatham Islands.
+
+    No such market is planned, and the case is supported anyway: the
+    alternative is a longitude check that rejects every coordinate in the
+    country on the day one is opened, and a guard that fires on correct data
+    gets deleted rather than fixed.
+    """
+
+    FIJI = BoundingBox(
+        min_lat=Decimal("-20.7000000"),
+        min_lon=Decimal("176.9000000"),
+        max_lat=Decimal("-12.4000000"),
+        max_lon=Decimal("-178.2000000"),
+    )
+
+    def test_it_is_recognised_as_wrapping(self) -> None:
+        assert self.FIJI.crosses_antimeridian
+        assert not TANZANIA.crosses_antimeridian
+
+    @pytest.mark.parametrize("lon", ["177.4000000", "-179.9000000", "180.0000000"])
+    def test_both_sides_of_the_line_are_inside(self, lon: str) -> None:
+        assert self.FIJI.contains(Coordinates(Decimal("-17.7000000"), Decimal(lon)))
+
+    @pytest.mark.parametrize("lon", ["150.0000000", "-100.0000000", "0.0000000"])
+    def test_the_long_way_round_is_still_outside(self, lon: str) -> None:
+        """The wrap must widen the box across 180°, not turn it into "any
+        longitude" — which is what an `or` written the other way round does."""
+        assert not self.FIJI.contains(Coordinates(Decimal("-17.7000000"), Decimal(lon)))
 
 
 class TestHaversine:

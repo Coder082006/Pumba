@@ -52,6 +52,12 @@ TANZANIA = {
     "name": "Tanzania",
     "default_currency": "TZS",
     "default_timezone": "Africa/Dar_es_Salaam",
+    # Every coordinate written beneath this country is checked against these
+    # four. Arusha below sits inside them; a transposed Arusha does not.
+    "min_latitude": "-11.7500000",
+    "min_longitude": "29.3200000",
+    "max_latitude": "-0.9500000",
+    "max_longitude": "40.4500000",
 }
 
 ARUSHA = {
@@ -299,6 +305,96 @@ class TestTheRequestShapeIsClosed:
             {"region": region["public_id"], **ARUSHA, "latitude": "91.0000000"},
         )
         assert response.status_code == 422
+
+    def test_a_transposed_coordinate_is_refused(self, admin: APIClient) -> None:
+        """The one geographic error that looks exactly like success.
+
+        Both halves of a swapped Arusha pair are individually legal — latitude
+        36.68 is a real latitude in the Mediterranean, longitude -3.39 is a
+        real longitude in Andalusia — so nothing before this point objects. The
+        row would write, the audit entry would record it, and the destination
+        would appear on the map two continents away.
+        """
+        country = _country(admin)
+        region = _region(admin, country)
+        response = _post(
+            admin,
+            "/api/v1/admin/destinations",
+            {
+                "region": region["public_id"],
+                **ARUSHA,
+                "latitude": ARUSHA["longitude"],
+                "longitude": ARUSHA["latitude"],
+            },
+        )
+        assert response.status_code == 422, response.data
+        assert "transposed" in str(response.data).lower()
+        assert not Destination.all_objects.filter(slug="arusha").exists()
+
+    def test_a_patch_that_moves_a_row_out_of_its_country_is_refused(self, admin: APIClient) -> None:
+        """The update path reaches the check through the stored row.
+
+        A PATCH that changes only the coordinates never names the region, so
+        the country has to be found from the row being edited. Without that the
+        guard would cover creates and quietly skip every edit — which is the
+        half an administrator actually uses to correct a position.
+        """
+        country = _country(admin)
+        region = _region(admin, country)
+        destination = _destination(admin, region)
+        response = admin.patch(
+            f"/api/v1/admin/destinations/{destination['public_id']}",
+            {"latitude": "48.8566000", "longitude": "2.3522000"},
+            format="json",
+        )
+        assert response.status_code == 422, response.data
+
+    def test_a_coordinate_is_checked_against_the_country_it_is_moving_to(
+        self, admin: APIClient
+    ) -> None:
+        """When a PATCH restates the parent, the *new* country's box applies.
+
+        Reattaching a destination to a region in another country and giving it
+        a coordinate there is a legitimate correction. Checking it against the
+        country it is leaving would refuse the one edit that fixes the mistake.
+        """
+        tanzania = _country(admin)
+        created = _post(
+            admin,
+            "/api/v1/admin/countries",
+            {
+                "iso_code": "KE",
+                "name": "Kenya",
+                "default_currency": "KES",
+                "default_timezone": "Africa/Nairobi",
+                "min_latitude": "-4.7000000",
+                "min_longitude": "33.9000000",
+                "max_latitude": "5.1000000",
+                "max_longitude": "41.9100000",
+            },
+        )
+        assert created.status_code == 201, created.data
+        kenya = dict(created.data["data"])
+
+        destination = _destination(admin, _region(admin, tanzania))
+        made = _post(
+            admin,
+            "/api/v1/admin/regions",
+            {"country": kenya["public_id"], "name": "Coast", "slug": "coast"},
+        )
+        assert made.status_code == 201, made.data
+        coast = dict(made.data["data"])
+        # Diani, which is in Kenya and comfortably outside Tanzania's box.
+        response = admin.patch(
+            f"/api/v1/admin/destinations/{destination['public_id']}",
+            {
+                "region": coast["public_id"],
+                "latitude": "-4.2769000",
+                "longitude": "39.5931000",
+            },
+            format="json",
+        )
+        assert response.status_code == 200, response.data
 
     def test_an_invalid_timezone_is_a_422_naming_the_field(self, admin: APIClient) -> None:
         """§8.6 tier 2 reaching HTTP.

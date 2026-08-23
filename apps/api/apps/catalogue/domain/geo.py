@@ -38,6 +38,7 @@ from enum import StrEnum
 
 __all__ = [
     "Coordinates",
+    "BoundingBox",
     "EstimateQuality",
     "Distance",
     "COORDINATE_PRECISION",
@@ -82,6 +83,77 @@ class Coordinates:
             raise ValueError(f"latitude exceeds {COORDINATE_PRECISION} decimal places")
         if self.lon.as_tuple().exponent < -COORDINATE_PRECISION:  # type: ignore[operator]
             raise ValueError(f"longitude exceeds {COORDINATE_PRECISION} decimal places")
+
+
+@dataclass(frozen=True, slots=True)
+class BoundingBox:
+    """The rectangle a country's coordinates must fall inside.
+
+    This exists to catch one specific error that nothing else can see: a
+    latitude and longitude entered the wrong way round. `Coordinates` already
+    refuses a value outside ±90 / ±180, but a swapped Zanzibar pair — latitude
+    39.19, longitude -6.16 — is *individually in range*. It is a well-formed
+    point in the Gulf of Guinea, roughly 6,000 km from the hotel it claims to
+    be, and every test that asserts a row was written still passes. The map is
+    the only place it shows up, and only if somebody looks.
+
+    The box is a property of the country and is read from the `country` row, not
+    written here. §4.2 forbids this module knowing anything about a specific
+    market, and a bound hardcoded to Tanzania would fail the moment the
+    platform opens Kenya — which is exactly the change §41.12 measures.
+
+    **What this does not do.** A swap is caught only when the country's
+    latitude range and its longitude range do not overlap. That holds for
+    Tanzania (latitudes -11.7..-1.0, longitudes 29.3..40.4) and for most
+    countries, but it is a property of the geography rather than a guarantee of
+    the technique: a country straddling the equator near the prime meridian has
+    a box in which some swapped pairs are legitimate points. The check is a
+    cheap net with a known hole, not a proof, and
+    `test_the_shipped_data_would_notice_a_swap` asserts the net actually holds
+    for the data that ships rather than assuming it.
+    """
+
+    min_lat: Decimal
+    min_lon: Decimal
+    max_lat: Decimal
+    max_lon: Decimal
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("min_lat", self.min_lat),
+            ("max_lat", self.max_lat),
+        ):
+            if not -90 <= value <= 90:
+                raise ValueError(f"{name} out of range: {value}")
+        for name, value in (
+            ("min_lon", self.min_lon),
+            ("max_lon", self.max_lon),
+        ):
+            if not -180 <= value <= 180:
+                raise ValueError(f"{name} out of range: {value}")
+        if self.min_lat >= self.max_lat:
+            raise ValueError(f"min_lat must be south of max_lat: {self.min_lat} >= {self.max_lat}")
+        if self.min_lon == self.max_lon:
+            raise ValueError("min_lon and max_lon must differ")
+
+    @property
+    def crosses_antimeridian(self) -> bool:
+        """True when the box wraps through 180°, e.g. Fiji or Kiribati.
+
+        Represented by `min_lon > max_lon`, which is the convention GeoJSON and
+        PostGIS both use. Worth supporting even though no such market is
+        planned: the alternative is a longitude check that silently rejects
+        every coordinate in the country the day one is opened, and a guard that
+        fires on correct data gets deleted rather than fixed.
+        """
+        return self.min_lon > self.max_lon
+
+    def contains(self, point: Coordinates) -> bool:
+        if not self.min_lat <= point.lat <= self.max_lat:
+            return False
+        if self.crosses_antimeridian:
+            return point.lon >= self.min_lon or point.lon <= self.max_lon
+        return self.min_lon <= point.lon <= self.max_lon
 
 
 @dataclass(frozen=True, slots=True)

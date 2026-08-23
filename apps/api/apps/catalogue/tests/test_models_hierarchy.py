@@ -15,6 +15,7 @@ that matters, because it is the only one nothing can route around.
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 
 import pytest
 from django.contrib.gis.db.models import PointField
@@ -24,7 +25,9 @@ from django.db import IntegrityError, models, transaction
 from django.db.models.deletion import ProtectedError
 from django.utils import timezone
 
+from apps.catalogue.domain.geo import Coordinates
 from apps.catalogue.models import Country, Destination, GatewayTypeChoices, Region
+from apps.catalogue.tests.factories import make_country
 
 # A zone deliberately unlike the seed market's, so anything that hard-codes
 # East Africa fails here rather than in Phase 12.
@@ -131,6 +134,56 @@ class TestPartialUniquenessPerSection77:
         }
 
 
+@pytest.mark.django_db
+class TestTheCountryBoundingBox:
+    """The four columns every coordinate beneath a country is checked against.
+
+    The application-layer check lives in `services._require_within_country` and
+    is tested against the API and the seed set. What is asserted here is the
+    database's own refusal, which is the tier that holds when a row is written
+    by a migration, a shell, or a future module that forgets the service.
+    """
+
+    def test_a_box_with_its_latitudes_the_wrong_way_round_is_refused(self) -> None:
+        """An upside-down box contains nothing, so every destination beneath it
+        would be refused with a message about the destination rather than about
+        the country that is actually wrong."""
+        with pytest.raises(IntegrityError):
+            make_country(
+                min_latitude=Decimal("-1.0000000"),
+                max_latitude=Decimal("-40.0000000"),
+            )
+
+    def test_a_zero_width_box_is_refused(self) -> None:
+        with pytest.raises(IntegrityError):
+            make_country(
+                min_longitude=Decimal("39.0000000"),
+                max_longitude=Decimal("39.0000000"),
+            )
+
+    def test_a_box_crossing_the_antimeridian_is_accepted(self) -> None:
+        """`min_longitude > max_longitude` is how a wrapping box is written, so
+        the longitude constraint refuses only equality. A CHECK that ordered
+        longitude would make Fiji unrepresentable, and would be discovered by
+        whoever tried to open it rather than here."""
+        fiji = make_country(
+            iso_code="FJ",
+            name="Fiji",
+            min_latitude=Decimal("-20.7000000"),
+            min_longitude=Decimal("176.9000000"),
+            max_latitude=Decimal("-12.4000000"),
+            max_longitude=Decimal("-178.2000000"),
+        )
+        assert fiji.bounds.crosses_antimeridian
+
+    def test_the_columns_expose_the_domain_object(self) -> None:
+        """`bounds` is the only way the four columns are read, so a column
+        renamed without its property is a failure here rather than a silently
+        skipped check downstream."""
+        country = make_country()
+        assert country.bounds.contains(Coordinates(Decimal("-35.2800000"), Decimal("174.0500000")))
+
+
 class TestValidatorsOnTheConsolePath:
     """§27.8 writes through `full_clean`, not through a service."""
 
@@ -173,7 +226,7 @@ class TestValidatorsOnTheConsolePath:
 class TestTheHierarchyAgainstRealPostgres:
     @pytest.fixture()
     def country(self) -> Country:
-        return Country.objects.create(
+        return make_country(
             iso_code="TZ",
             name="Tanzania",
             default_currency="TZS",
@@ -206,7 +259,7 @@ class TestTheHierarchyAgainstRealPostgres:
     def test_a_second_hierarchy_needs_no_code_change(self, region: Region) -> None:
         """§41.12 in miniature: another country, another currency, another zone,
         through the same code path."""
-        other = Country.objects.create(
+        other = make_country(
             iso_code="NZ", name="New Zealand", default_currency="NZD", default_timezone=FAR_ZONE
         )
         other_region = Region.objects.create(country=other, name="Northland", slug="northland")
@@ -220,7 +273,7 @@ class TestTheHierarchyAgainstRealPostgres:
         assert destination.timezone == FAR_ZONE
 
     def test_a_region_slug_may_repeat_in_another_country(self, region: Region) -> None:
-        other = Country.objects.create(
+        other = make_country(
             iso_code="KE", name="Kenya", default_currency="KES", default_timezone="Africa/Nairobi"
         )
         Region.objects.create(country=other, name="Coast", slug="coastal")
@@ -250,7 +303,7 @@ class TestTheHierarchyAgainstRealPostgres:
 class TestDatabaseConstraints:
     @pytest.fixture()
     def region(self) -> Region:
-        country = Country.objects.create(
+        country = make_country(
             iso_code="TZ",
             name="Tanzania",
             default_currency="TZS",
@@ -315,7 +368,7 @@ class TestTheZoneTriggerCannotBeRoutedAround:
 
     @pytest.fixture()
     def region(self) -> Region:
-        country = Country.objects.create(
+        country = make_country(
             iso_code="TZ",
             name="Tanzania",
             default_currency="TZS",
@@ -347,7 +400,7 @@ class TestTheZoneTriggerCannotBeRoutedAround:
 
     def test_a_country_default_zone_is_guarded_too(self) -> None:
         with pytest.raises(IntegrityError):
-            Country.objects.create(
+            make_country(
                 iso_code="XX",
                 name="Nowhere",
                 default_currency="USD",
@@ -368,7 +421,7 @@ class TestLocalDate:
         day, rather than against a fixed expectation that would pass in one
         half of the year and fail in the other.
         """
-        country = Country.objects.create(
+        country = make_country(
             iso_code="TZ",
             name="Tanzania",
             default_currency="TZS",

@@ -56,6 +56,13 @@ def make_country(**overrides: Any) -> Country:
         "name": "New Zealand",
         "default_currency": "NZD",
         "default_timezone": DEFAULT_ZONE,
+        # The real box, so the coordinates below sit inside it and a test that
+        # posts an East African coordinate under this country is refused. That
+        # is the point of the default market being somewhere else entirely.
+        "min_latitude": Decimal("-47.3000000"),
+        "min_longitude": Decimal("166.4000000"),
+        "max_latitude": Decimal("-34.3000000"),
+        "max_longitude": Decimal("178.6000000"),
     }
     values.update(overrides)
     return Country.objects.create(**values)

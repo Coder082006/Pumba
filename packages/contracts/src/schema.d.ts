@@ -1190,13 +1190,30 @@ export interface components {
             default_currency: string;
             default_timezone: string;
         };
-        /** @description §7.3's `country`. */
+        /** @description §7.3's `country`.
+         *
+         *     `min_latitude`, `min_longitude`, `max_latitude` and `max_longitude` are the
+         *     bounding box of this market. Every coordinate written to a destination,
+         *     attraction, activity or accommodation beneath this country is required to
+         *     fall inside it, which is what catches a latitude and longitude entered the
+         *     wrong way round — both halves of a transposed pair are individually valid.
+         *
+         *     Set `min_longitude` greater than `max_longitude` for a country that crosses
+         *     the antimeridian. */
         CountryWriteRequest: {
             iso_code: string;
             name: string;
             default_currency: string;
             default_timezone: string;
             is_active?: boolean;
+            /** Format: decimal */
+            min_latitude: string;
+            /** Format: decimal */
+            min_longitude: string;
+            /** Format: decimal */
+            max_latitude: string;
+            /** Format: decimal */
+            max_longitude: string;
         };
         /** @description §7.5.6.
          *
@@ -1429,13 +1446,30 @@ export interface components {
             feature_rank?: number;
             is_active?: boolean;
         };
-        /** @description §7.3's `country`. */
+        /** @description §7.3's `country`.
+         *
+         *     `min_latitude`, `min_longitude`, `max_latitude` and `max_longitude` are the
+         *     bounding box of this market. Every coordinate written to a destination,
+         *     attraction, activity or accommodation beneath this country is required to
+         *     fall inside it, which is what catches a latitude and longitude entered the
+         *     wrong way round — both halves of a transposed pair are individually valid.
+         *
+         *     Set `min_longitude` greater than `max_longitude` for a country that crosses
+         *     the antimeridian. */
         PatchedCountryWriteRequest: {
             iso_code?: string;
             name?: string;
             default_currency?: string;
             default_timezone?: string;
             is_active?: boolean;
+            /** Format: decimal */
+            min_latitude?: string;
+            /** Format: decimal */
+            min_longitude?: string;
+            /** Format: decimal */
+            max_latitude?: string;
+            /** Format: decimal */
+            max_longitude?: string;
         };
         /** @description §7.5.6.
          *
