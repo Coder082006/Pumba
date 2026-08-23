@@ -376,6 +376,42 @@ class TestThePayload:
         assert payload
         assert "id" not in _every_key(payload)
 
+    def test_an_activity_with_too_few_reviews_states_no_mean(self, public: APIClient) -> None:
+        """BR-127 at the boundary that matters.
+
+        The domain rule is tested in isolation; this asserts the payload
+        actually withholds the number, because a rule the serializer does not
+        apply is a rule four clients will each have to remember.
+        """
+        make_activity(slug="the-new-one", rating_avg=Decimal("5.00"), rating_count=1)
+        [row] = public.get("/api/v1/activities").data["data"]
+        assert row["rating_avg"] is None
+        # The count still travels — it is what a client renders "New" from.
+        assert row["rating_count"] == 1
+
+    def test_an_activity_with_enough_reviews_states_its_mean(self, public: APIClient) -> None:
+        make_activity(slug="the-established-one", rating_avg=Decimal("4.50"), rating_count=12)
+        [row] = public.get("/api/v1/activities").data["data"]
+        assert row["rating_avg"] == "4.50"
+        assert row["rating_count"] == 12
+
+    def test_the_detail_route_applies_the_same_rule(self, public: APIClient) -> None:
+        """The list and the detail payload are built by different call sites,
+        and a rule applied to one of them is the kind of gap nobody sees until
+        a single-activity page shows a rating the list page hides."""
+        activity = make_activity(slug="the-quiet-one", rating_avg=Decimal("5.00"), rating_count=2)
+        payload = public.get(f"/api/v1/activities/{activity.slug}").data["data"]
+        assert payload["rating_avg"] is None
+
+    def test_a_launch_day_catalogue_publishes_no_ratings_at_all(self, public: APIClient) -> None:
+        """Every activity on day one has `rating_avg = 0.00` (SRS §7.5 makes
+        the column NOT NULL DEFAULT 0.00, not nullable). Without BR-127 the
+        catalogue would open publishing "0.0" for everything it lists."""
+        make_activity(slug="opening-day")
+        [row] = public.get("/api/v1/activities").data["data"]
+        assert row["rating_avg"] is None
+        assert row["rating_count"] == 0
+
     def test_money_leaves_as_a_string(self, public: APIClient) -> None:
         """§7.2 forbids float for money anywhere. A JSON number is parsed as an
         IEEE double by every client in the stack, which is that float."""

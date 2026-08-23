@@ -205,7 +205,11 @@ class ActivityDTO:
     booking_cutoff_hours: int
     confirmation_mode: str
     tags: tuple[str, ...]
-    rating_avg: Decimal
+    rating_avg: Decimal | None
+    """BR-127: `None` below `review.min_display_count`, where a client shows
+    "New". Never the raw mean when there are too few reviews to state one —
+    see ADR 0015 for why the rule is applied here and not in the client."""
+
     rating_count: int
     feature_rank: int
     destination: DestinationDTO

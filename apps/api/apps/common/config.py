@@ -124,6 +124,7 @@ SETTINGS_REGISTER: dict[str, Setting] = {
         Setting("location.retention_days", 30, "Raw point retention"),
         Setting("provider_response_hours", 24, "On-request activity response window"),
         Setting("review.window_days", 30, "Review submission window"),
+        Setting("review.min_display_count", 3, "BR-127: below this, show New not a mean"),
         # -------------------------------------------------------------------
         # Appendix B extension — authentication and rate limiting (Phase 2).
         #

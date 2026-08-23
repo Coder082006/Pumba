@@ -449,7 +449,10 @@ class ActivitySerializer(serializers.Serializer[Any]):
     booking_cutoff_hours = serializers.IntegerField()
     confirmation_mode = serializers.CharField()
     tags = serializers.ListField(child=serializers.CharField())
-    rating_avg = serializers.DecimalField(max_digits=3, decimal_places=2)
+    # BR-127: null below `review.min_display_count`, so a client cannot render
+    # a mean off one review. `rating_count` still travels, which is what a
+    # client needs to render "New" without a second call.
+    rating_avg = serializers.DecimalField(max_digits=3, decimal_places=2, allow_null=True)
     rating_count = serializers.IntegerField()
     feature_rank = serializers.IntegerField()
     destination = DestinationSerializer()

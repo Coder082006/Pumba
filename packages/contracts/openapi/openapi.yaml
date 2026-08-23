@@ -1812,7 +1812,9 @@ components:
           items:
             type: string
         rating_avg:
-          type: string
+          type:
+          - string
+          - 'null'
           format: decimal
           pattern: ^-?\d{0,1}(?:\.\d{0,2})?$
         rating_count:

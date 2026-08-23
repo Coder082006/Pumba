@@ -1166,7 +1166,7 @@ export interface components {
             confirmation_mode: string;
             tags: string[];
             /** Format: decimal */
-            rating_avg: string;
+            rating_avg: string | null;
             rating_count: number;
             feature_rank: number;
             destination: components["schemas"]["Destination"];

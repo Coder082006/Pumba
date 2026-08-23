@@ -54,6 +54,7 @@ __all__ = [
     "rank_key",
     "order_terms",
     "DEFAULT_TERMS",
+    "displayable_rating",
 ]
 
 
@@ -229,3 +230,34 @@ def _sortable(
     if isinstance(value, int):
         return (_PRESENT, -value if descending else value)
     raise TypeError(f"unrankable value: {value!r}")
+
+
+def displayable_rating(
+    rating_avg: Decimal, rating_count: int, *, min_display_count: int
+) -> Decimal | None:
+    """BR-127's mean, or `None` when there are too few reviews to state one.
+
+        "a subject with fewer than 3 published reviews displays 'New' rather
+         than a mean"
+
+    **This is a display rule, and it deliberately disagrees with the ordering
+    above.** §16.5 ranks on the raw `rating_avg`, so a subject with one
+    five-star review outranks one with fifty averaging 4.8 and shows "New"
+    while doing it. That tension is real, is recorded in ADR 0015, and belongs
+    to whoever owns `review` — it is not silently resolved by rounding it away
+    here, because ranking is a published commitment and this is not.
+
+    Returning `None` rather than a flag is what makes the rule enforceable. A
+    payload carrying the mean plus "you may not show this" is a rule in every
+    client; a payload carrying no mean is a rule in one place. `rating_count`
+    still travels, so a client renders "New" without a second call.
+
+    `min_display_count` is `review.min_display_count` (rule 5). It is a
+    judgement about statistical confidence, and a market with thinner supply
+    may want it lower.
+    """
+    if min_display_count < 0:
+        raise ValueError("min_display_count must not be negative")
+    if rating_count < min_display_count:
+        return None
+    return rating_avg

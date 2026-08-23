@@ -18,6 +18,7 @@ from apps.catalogue.domain.ranking import (
     DEFAULT_TERMS,
     RankInputs,
     SortOption,
+    displayable_rating,
     order_terms,
     rank_key,
 )
@@ -283,3 +284,66 @@ class TestOrderTermsDeclaration:
             r.id for r in sorted(rows, key=lambda r: rank_key(r, selected_destination_id=None))
         ]
         assert with_context == order(rows)
+
+
+class TestBr127:
+    """A mean nobody may display is a mean nobody is handed.
+
+    The rule is enforced by returning `None`, not by returning the value with a
+    flag beside it — see ADR 0015. A flag is a rule in every client; an absent
+    value is a rule in one place.
+    """
+
+    def test_a_subject_below_the_threshold_states_no_mean(self) -> None:
+        assert displayable_rating(Decimal("5.00"), 1, min_display_count=3) is None
+
+    def test_the_threshold_is_inclusive(self) -> None:
+        """ "fewer than 3" means 3 qualifies. Off by one here is a rule that
+        either hides a legitimate mean or publishes a forbidden one."""
+        assert displayable_rating(Decimal("4.50"), 3, min_display_count=3) == Decimal("4.50")
+
+    def test_an_unrated_subject_states_no_mean(self) -> None:
+        """Launch day, for every activity in the catalogue. `rating_avg` is
+        `0.00` rather than NULL (SRS §7.5), so without this rule the API would
+        publish "0.0" for everything the platform has ever listed."""
+        assert displayable_rating(Decimal("0.00"), 0, min_display_count=3) is None
+
+    def test_the_threshold_is_a_parameter_not_a_constant(self) -> None:
+        """Rule 5. A market with thinner supply may set it lower, and BR-127's
+        "3" is a default rather than a law."""
+        assert displayable_rating(Decimal("4.90"), 1, min_display_count=1) == Decimal("4.90")
+
+    def test_a_threshold_of_zero_states_every_mean(self) -> None:
+        assert displayable_rating(Decimal("0.00"), 0, min_display_count=0) == Decimal("0.00")
+
+    def test_a_negative_threshold_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="negative"):
+            displayable_rating(Decimal("4.00"), 10, min_display_count=-1)
+
+    def test_it_does_not_alter_the_ranking_inputs(self) -> None:
+        """The tension ADR 0015 records, asserted so it cannot be quietly
+        closed. §16.5 ranks on the raw mean; BR-127 suppresses the display.
+        One five-star review still outranks fifty averaging 4.8 — and shows
+        "New". If somebody decides to resolve that, this test is what tells
+        them they are changing a published ordering."""
+        loud = RankInputs(
+            id=1,
+            destination_id=1,
+            tags=frozenset(),
+            feature_rank=100,
+            rating_avg=Decimal("5.00"),
+            rating_count=1,
+            price=Decimal("100.00"),
+        )
+        established = RankInputs(
+            id=2,
+            destination_id=1,
+            tags=frozenset(),
+            feature_rank=100,
+            rating_avg=Decimal("4.80"),
+            rating_count=50,
+            price=Decimal("100.00"),
+        )
+        ranked = sorted([established, loud], key=lambda row: rank_key(row))
+        assert [row.id for row in ranked] == [1, 2]
+        assert displayable_rating(loud.rating_avg, loud.rating_count, min_display_count=3) is None

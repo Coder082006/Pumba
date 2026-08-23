@@ -63,7 +63,12 @@ from django.db.models.functions import Cast
 
 from apps.catalogue.domain.geo import Coordinates
 from apps.catalogue.domain.media import MediaItem, order_media
-from apps.catalogue.domain.ranking import OrderTerm, SortOption, order_terms
+from apps.catalogue.domain.ranking import (
+    OrderTerm,
+    SortOption,
+    displayable_rating,
+    order_terms,
+)
 from apps.catalogue.domain.search import (
     Hit,
     SearchKind,
@@ -93,6 +98,7 @@ from apps.catalogue.models import (
     MediaOwnerType,
     Tag,
 )
+from apps.common.config import get_setting
 from apps.common.pagination import Page, decode_cursor, encode_cursor
 
 __all__ = [
@@ -542,7 +548,22 @@ def to_attraction_dto(attraction: Attraction, *, media: Sequence[Media] = ()) ->
     )
 
 
-def to_activity_dto(activity: Activity, *, media: Sequence[Media] = ()) -> ActivityDTO:
+def to_activity_dto(
+    activity: Activity,
+    *,
+    media: Sequence[Media] = (),
+    min_display_count: int | None = None,
+) -> ActivityDTO:
+    """One activity as the wire sees it, with BR-127 already applied.
+
+    `min_display_count` is read here when it is not supplied, and supplied by
+    the list path so that a page of fifty rows performs one settings read
+    rather than fifty. The rule itself lives in `domain.ranking`; what happens
+    here is only that the DTO carries the suppressed value, so no serializer
+    and no client is ever handed a mean it may not display.
+    """
+    if min_display_count is None:
+        min_display_count = int(get_setting("review.min_display_count"))
     return ActivityDTO(
         public_id=activity.public_id,
         name=activity.name,
@@ -564,7 +585,9 @@ def to_activity_dto(activity: Activity, *, media: Sequence[Media] = ()) -> Activ
         booking_cutoff_hours=activity.booking_cutoff_hours,
         confirmation_mode=activity.confirmation_mode,
         tags=tuple(activity.tags),
-        rating_avg=activity.rating_avg,
+        rating_avg=displayable_rating(
+            activity.rating_avg, activity.rating_count, min_display_count=min_display_count
+        ),
         rating_count=activity.rating_count,
         feature_rank=activity.feature_rank,
         destination=to_destination_dto(activity.destination),
@@ -803,8 +826,17 @@ def list_activities(
         interest_tags=tags,
     )
     galleries = _by_owner(_media_for(MediaOwnerType.ACTIVITY, [row.id for row in rows]))
+    # Read once for the page, not once per row: BR-127's threshold is the same
+    # for every activity in it, and a settings read per row becomes an N+1 the
+    # day the database-backed provider replaces the in-memory defaults.
+    min_display_count = int(get_setting("review.min_display_count"))
     return Page(
-        tuple(to_activity_dto(row, media=galleries.get(row.id, [])) for row in rows),
+        tuple(
+            to_activity_dto(
+                row, media=galleries.get(row.id, []), min_display_count=min_display_count
+            )
+            for row in rows
+        ),
         next_cursor,
     )
 

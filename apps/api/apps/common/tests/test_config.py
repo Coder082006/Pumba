@@ -79,6 +79,13 @@ class TestRegister:
                         minimum is quoted from the SRS, and the ceiling on
                         results per table is the difference between a search
                         box and a way to read the whole catalogue.
+            review.     Appendix B already registers `review.window_days`, so
+                        the namespace is not new; `review.min_display_count`
+                        is. BR-127 says a subject with fewer than three
+                        published reviews shows "New" rather than a mean, and
+                        the three is a judgement about statistical confidence
+                        rather than a law — a market with thinner supply may
+                        want it lower. ADR 0015.
 
         Adding a namespace is a deliberate edit to this tuple, which is the
         point: it is where somebody notices that a new family of settings has
@@ -86,7 +93,9 @@ class TestRegister:
         """
         extension = set(SETTINGS_REGISTER) - self.APPENDIX_B
         unnamespaced = {
-            k for k in extension if not k.startswith(("auth.", "ratelimit.", "page.", "search."))
+            k
+            for k in extension
+            if not k.startswith(("auth.", "ratelimit.", "page.", "search.", "review."))
         }
         assert not unnamespaced, f"undocumented settings keys: {sorted(unnamespaced)}"
 
