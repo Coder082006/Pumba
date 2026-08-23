@@ -107,7 +107,8 @@ describe('Gallery', () => {
         srcFor={srcFor}
       />,
     );
-    expect(screen.getAllByRole('img')[0].getAttribute('alt')).toBe('Primary');
+    const [firstImage] = screen.getAllByRole('img');
+    expect(firstImage?.getAttribute('alt')).toBe('Primary');
   });
 
   it('lazy-loads everything after the first', () => {
@@ -119,8 +120,8 @@ describe('Gallery', () => {
       />,
     );
     const [first, second] = screen.getAllByRole('img');
-    expect(first.getAttribute('loading')).toBe('eager');
-    expect(second.getAttribute('loading')).toBe('lazy');
+    expect(first?.getAttribute('loading')).toBe('eager');
+    expect(second?.getAttribute('loading')).toBe('lazy');
   });
 
   it('marks an undescribed image decorative instead of reading out a file name', () => {
