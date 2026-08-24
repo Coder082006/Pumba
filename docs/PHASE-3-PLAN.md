@@ -845,6 +845,14 @@ Roughly 34 commits, each one logical change, each pushed.
   myself: I labelled key management "D8" in the Phase 2 report, but Appendix D
   already has a D8 (support operating hours). Your framing is the right one — it
   is not a new decision, it is a consequence of D3.
+
+  **D3 now has a legal constraint on it, not only a commercial one.** Under
+  Tanzania's Personal Data Protection Act, processing outside the country is a
+  cross-border transfer requiring a PDPC permit — and the hosting region is
+  itself such a transfer, not merely the analytics or backups sitting beside
+  it. So an out-of-country region makes the permit load-bearing for every
+  request the platform serves rather than for one integration. See item 16(d)
+  in §11: the permit and D3 want resolving together, permit first.
 - **D1** and **D2** unchanged. D2 still blocks Phase 4 completion, and the
   distance-from-airport chip in §7.2 above is labelled indicative until it lands.
 
@@ -936,43 +944,95 @@ Roughly 34 commits, each one logical change, each pushed.
    rows that actually ship rather than assuming it.
 
 15. **Six links in the shipped web client pointed at routes that did not
-    exist, and one of them broke a consent flow.** `/destinations`,
-    `/attractions` and `/activities` were written into the header with the
-    shell in commit 30; commits 31 and 32 built the *detail* routes and no
-    index route was ever added, so three of the four navigation links were
-    404s for three commits. Broadening the check past the shell found
-    `/help`, `/terms` and `/privacy` in the footer, `/verify-email` on the
-    sign-in screen, and `/terms` again on registration.
+    exist. One of them had been broken since Phase 2, which was accepted as
+    complete.** This belongs beside the distance chip as a finding about
+    process rather than about links.
 
-    None of it was visible to any existing control. The header renders, its
-    tests pass, every page it appears on builds, and `next build` lists the
-    routes that exist without checking what links to them. This is the
-    "green without asserting anything" class again, in a new place: the whole
-    of navigation had no assertion behind it.
+    The header case is ordinary rot: `/destinations`, `/attractions` and
+    `/activities` were written into the nav with the shell in commit 30;
+    commits 31 and 32 then built the *detail* routes and no index route was
+    ever added, so three of the four navigation links were 404s for three
+    commits.
 
-    `navigation.test.ts` now derives the route table from the App Router
-    directory and fails on any literal `href="/…"` under `src` that resolves
-    to nothing. Derived rather than hand-kept, because a hand-kept list would
-    need updating in the same commit that adds a page — the discipline that
-    had already failed.
+    **`/verify-email` is the serious one.** The sign-in screen has been
+    directing unverified users to that route since Phase 2. It has never
+    existed. `/auth/verify-email` is live on the API and `lib/auth.ts` has
+    always called it, but no page ever consumed the token — so the link in
+    every verification email the platform sent had nowhere to be spent, and an
+    account that failed verification could not be recovered from the web
+    client at all. That is the whole §24.4 flow, dead end to end, through a
+    phase sign-off.
 
-16. **Registration requires consent to a document that does not exist.** The
-    checkbox is required to submit and its "terms of use" link was a 404, so
-    a user was agreeing to something they could not open. The dead link is
-    removed rather than repointed at a stub, because a placeholder under that
-    heading is a liability rather than a placeholder. **This is a release
-    blocker, not a bug**: registration must not reach production without the
-    document, and the same holds for the privacy notice removed from the
-    footer. Neither is code, so neither can be closed here.
+    **What it says about the acceptance criteria.** Phase 2 was accepted with
+    this broken, and every control we had reported green: the header renders,
+    its component tests pass, `pnpm verify` is clean, `next build` succeeds.
+    The criteria were satisfied because they asked whether each piece works,
+    never whether the pieces reach each other. A route is a contract between
+    two files that no test owned — the same shape as the §6.5 contracts that
+    passed vacuously for two and a half phases (ADR 0014), and the same shape
+    as the fourteen private-module contracts. **A green suite is evidence
+    about what is asserted, and a phase sign-off inherits exactly the coverage
+    of its assertions — no more.** "Phase complete" should mean the criteria
+    were sufficient, and here it did not.
 
-17. **The web client had no route to email verification at all.** `/auth/verify-email`
-    exists on the API and `lib/auth.ts` has always called it, but no page ever
-    consumed the token, so the link in the verification email had nowhere to be
-    spent and an unverified account could not be recovered from the web. Built
-    in the same commit. Related and still open: the sign-in screen offered to
-    *resend* the verification email, and the API exposes no resend endpoint —
-    the wording now says what actually works, but §24.4's resend affordance
-    needs an endpoint before it can exist.
+    Concretely: acceptance for a phase that ships user-facing routes should
+    require that every reachable path is reachable, and the two flows the SRS
+    describes end to end — §24.3 registration through §24.4 verification to
+    §24.6 sign-in — should be walked rather than unit-tested in pieces. The
+    §41.12 Arusha acceptance test is the model: it fails until the whole chain
+    works.
+
+    `navigation.test.ts` derives the route table from the App Router directory
+    the way Next derives it and fails on any literal `href="/…"` under `src`
+    that resolves to nothing. Derived rather than hand-kept, because a
+    hand-kept list needs maintaining by the same discipline that just failed.
+    It found six, then two more once broadened past the shell.
+
+16. **Registration requires consent to documents that do not exist, and the
+    legal gap is wider than the two documents.** The checkbox is required to
+    submit and its "terms of use" link was a 404, so a user was agreeing to
+    something they could not open. Both the dead link and the plain-text
+    replacement are wrong in the same way — the second reads as though a
+    document exists somewhere — so the control now carries a typed
+    `{ name, pending }` state that says on the page that the document is not
+    published, and `navigation.test.ts` fails the build if a consent control
+    ever names a route that does not exist. Registration itself is unaffected:
+    the submit is still gated on consent and the text still names what is
+    being agreed to.
+
+    **Four launch blockers, all owned by the Product Owner and none closable
+    in code:**
+
+    a. **Terms of use.** Not published. Registration must not reach production
+       without it.
+    b. **Privacy notice.** Not published. The link was removed from the footer
+       for the same reason a stub would be worse than nothing: a privacy notice
+       is a legal instrument with a named controller and a retention schedule.
+    c. **PDPC registration under Tanzania's Personal Data Protection Act.** The
+       Platform is a data controller processing personal data of tourists,
+       providers and drivers. Registration with the Personal Data Protection
+       Commission is a precondition of lawful processing, not a formality that
+       follows launch.
+    d. **A PDPC permit for cross-border transfer.** Any processing outside
+       Tanzania — which includes the hosting region itself, not merely
+       analytics or backups — requires one. **This constrains D3**, which is
+       still open: the cloud and region decision cannot be made on cost and
+       latency alone, because an out-of-country region turns every request into
+       a cross-border transfer and makes the permit load-bearing for the whole
+       platform rather than for one integration. Worth resolving D3 and (d)
+       together, in that order of dependency.
+
+    (a) and (b) block the tourist web client. (c) and (d) block processing at
+    all, so they are strictly earlier: a platform that has not registered
+    cannot lawfully run the registration form that (a) blocks.
+
+17. **§24.4's resend affordance has no endpoint behind it.** Separate from
+    the missing route in item 15 and still open: the sign-in screen offered to
+    *resend* the verification email, and `apps/identity/urls.py` exposes
+    `auth/verify-email` and nothing else. The wording now says what actually
+    works — check the inbox — but a resend control cannot exist until an
+    endpoint does, and §24.4 asks for one. The verification page states the
+    same limit rather than offering a button that would do nothing.
 
 ### Corrections to this plan
 
