@@ -1,6 +1,6 @@
 import { Map, type MapPin } from '@pumba/ui';
 
-import { mapConfig } from '@/lib/map-config';
+import { mapConfig } from '@/lib/config';
 
 /**
  * A map, or a visible explanation of why there isn't one.

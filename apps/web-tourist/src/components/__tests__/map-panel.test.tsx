@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mapConfig = vi.fn();
 
-vi.mock('@/lib/map-config', () => ({ mapConfig: () => mapConfig() }));
+vi.mock('@/lib/config', () => ({ mapConfig: () => mapConfig() }));
 const PINS = [{ id: 'a', latitude: -6.1631, longitude: 39.1892, label: 'Stone Town' }];
 
 describe('MapPanel when /config is unreachable', () => {

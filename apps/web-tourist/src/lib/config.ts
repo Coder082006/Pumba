@@ -3,6 +3,17 @@ import 'server-only';
 import { apiFetch } from '@/lib/api';
 
 /**
+ * `GET /config` — SRS §23.13, §24.1, §35.
+ *
+ * One module for the route, rather than one per consumer. The payload is a
+ * closed allow-list on the server (`apps/common/public_config.py`), and two
+ * modules each declaring their own view of it would drift from that list in
+ * different directions — which is exactly the failure the API-side
+ * `test_the_documented_response_matches_what_is_served` exists to catch, so
+ * reintroducing it here would be perverse.
+ *
+ * ---
+ *
  * Where the base map comes from — ADR 0016, Appendix D9, SRS §24.1.
  *
  * Read from `GET /config`, which SRS §23.13 and §24.1 already specify as the
@@ -31,11 +42,17 @@ export interface MapConfig {
   attribution: string;
 }
 
+/** BR-101's bound on a stay anchor — §24.11. */
+export interface StayLimits {
+  maxNights: number;
+}
+
 interface ConfigResponse {
   min_supported_version: string;
   enabled_currencies: string[];
   map_tile_url: string;
   map_tile_attribution: string;
+  stay_max_nights: number;
   features: Record<string, boolean>;
 }
 
@@ -46,13 +63,17 @@ interface ConfigResponse {
  */
 const REVALIDATE_SECONDS = 300;
 
-export async function mapConfig(): Promise<MapConfig> {
-  const config = await apiFetch<ConfigResponse>('/config', {
+function platformConfig(): Promise<ConfigResponse> {
+  return apiFetch<ConfigResponse>('/config', {
     // `next` is Next.js's extension to RequestInit and is not in the DOM lib's
     // type, so it is attached here rather than widening `RequestOptions` for
     // one caller.
     next: { revalidate: REVALIDATE_SECONDS },
   } as Parameters<typeof apiFetch>[1]);
+}
+
+export async function mapConfig(): Promise<MapConfig> {
+  const config = await platformConfig();
 
   return {
     tileUrl: config.map_tile_url,
@@ -61,4 +82,23 @@ export async function mapConfig(): Promise<MapConfig> {
     // would be the bug ADR 0016 pairs them to prevent.
     attribution: config.map_tile_attribution,
   };
+}
+
+/**
+ * BR-101's bound, from the server rather than from a literal here.
+ *
+ * NFR-M07 forbids a business constant in code, and 30 is one — it is the
+ * Appendix B row `stay.max_nights`, and an administrator raising it must not
+ * need a front-end release for the form to agree with the API. The same
+ * number reaches `catalogue.domain.pricing.stay_nights` on the server, so the
+ * form and the eventual 422 are bounded by one value and cannot disagree.
+ *
+ * Deliberately no fallback, for the same reason `mapConfig` has none: a
+ * default here would be the hardcoded constant wearing a disguise, and it
+ * would be *silently* wrong rather than visibly absent on the day somebody
+ * changed the row.
+ */
+export async function stayLimits(): Promise<StayLimits> {
+  const config = await platformConfig();
+  return { maxNights: config.stay_max_nights };
 }
