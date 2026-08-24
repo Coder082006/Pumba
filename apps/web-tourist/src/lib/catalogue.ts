@@ -11,6 +11,8 @@ import type {
 
 import { apiFetch, apiFetchPage, type Page } from '@/lib/api';
 
+export { listAll } from '@/lib/paginate';
+
 /**
  * Reads of the §9.3.2 public catalogue.
  *
@@ -35,7 +37,9 @@ const REVALIDATE_SECONDS = 30;
 
 const cached = { next: { revalidate: REVALIDATE_SECONDS } } as Parameters<typeof apiFetch>[1];
 
-export function listDestinations(params: { limit?: number; cursor?: string } = {}) {
+export function listDestinations(
+  params: { limit?: number; cursor?: string | undefined } = {},
+) {
   return apiFetchPage<Destination>(`/destinations${query(params)}`, cached);
 }
 
@@ -43,17 +47,27 @@ export function getDestination(reference: string) {
   return apiFetch<Destination>(`/destinations/${encodeURIComponent(reference)}`, cached);
 }
 
-export function listAttractions(params: { destination?: string; limit?: number } = {}) {
+export function listAttractions(
+  params: { destination?: string; limit?: number; cursor?: string | undefined } = {},
+) {
   return apiFetchPage<Attraction>(`/attractions${query(params)}`, cached);
 }
 
 export function listActivities(
-  params: { destination?: string; tags?: string[]; sort?: string; limit?: number } = {},
+  params: {
+    destination?: string;
+    tags?: string[];
+    sort?: string;
+    limit?: number;
+    cursor?: string | undefined;
+  } = {},
 ) {
   return apiFetchPage<Activity>(`/activities${query(params)}`, cached);
 }
 
-export function listAccommodation(params: { destination?: string; limit?: number } = {}) {
+export function listAccommodation(
+  params: { destination?: string; limit?: number; cursor?: string | undefined } = {},
+) {
   return apiFetchPage<Accommodation>(`/accommodation${query(params)}`, cached);
 }
 

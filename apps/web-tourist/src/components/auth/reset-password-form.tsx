@@ -9,9 +9,12 @@
  * export makes the route fail type checking with "is not a valid Page export
  * field", which is what CI caught.
  *
- * Not routed yet: the deep-link format is settled with the notification
- * templates in the notify phase, and guessing at it here would mean building a
- * route that has to change.
+ * Routed at `/reset-password?token=…` since commit 34. It previously was not,
+ * on the reasoning that "the deep-link format is settled with the notification
+ * templates in the notify phase" — which left `/forgot-password` sending an
+ * email whose link went nowhere, the same dead flow as the missing
+ * `/verify-email` route and deferred for a similar-sounding reason. The format
+ * was ours to choose and no template existed to disagree with it.
  */
 
 import Link from 'next/link';

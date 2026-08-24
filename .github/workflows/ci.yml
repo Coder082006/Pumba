@@ -255,6 +255,128 @@ jobs:
         run: uv run --with pip-audit pip-audit --strict || echo "::warning::pip-audit reported findings"
 
   # ---------------------------------------------------------------------------
+  # SRS §29 NFR-P01 and the §24.8 SEO surface, as hard assertions.
+  #
+  # The thresholds in `lighthouserc.json` are acceptance criteria for this
+  # phase. Measuring them once by hand and writing the numbers into a document
+  # is how they quietly stop being true — so they are asserted against a real
+  # page, served by a real Next build, reading a real API, over the shipped
+  # seed data. The job is heavy (~5 minutes) and that is the cost of the
+  # numbers meaning anything.
+  lighthouse:
+    name: Lighthouse (NFR-P01)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: pumba
+          POSTGRES_USER: pumba
+          POSTGRES_PASSWORD: pumba
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pumba"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.ci
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      REDIS_URL: redis://localhost:6379/0
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - name: Geospatial libraries (GDAL, GEOS, PROJ)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             gdal-bin libgdal-dev libgeos-dev libproj-dev
+      - run: uv sync --frozen
+        working-directory: apps/api
+
+      - name: Migrate and seed
+        working-directory: apps/api
+        run: |
+          uv run python manage.py migrate --noinput
+          uv run python manage.py seed
+
+      # Backgrounded, then waited on by polling /health rather than by
+      # sleeping: a fixed sleep is either too short on a slow runner — where it
+      # fails as "Lighthouse could not load the page", naming the wrong cause —
+      # or wasted time on a fast one.
+      - name: Start the API
+        working-directory: apps/api
+        run: |
+          uv run python -m uvicorn config.asgi:application --host 127.0.0.1 --port 8000 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/api/v1/health > /dev/null; then
+              echo "API up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::The API did not become healthy within 60s."
+          exit 1
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # A production build, because that is what the thresholds describe. A dev
+      # server ships unminified bundles and no static optimisation, and would
+      # fail Performance for reasons that have nothing to do with the code.
+      - name: Build and start the tourist web client
+        run: |
+          pnpm --filter @pumba/web-tourist build
+          pnpm --filter @pumba/web-tourist start &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/explore > /dev/null; then
+              echo "Web up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::The web client did not start within 60s."
+          exit 1
+
+      # Asserts the seed actually loaded before Lighthouse runs. Without this a
+      # broken seed produces an empty Explore page, which scores *well* — fast,
+      # accessible, and measuring nothing. A green gate over an empty page is
+      # the failure mode this whole job exists to avoid.
+      - name: Refuse to measure an empty page
+        run: |
+          if ! curl -fsS http://127.0.0.1:3000/explore | grep -q "Stone Town"; then
+            echo "::error::Explore rendered without seeded content. Lighthouse would measure an empty page."
+            exit 1
+          fi
+
+      - name: Lighthouse CI
+        run: pnpm dlx @lhci/cli@0.14.x autorun
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-report
+          path: .lighthouseci
+
+  # ---------------------------------------------------------------------------
   ci-passed:
     name: CI passed
     runs-on: ubuntu-latest
@@ -264,6 +386,7 @@ jobs:
       - backend-test
       - openapi-contract
       - frontend
+      - lighthouse
       - security
     if: always()
     steps:
