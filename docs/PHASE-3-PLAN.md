@@ -935,6 +935,45 @@ Roughly 34 commits, each one logical change, each pushed.
    with a known hole, and the shipped-data test asserts the net holds for the
    rows that actually ship rather than assuming it.
 
+15. **Six links in the shipped web client pointed at routes that did not
+    exist, and one of them broke a consent flow.** `/destinations`,
+    `/attractions` and `/activities` were written into the header with the
+    shell in commit 30; commits 31 and 32 built the *detail* routes and no
+    index route was ever added, so three of the four navigation links were
+    404s for three commits. Broadening the check past the shell found
+    `/help`, `/terms` and `/privacy` in the footer, `/verify-email` on the
+    sign-in screen, and `/terms` again on registration.
+
+    None of it was visible to any existing control. The header renders, its
+    tests pass, every page it appears on builds, and `next build` lists the
+    routes that exist without checking what links to them. This is the
+    "green without asserting anything" class again, in a new place: the whole
+    of navigation had no assertion behind it.
+
+    `navigation.test.ts` now derives the route table from the App Router
+    directory and fails on any literal `href="/…"` under `src` that resolves
+    to nothing. Derived rather than hand-kept, because a hand-kept list would
+    need updating in the same commit that adds a page — the discipline that
+    had already failed.
+
+16. **Registration requires consent to a document that does not exist.** The
+    checkbox is required to submit and its "terms of use" link was a 404, so
+    a user was agreeing to something they could not open. The dead link is
+    removed rather than repointed at a stub, because a placeholder under that
+    heading is a liability rather than a placeholder. **This is a release
+    blocker, not a bug**: registration must not reach production without the
+    document, and the same holds for the privacy notice removed from the
+    footer. Neither is code, so neither can be closed here.
+
+17. **The web client had no route to email verification at all.** `/auth/verify-email`
+    exists on the API and `lib/auth.ts` has always called it, but no page ever
+    consumed the token, so the link in the verification email had nowhere to be
+    spent and an unverified account could not be recovered from the web. Built
+    in the same commit. Related and still open: the sign-in screen offered to
+    *resend* the verification email, and the API exposes no resend endpoint —
+    the wording now says what actually works, but §24.4's resend affordance
+    needs an endpoint before it can exist.
+
 ### Corrections to this plan
 
 10. **Q4's recommendation was wrong against the SRS.** It proposed
@@ -981,3 +1020,49 @@ Roughly 34 commits, each one logical change, each pushed.
     `containedInPlace` chain. The chip returns when D2 lands and distances
     become `MEASURED`, and not before. **A plan is not evidence that the data
     supports what it specifies**, which is the general form worth keeping.
+
+
+18. **§24.11 could not be built as specified, and the reason was larger than
+    the geocoder.** The screen ends at `POST /trips/{id}/items` with
+    `item_type` STAY. `apps/api/apps/trip/` is still the Phase 1 skeleton —
+    no `trip`, no `itinerary`, no `itinerary_item` — so **nothing on the
+    screen can be saved by any path**, curated included. `apps/api/apps/location/`
+    is a skeleton too: no `RoutingPort`, no geocoder, not even a fake.
+
+    So commit 33 ships the selection surface with a disabled submit and its
+    reason stated, matching the "Add to trip" treatment already on the
+    Activity page for the same missing module. Free entry captures the name
+    and **no coordinate**. The tempting alternative — place a pin and let the
+    tourist confirm it — is the one thing §13.2 forbids, and the confirmation
+    step makes it worse rather than better: it launders a coordinate the
+    Platform invented into one the tourist appears to have vouched for, after
+    which a transfer quotes from it to the metre. §24.11's
+    "geocode-failed → drop the pin yourself" is not built either; a
+    hand-dropped pin is legitimate human confirmation, but building the
+    fallback for a path whose primary half does not exist inverts the screen.
+
+    The route is `/stays?destination=…` rather than the plan's
+    `/trip/[id]/stay`, for the same reason: an `[id]` segment with nothing
+    behind it is the same invention as the pin. It moves when the trip module
+    lands.
+
+19. **`GET /config` grew its first threshold, under a written rule.** §24.11
+    asks the screen to refuse an over-long stay before submitting it, so the
+    client needs `stay.max_nights` — and the alternatives were to hardcode 30
+    in the front end, which is the NFR-M07 violation `public_config` exists to
+    prevent and which no allow-list would have caught, or to skip the
+    validation the SRS specifies.
+
+    Admitting a threshold on judgement makes the next one easier, so the test
+    for admission is now in the module rather than left as a precedent: a
+    screen the SRS specifies cannot do its job without the value, **and**
+    knowing it in advance confers no advantage. A §11.6 dispatch weight fails
+    the second; a §30.14 fraud threshold fails it harder. `test_the_public_set_is_exactly_this`
+    pins the five names literally so a sixth is a deliberate edit to a test
+    whose docstring is that rule.
+
+    Found while doing it: the response schema is hand-declared on the view and
+    could drift from the allow-list in either direction, both silently — a
+    field served but undocumented never reaches `@pumba/contracts`, and one
+    documented but not served becomes a TypeScript property that is `undefined`
+    at runtime, which typechecks. Now asserted against the generated schema.
