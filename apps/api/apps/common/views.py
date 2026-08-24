@@ -136,7 +136,8 @@ class ConfigView(APIView):
             "Resolves the values a client needs before it can show anything: "
             "the minimum supported client version (SRS §23.13), the currencies "
             "a tourist may choose, the base-map tile URL and its required "
-            "attribution, and the feature-flag set (§35). "
+            "attribution, the BR-101 bound on a stay's length, and the "
+            "feature-flag set (§35). "
             "The response carries an explicit allow-list of settings and never "
             "the wider `system_setting` register."
         ),
@@ -149,6 +150,7 @@ class ConfigView(APIView):
                     "enabled_currencies": serializers.ListField(child=serializers.CharField()),
                     "map_tile_url": serializers.CharField(),
                     "map_tile_attribution": serializers.CharField(),
+                    "stay_max_nights": serializers.IntegerField(),
                     "features": serializers.DictField(child=serializers.BooleanField()),
                 },
             )

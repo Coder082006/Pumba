@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from drf_spectacular.generators import SchemaGenerator
 from rest_framework.test import APIClient
 
 from apps.common import config as config_module
@@ -64,6 +65,19 @@ class TestTheEndpointServesWhatSection241Asks:
         assert body["map_tile_url"]
         assert body["map_tile_attribution"]
 
+    def test_the_stay_bound_arrives_as_a_number(self, public: APIClient) -> None:
+        """BR-101 / §24.11. The client compares this against a night count.
+
+        Served as the string "30" it would be compared lexically in
+        JavaScript's `Math.max`/sort paths and in any `Number`-free branch: a
+        5-night stay would fail the bound and a 100-night one would pass. The
+        settings register holds an `int` today, but a row set by an
+        administrator arrives as whatever the column holds.
+        """
+        value = _body(public)["stay_max_nights"]
+        assert isinstance(value, int) and not isinstance(value, bool)
+        assert value > 0
+
     def test_a_flag_is_reported_as_a_boolean(self, public: APIClient) -> None:
         """A client branches on these. A flag arriving as the string "False"
         is truthy in JavaScript, which turns a dark feature on."""
@@ -76,6 +90,44 @@ class TestNothingOutsideTheAllowListEscapes:
 
     def test_the_payload_holds_exactly_the_allow_listed_names(self, public: APIClient) -> None:
         assert set(_body(public)) == set(PUBLIC_SETTINGS) | {"features"}
+
+    def test_the_public_set_is_exactly_this(self) -> None:
+        """The list, written out, so that growing it is a deliberate act.
+
+        The test above is a consistency check: it compares the payload to the
+        allow-list, so both move together and neither notices. This one is the
+        pin. Adding a sixth name means editing this line, which puts the
+        two-part rule from `public_config.py`'s docstring in front of whoever
+        is doing it:
+
+        1. A screen the SRS specifies cannot do its job without the value.
+        2. Knowing it in advance confers no advantage.
+
+        A dispatch weight (§11.6) fails the second — a provider who knows it
+        can game allocation. A fraud threshold (§30.14) fails it harder:
+        knowing it *is* the attack. Neither can ever pass, which is why the
+        rule is worth writing down rather than judging case by case.
+        """
+        assert set(PUBLIC_SETTINGS) == {
+            "min_supported_version",
+            "enabled_currencies",
+            "map_tile_url",
+            "map_tile_attribution",
+            "stay_max_nights",
+        }
+
+    def test_the_documented_response_matches_what_is_served(self) -> None:
+        """The schema is hand-declared on the view, so it can drift from the
+        allow-list in either direction — and both directions are silent.
+
+        A field served but undocumented never reaches `@pumba/contracts`, so
+        the web client cannot see it without an `as any`. A field documented
+        but not served generates a TypeScript property that is `undefined` at
+        runtime, which is worse: it typechecks.
+        """
+        schema = SchemaGenerator().get_schema(request=None, public=True)
+        documented = set(schema["components"]["schemas"]["ConfigResponse"]["properties"])
+        assert documented == set(public_config())
 
     def test_a_newly_registered_setting_is_private_by_default(
         self, public: APIClient, monkeypatch: pytest.MonkeyPatch

@@ -935,7 +935,7 @@ export interface paths {
         };
         /**
          * Client configuration and feature flags
-         * @description Resolves the values a client needs before it can show anything: the minimum supported client version (SRS §23.13), the currencies a tourist may choose, the base-map tile URL and its required attribution, and the feature-flag set (§35). The response carries an explicit allow-list of settings and never the wider `system_setting` register.
+         * @description Resolves the values a client needs before it can show anything: the minimum supported client version (SRS §23.13), the currencies a tourist may choose, the base-map tile URL and its required attribution, the BR-101 bound on a stay's length, and the feature-flag set (§35). The response carries an explicit allow-list of settings and never the wider `system_setting` register.
          */
         get: operations["config"];
         put?: never;
@@ -1326,6 +1326,7 @@ export interface components {
             enabled_currencies: string[];
             map_tile_url: string;
             map_tile_attribution: string;
+            stay_max_nights: number;
             features: {
                 [key: string]: boolean;
             };
