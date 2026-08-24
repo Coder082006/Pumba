@@ -1126,3 +1126,45 @@ Roughly 34 commits, each one logical change, each pushed.
     field served but undocumented never reaches `@pumba/contracts`, and one
     documented but not served becomes a TypeScript property that is `undefined`
     at runtime, which typechecks. Now asserted against the generated schema.
+
+20. **The password-reset flow was dead for the same reason as verification.**
+    `ResetPasswordForm` has been in the tree since Phase 2 and nothing ever
+    mounted it, so `/forgot-password` sent an email whose link went nowhere.
+    Found by the same sweep as item 15, and worth recording separately because
+    of *why* it survived: its docstring deferred routing until "the deep-link
+    format is settled with the notification templates in the notify phase".
+
+    That reasoning is the thing to notice. It is not wrong on its face — the
+    format does eventually appear in a template — but the format was ours to
+    choose, no template existed to disagree with, and the deferral left a live
+    flow broken in the meantime. **A deferral is only honest when the thing
+    deferred is not already reachable by a user.** Both this and `/verify-email`
+    were reachable: one from an email the platform sends, one from a link on
+    the sign-in screen.
+
+21. **The sitemap has three ways to be wrong that all look right**, and each
+    needed its own assertion rather than an inspection. Listing only the first
+    page of each kind (the `?limit` ceiling makes "all of them" unavailable);
+    advertising a URL that 404s; and serving an empty document during an
+    outage, which is byte-identical to a genuinely empty catalogue and invites
+    a crawler to drop the pages it already has.
+
+    The version that would have shipped had two of the three. `revalidate = 3600`
+    looked obviously right and was wrong in a way only the build output showed:
+    Next prerenders the route at build, when no API is reachable, so the empty
+    document would be cached and served for the first hour after every
+    deployment — §41.12 failing invisibly, on exactly the surface §41.12 is
+    about.
+
+22. **The Lighthouse gate needed a guard against measuring nothing.** A broken
+    seed produces an empty Explore page, and an empty page scores *well* —
+    fast, accessible, no layout shift. The job would have gone green while
+    asserting nothing at all, which is the same class as the §6.5 contracts in
+    ADR 0014 and the navigation in item 15. It now greps the rendered page for
+    seeded content before Lighthouse runs.
+
+    Still unproven at the time of writing: the thresholds themselves. The job
+    is CI-only and has not yet reported. The seed carries no media, so the
+    pages under test have no images — which means the gate does not currently
+    exercise the LCP element that a real destination page will have. Worth
+    revisiting when media lands.
