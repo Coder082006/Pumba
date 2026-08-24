@@ -152,9 +152,11 @@ export default function RegisterPage() {
             onChange={(event) => setAcceptedTerms(event.target.checked)}
             aria-describedby="terms-hint"
           />
-          <span id="terms-hint">
-            I accept the <Link href="/terms" className="underline">terms of use</Link>.
-          </span>
+          {/* The link is gone, not repointed: `/terms` was a 404, and a stub
+              page carrying that title would be worse than no link — a term of
+              use is a document somebody is agreeing to. Recorded as a gap:
+              registration must not reach production without it. */}
+          <span id="terms-hint">I accept the terms of use.</span>
         </label>
 
         <Button type="submit" disabled={submitting || !acceptedTerms} className="w-full">

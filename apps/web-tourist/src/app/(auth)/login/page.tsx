@@ -75,10 +75,13 @@ export default function LoginPage() {
             <p className="mt-1">Try again in about {Math.ceil(unlockSeconds / 60)} minutes.</p>
           )}
           {offerResend && (
+            /* Not a "resend" link. `apps/identity/urls.py` exposes
+               `auth/verify-email` and no resend endpoint, so a control
+               offering to send another email would do nothing — which is the
+               defect this replaces: the old link pointed at a route that did
+               not exist either. It says what actually works instead. */
             <p className="mt-1">
-              <Link href="/verify-email" className="underline">
-                Resend the verification link
-              </Link>
+              Check your inbox for the verification email — its link finishes the job.
             </p>
           )}
         </div>
