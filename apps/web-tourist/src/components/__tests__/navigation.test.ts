@@ -111,3 +111,91 @@ describe('the application', () => {
     expect(broken).toEqual([]);
   });
 });
+
+/**
+ * Every `<ConsentCheckbox document={{ … }}>` call site, with its href if it
+ * declares one.
+ *
+ * Matched from source rather than by rendering, because the failure being
+ * prevented is a *build-time* one: a call site that names a route which does
+ * not exist must not survive to a running page, where the only thing that
+ * finds it is a user clicking during registration.
+ */
+function consentDocuments(dir: string): { file: string; href: string | null }[] {
+  const found: { file: string; href: string | null }[] = [];
+
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__') continue;
+      found.push(...consentDocuments(path));
+      continue;
+    }
+    if (!entry.name.endsWith('.tsx')) continue;
+
+    const source = readFileSync(path, 'utf8');
+    for (const match of source.matchAll(/<ConsentCheckbox[\s\S]*?\/>/g)) {
+      const usage = match[0];
+      // The component's own definition contains the identifier but no call.
+      if (!usage.includes('document=')) continue;
+      const href = /href:\s*'([^']+)'/.exec(usage);
+      found.push({ file: entry.name, href: href?.[1] ?? null });
+    }
+  }
+  return found;
+}
+
+/** Required checkboxes written by hand rather than through the component. */
+function handRolledConsent(dir: string): string[] {
+  const found: string[] = [];
+
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__') continue;
+      found.push(...handRolledConsent(path));
+      continue;
+    }
+    if (!entry.name.endsWith('.tsx')) continue;
+    if (entry.name === 'consent-checkbox.tsx') continue;
+
+    const source = readFileSync(path, 'utf8');
+    // A checkbox whose surrounding label carries a link is the shape that
+    // failed: the control and its document, coupled by nothing.
+    for (const match of source.matchAll(/<label[\s\S]*?<\/label>/g)) {
+      const block = match[0];
+      if (block.includes('type="checkbox"') && block.includes('<Link')) {
+        found.push(entry.name);
+      }
+    }
+  }
+  return found;
+}
+
+describe('consent controls', () => {
+  it('never name a route that does not exist', () => {
+    // The specific failure: registration's required "I accept the terms of
+    // use" checkbox linked to `/terms`, which was a 404. The form would not
+    // submit until it was ticked, so a user had to agree to a document the
+    // application could not show them.
+    const { exact, dynamic } = routes(APP_DIR);
+    const usages = consentDocuments(SRC_DIR);
+
+    expect(usages.length).toBeGreaterThan(0);
+
+    const broken = usages.filter(({ href }) => {
+      if (href === null) return false; // a `pending` document names no route
+      const path = href.split('?')[0]?.replace(/\/$/, '') || '/';
+      return !exact.has(path) && !dynamic.some((prefix) => path.startsWith(`${prefix}/`));
+    });
+
+    expect(broken).toEqual([]);
+  });
+
+  it('go through the component, so the rule above cannot be sidestepped', () => {
+    // Without this, the check above guards one component while a second
+    // hand-written checkbox reintroduces the same defect beside it — which is
+    // exactly how the first one got there.
+    expect(handRolledConsent(SRC_DIR)).toEqual([]);
+  });
+});

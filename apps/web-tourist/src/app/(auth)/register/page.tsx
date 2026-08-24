@@ -19,6 +19,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@pumba/ui';
+import { ConsentCheckbox } from '@/components/auth/consent-checkbox';
 import { fieldErrorsFrom, register } from '@/lib/auth';
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -145,19 +146,19 @@ export default function RegisterPage() {
           required
         />
 
-        <label className="flex items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={acceptedTerms}
-            onChange={(event) => setAcceptedTerms(event.target.checked)}
-            aria-describedby="terms-hint"
-          />
-          {/* The link is gone, not repointed: `/terms` was a 404, and a stub
-              page carrying that title would be worse than no link — a term of
-              use is a document somebody is agreeing to. Recorded as a gap:
-              registration must not reach production without it. */}
-          <span id="terms-hint">I accept the terms of use.</span>
-        </label>
+        {/* `pending`, not a link and not silence. `/terms` was a 404, a stub
+            under that title would be worse, and "I accept the terms of use."
+            with nothing behind it reads as though a document exists. The
+            variant is a typed, deliberate state that says otherwise on the
+            page; publishing the document turns it into `href` and the notice
+            disappears. Release blocker, recorded as item 16 in the phase
+            report. */}
+        <ConsentCheckbox
+          id="terms"
+          document={{ name: 'terms of use', pending: true }}
+          checked={acceptedTerms}
+          onCheckedChange={setAcceptedTerms}
+        />
 
         <Button type="submit" disabled={submitting || !acceptedTerms} className="w-full">
           {submitting ? 'Creating your account…' : 'Create account'}
