@@ -188,12 +188,21 @@ importers:
       '@pumba/config':
         specifier: workspace:*
         version: link:../config
+      '@testing-library/react':
+        specifier: 16.1.0
+        version: 16.1.0(@testing-library/dom@10.4.1)(@types/react-dom@19.0.2(@types/react@19.0.2))(@types/react@19.0.2)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
       '@types/react':
         specifier: 19.0.2
         version: 19.0.2
+      '@vitejs/plugin-react':
+        specifier: 4.3.4
+        version: 4.3.4(vite@5.4.11(@types/node@22.10.2))
       eslint:
         specifier: 9.17.0
         version: 9.17.0(jiti@1.21.7)
+      jsdom:
+        specifier: 25.0.1
+        version: 25.0.1
       react:
         specifier: 19.0.0
         version: 19.0.0
@@ -203,6 +212,9 @@ importers:
       typescript:
         specifier: 5.7.2
         version: 5.7.2
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.2)(jsdom@25.0.1)
 
 packages:
 
