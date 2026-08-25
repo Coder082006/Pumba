@@ -210,6 +210,17 @@ SIMPLE_JWT = {
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "apps.common.exception_handler.platform_exception_handler",
+    # SRS §9.2's envelope, applied structurally rather than by each view
+    # remembering to call `success_envelope`. It was written to be wired here
+    # — "a view returns its resource; the renderer wraps it" — and never was,
+    # so `/health` shipped unenveloped and every client that unwraps `.data`
+    # got `undefined` from it.
+    #
+    # Views that already build the envelope themselves are unaffected: the
+    # renderer passes through any body that already carries `data` or `error`.
+    "DEFAULT_RENDERER_CLASSES": [
+        "apps.common.envelope.EnvelopeJSONRenderer",
+    ],
     "DEFAULT_PAGINATION_CLASS": "apps.common.pagination.CursorPagination",
     "PAGE_SIZE": 20,
     # Wraps SimpleJWT and attaches `request.principal` — SRS §30.3.

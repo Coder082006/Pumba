@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from rest_framework import exceptions as drf_exc
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIClient, APIRequestFactory
 
 from apps.common.context import set_request_id
 from apps.common.envelope import error_envelope, success_envelope
@@ -142,3 +144,54 @@ class TestExceptionHandler:
         body = str(response.data)
         assert "password" not in body, "internal detail leaked to the client"
         assert response.data["error"]["code"] == "INTERNAL_ERROR"
+
+
+@pytest.mark.django_db
+class TestTheEnvelopeIsAppliedStructurally:
+    """`EnvelopeJSONRenderer` existed, was unit-tested, and was wired to
+    nothing.
+
+    Its own docstring said it "wraps every response body", and DRF had no
+    `DEFAULT_RENDERER_CLASSES`, so the only thing enveloping responses was each
+    view remembering to call `success_envelope`. Every catalogue view did.
+    `/health` did not, and returned a bare object — which both web clients
+    unwrap to `.data`, getting `undefined`. In the console that surfaced as
+    react-query's "Query data cannot be undefined".
+
+    The class of defect is the one this project keeps finding: a mechanism that
+    exists, is tested in isolation, is documented as global, and is connected
+    to nothing. So the assertion below is made against a *rendered* response
+    rather than against the renderer, because testing the renderer directly is
+    what passed while the endpoint was broken.
+    """
+
+    def test_health_is_enveloped_like_everything_else(self) -> None:
+        response = APIClient().get("/api/v1/health")
+        assert response.status_code == 200
+
+        body = json.loads(response.content)
+        assert set(body) == {"data", "meta"}, body
+        assert body["data"]["status"] == "ok"
+        assert "request_id" in body["meta"]
+
+    def test_a_view_that_envelopes_itself_is_not_wrapped_twice(self) -> None:
+        """`ConfigView` calls `success_envelope` directly. The renderer must
+        pass it through, or every such view would serve `data.data`."""
+        body = json.loads(APIClient().get("/api/v1/config").content)
+        assert set(body) == {"data", "meta"}
+        assert "data" not in body["data"]
+        assert body["data"]["min_supported_version"]
+
+    def test_the_renderer_is_actually_configured(self) -> None:
+        """Guards the wiring itself, not the class.
+
+        Both tests above would still pass if a view were changed to envelope
+        by hand, which would quietly restore the "remember to call it" rule
+        this replaces.
+        """
+        from django.conf import settings
+
+        assert (
+            "apps.common.envelope.EnvelopeJSONRenderer"
+            in (settings.REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"])
+        )
