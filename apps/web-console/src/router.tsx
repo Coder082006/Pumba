@@ -46,4 +46,9 @@ const routes: RouteObject[] = [
   },
 ];
 
-export const router = createBrowserRouter(routes);
+// Annotated rather than inferred. React Router's factory returns a type that
+// lives in `@remix-run/router`, a transitive dependency, so under
+// `declaration`-style checking TypeScript refuses to name it (TS2742) and
+// asks for the annotation. Writing it in terms of the factory keeps the type
+// exact without importing from a package this app does not depend on directly.
+export const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter(routes);
