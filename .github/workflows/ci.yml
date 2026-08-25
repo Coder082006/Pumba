@@ -321,7 +321,7 @@ jobs:
       - name: Start the API
         working-directory: apps/api
         run: |
-          uv run python -m uvicorn config.asgi:application --host 127.0.0.1 --port 8000 &
+          uv run daphne -b 127.0.0.1 -p 8000 config.asgi:application &
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8000/api/v1/health > /dev/null; then
               echo "API up after ${i}s"; exit 0

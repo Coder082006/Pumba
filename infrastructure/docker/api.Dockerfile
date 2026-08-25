@@ -52,8 +52,11 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-install-proj
 ENV PATH="/app/.venv/bin:$PATH"
 COPY apps/api/ ./
 EXPOSE 8000
-CMD ["python", "-m", "uvicorn", "config.asgi:application", \
-     "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# `runserver`, not uvicorn. `uvicorn` is not a dependency and never was — the
+# declared ASGI server is `daphne`, which `channels` requires anyway. With
+# `channels` in INSTALLED_APPS, `runserver` serves the ASGI application through
+# daphne *and* keeps autoreload, which is what a development image wants.
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
 # ---------------------------------------------------------------------------
 FROM base AS production
@@ -72,5 +75,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://localhost:8000/api/v1/health || exit 1
 
-CMD ["python", "-m", "uvicorn", "config.asgi:application", \
-     "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Daphne, for the same reason: it is the declared server. It has no `--workers`
+# equivalent — concurrency is horizontal, by running more containers, which is
+# how this is deployed anyway.
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "config.asgi:application"]

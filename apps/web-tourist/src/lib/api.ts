@@ -15,8 +15,24 @@
 
 import type { ApiEnvelope, ApiError } from '@pumba/contracts';
 
+/**
+ * Where the API lives — which is two different places.
+ *
+ * Server components fetch from inside the container, where `localhost` is the
+ * *web* container and the API is unreachable; the browser fetches from the
+ * host, where `localhost:8000` is the published port and the compose service
+ * name means nothing. One value cannot be right for both, and using the public
+ * one everywhere is why every server-rendered section rendered its error state
+ * under `docker compose up` while the same page worked in `pnpm dev`.
+ *
+ * `API_INTERNAL_BASE_URL` is deliberately not `NEXT_PUBLIC_`: it must never be
+ * inlined into the browser bundle, because `http://api:8000` is meaningless
+ * there and would replace a working URL with a broken one.
+ */
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api/v1';
+  (typeof window === 'undefined' ? process.env.API_INTERNAL_BASE_URL : undefined) ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  'http://localhost:8000/api/v1';
 
 export class ApiRequestError extends Error {
   readonly code: string;

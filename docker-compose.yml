@@ -51,9 +51,14 @@ services:
       context: .
       dockerfile: infrastructure/docker/api.Dockerfile
       target: development
+    # `runserver`, not uvicorn: uvicorn is not a dependency and never has
+    # been, so this command failed on every `docker compose up` and the
+    # container restart-looped through the migrate step. `channels` is in
+    # INSTALLED_APPS, so runserver serves ASGI through daphne and keeps
+    # autoreload.
     command: >
       sh -c "python manage.py migrate --noinput &&
-             python -m uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload"
+             python manage.py runserver 0.0.0.0:8000"
     environment: &api-env
       DJANGO_SETTINGS_MODULE: config.settings.dev
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-insecure-change-me}
@@ -143,11 +148,33 @@ services:
       target: development
     command: pnpm --filter @pumba/web-tourist dev
     environment:
+      # The browser's view: the host's published port.
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+      # The server's view, from inside the container, where `localhost` is this
+      # container and not the API. Not `NEXT_PUBLIC_`, so it never reaches the
+      # browser bundle where it would be meaningless.
+      API_INTERNAL_BASE_URL: http://api:8000/api/v1
       WATCHPACK_POLLING: "true"
+    # `./apps` and `./packages` are bind-mounted for live reload, and that
+    # drags the *host's* `node_modules` over the image's. On Windows those are
+    # absolute junctions: `vite` resolves to a path under `C:/Pumba` on the
+    # host, which is nothing inside the container, and the process exits
+    # MODULE_NOT_FOUND on every restart.
+    #
+    # The named volumes below shadow each package's `node_modules` so the
+    # image's own tree survives the bind mount. A longer mount path wins, so
+    # these take precedence over `./apps` without any ordering subtlety.
+    #
+    # They are populated from the image on first use and are NOT refreshed when
+    # the lockfile changes. After editing a package.json, rebuild and reset:
+    #     docker compose down -v && docker compose up --build
     volumes:
       - ./apps:/workspace/apps
       - ./packages:/workspace/packages
+      - tourist-node-modules:/workspace/apps/web-tourist/node_modules
+      - ui-node-modules:/workspace/packages/ui/node_modules
+      - contracts-node-modules:/workspace/packages/contracts/node_modules
+      - config-node-modules:/workspace/packages/config/node_modules
       - tourist-next:/workspace/apps/web-tourist/.next
     ports:
       - "3000:3000"
@@ -163,9 +190,14 @@ services:
     command: pnpm --filter @pumba/web-console dev --host 0.0.0.0
     environment:
       VITE_API_BASE_URL: http://localhost:8000/api/v1
+    # Same shadowing as web-tourist above, and for the same reason.
     volumes:
       - ./apps:/workspace/apps
       - ./packages:/workspace/packages
+      - console-node-modules:/workspace/apps/web-console/node_modules
+      - ui-node-modules:/workspace/packages/ui/node_modules
+      - contracts-node-modules:/workspace/packages/contracts/node_modules
+      - config-node-modules:/workspace/packages/config/node_modules
     ports:
       - "5173:5173"
     depends_on:
@@ -177,3 +209,10 @@ volumes:
   redis-data:
   tourist-next:
   api-venv:
+  # Per-package `node_modules`, kept out of the bind mounts. See the comment on
+  # web-tourist's volumes for why these exist.
+  tourist-node-modules:
+  console-node-modules:
+  ui-node-modules:
+  contracts-node-modules:
+  config-node-modules:
