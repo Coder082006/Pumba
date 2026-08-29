@@ -64,6 +64,12 @@ class MediaDTO:
     allows null: `next/image` needs them to reserve space before the image
     loads, and a missing pair is a §24 CLS budget failure. A row without them
     is filtered out rather than published, in `selectors.to_media_dto`.
+
+    `attribution`, `license_code` and `license_url` travel with the image
+    rather than being looked up beside it. A credit that lives anywhere other
+    than the payload the picture arrives in is a credit that gets separated
+    from it by the first cache, merge or re-render — and CC BY does not care
+    that the omission was structural.
     """
 
     file_key: str
@@ -72,6 +78,10 @@ class MediaDTO:
     height: int
     is_primary: bool
     sort_order: int
+    attribution: str
+    license_code: str
+    license_url: str
+    source_url: str
 
 
 @dataclass(frozen=True, slots=True)

@@ -22,6 +22,14 @@ import { cn } from '../lib/cn';
  * payload. Where it is genuinely blank the image is marked decorative
  * (`alt=""` plus `aria-hidden`) rather than left to a screen reader to
  * announce as a file name.
+ *
+ * **The credit renders whenever the licence requires it.** Attribution is a
+ * condition of CC BY, not a courtesy, and an uncredited image looks exactly
+ * like a credited one to everything except a lawyer. So `license_code` drives
+ * it: non-empty means the picture is somebody else's and the caption is not
+ * optional. Own work is `license_code: ''` and renders no credit. The
+ * database refuses a licensed row with no attribution
+ * (`media_licensed_rows_carry_attribution`), so the two ends agree.
  */
 export interface GalleryImage {
   file_key: string;
@@ -30,6 +38,45 @@ export interface GalleryImage {
   height: number;
   is_primary: boolean;
   sort_order: number;
+  /** Credit line as the source published it. Empty for own work. */
+  attribution: string;
+  /** e.g. `CC BY 4.0`, `CC0`, `PD`. Empty means own work. */
+  license_code: string;
+  /** Where the licence text lives. CC BY requires it to be identifiable. */
+  license_url: string;
+  /** The file's page at its source, so the claim can be checked. */
+  source_url: string;
+}
+
+/**
+ * The credit line for one image, or `null` where none is owed.
+ *
+ * Exported because the hero renders a single image outside this grid and must
+ * not grow a second, subtly different, version of this rule.
+ */
+export function ImageCredit({ image, className }: { image: GalleryImage; className?: string }) {
+  if (image.license_code.trim() === '') return null;
+
+  const who = image.attribution.trim();
+  return (
+    <figcaption className={cn('mt-1 text-[11px] leading-tight text-slate-500', className)}>
+      {image.source_url ? (
+        <a href={image.source_url} rel="noopener noreferrer" className="hover:underline">
+          {who}
+        </a>
+      ) : (
+        who
+      )}
+      {' · '}
+      {image.license_url ? (
+        <a href={image.license_url} rel="license noopener noreferrer" className="hover:underline">
+          {image.license_code}
+        </a>
+      ) : (
+        image.license_code
+      )}
+    </figcaption>
+  );
 }
 
 export interface GalleryProps {
@@ -67,18 +114,21 @@ export function Gallery({ images, srcFor, priority = false, className }: Gallery
         const decorative = image.alt_text.trim() === '';
         return (
           <li key={image.file_key} className={cn(index === 0 && 'col-span-2 row-span-2')}>
-            <img
-              src={srcFor(image.file_key)}
-              alt={decorative ? '' : image.alt_text}
-              aria-hidden={decorative || undefined}
-              width={image.width}
-              height={image.height}
-              // The first image of an above-the-fold gallery is usually the
-              // LCP element, so it must not be lazy. Everything else must be.
-              loading={priority && index === 0 ? 'eager' : 'lazy'}
-              decoding="async"
-              className="h-full w-full rounded-md object-cover"
-            />
+            <figure className="h-full">
+              <img
+                src={srcFor(image.file_key)}
+                alt={decorative ? '' : image.alt_text}
+                aria-hidden={decorative || undefined}
+                width={image.width}
+                height={image.height}
+                // The first image of an above-the-fold gallery is usually the
+                // LCP element, so it must not be lazy. Everything else must be.
+                loading={priority && index === 0 ? 'eager' : 'lazy'}
+                decoding="async"
+                className="h-full w-full rounded-md object-cover"
+              />
+              <ImageCredit image={image} />
+            </figure>
           </li>
         );
       })}

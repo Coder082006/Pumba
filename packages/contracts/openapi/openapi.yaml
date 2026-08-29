@@ -2857,7 +2857,14 @@ components:
       - slug
     Media:
       type: object
-      description: §7.3 `media`, ordered primary-first by `domain.media.order_media`.
+      description: |-
+        §7.3 `media`, ordered primary-first by `domain.media.order_media`.
+
+        The provenance fields are always present, never conditional. A client
+        rendering a credit only when one happens to be in the payload would fail
+        open — the licence breach and the correct page look identical from the
+        outside — so the shape is fixed and `license_code == ""` is what own work
+        looks like.
       properties:
         file_key:
           type: string
@@ -2871,12 +2878,24 @@ components:
           type: boolean
         sort_order:
           type: integer
+        attribution:
+          type: string
+        license_code:
+          type: string
+        license_url:
+          type: string
+        source_url:
+          type: string
       required:
       - alt_text
+      - attribution
       - file_key
       - height
       - is_primary
+      - license_code
+      - license_url
       - sort_order
+      - source_url
       - width
     MfaConfirmRequest:
       type: object

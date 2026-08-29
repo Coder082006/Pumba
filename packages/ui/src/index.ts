@@ -3,5 +3,10 @@ export { StatusBadge, type StatusBadgeProps, type StatusTone } from './component
 export { Money, type MoneyProps, type MoneyValue } from './components/money';
 export { LocalTime, type LocalTimeProps } from './components/local-time';
 export { Map, type MapProps, type MapPin } from './components/map';
-export { Gallery, type GalleryProps, type GalleryImage } from './components/gallery';
+export {
+  Gallery,
+  ImageCredit,
+  type GalleryProps,
+  type GalleryImage,
+} from './components/gallery';
 export { cn } from './lib/cn';

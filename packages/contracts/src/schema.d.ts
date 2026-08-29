@@ -1644,7 +1644,13 @@ export interface components {
             launch_date?: string | null;
             is_active?: boolean;
         };
-        /** @description §7.3 `media`, ordered primary-first by `domain.media.order_media`. */
+        /** @description §7.3 `media`, ordered primary-first by `domain.media.order_media`.
+         *
+         *     The provenance fields are always present, never conditional. A client
+         *     rendering a credit only when one happens to be in the payload would fail
+         *     open — the licence breach and the correct page look identical from the
+         *     outside — so the shape is fixed and `license_code == ""` is what own work
+         *     looks like. */
         Media: {
             file_key: string;
             alt_text: string;
@@ -1652,6 +1658,10 @@ export interface components {
             height: number;
             is_primary: boolean;
             sort_order: number;
+            attribution: string;
+            license_code: string;
+            license_url: string;
+            source_url: string;
         };
         /** @description Rejects unknown fields — SRS §30.6.
          *

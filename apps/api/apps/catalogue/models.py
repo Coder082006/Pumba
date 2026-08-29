@@ -981,6 +981,36 @@ class Media(TimestampedModel):
     sort_order = models.SmallIntegerField(default=0)
     is_primary = models.BooleanField(default=False)
 
+    # --- Provenance ------------------------------------------------------
+    #
+    # This table stored a file key, a caption and two dimensions and nothing
+    # about where the picture came from. That is fine while every photograph
+    # is your own and untenable the moment one is not: attribution is a
+    # *condition* of CC BY, so an image licensed that way could not lawfully
+    # be displayed by a schema with nowhere to put the credit. The constraint
+    # below is what makes that structural rather than a habit.
+    #
+    # `license_code` empty means own work — the only exemption, and an honest
+    # one. Anything else must say who made it and under what.
+
+    #: The credit line as the source published it, not as somebody retyped it.
+    #: For Commons this is `extmetadata.Artist`, captured at fetch time.
+    attribution = models.CharField(max_length=255, blank=True, default="")
+
+    #: Short licence identifier: "CC BY 4.0", "CC0", "PD". Free text rather
+    #: than a choice list, because the set of licences a photograph can arrive
+    #: under is not something this application gets to enumerate, and a new one
+    #: must not require a migration (§4.2's reasoning, applied to metadata).
+    license_code = models.CharField(max_length=40, blank=True, default="")
+
+    #: Where the licence text lives. CC BY requires the licence to be
+    #: identifiable, not merely named.
+    license_url = models.URLField(max_length=500, blank=True, default="")
+
+    #: The file's page at its source, so a claim can be checked rather than
+    #: trusted. Optional: own work has no source page.
+    source_url = models.URLField(max_length=500, blank=True, default="")
+
     class Meta:
         db_table = "media"
         ordering = ["owner_type", "owner_id", "-is_primary", "sort_order", "id"]
@@ -1002,6 +1032,22 @@ class Media(TimestampedModel):
                 fields=["owner_type", "owner_id"],
                 condition=models.Q(is_primary=True),
                 name="media_one_primary_per_owner",
+            ),
+            # A row that names a licence must carry the credit and the licence
+            # URL that licence requires. Own work — `license_code = ''` — is
+            # exempt, and is the only exemption.
+            #
+            # In the database rather than in a serializer for the same reason
+            # `media_one_primary_per_owner` is: the console should never
+            # accept such a row, and "should never" is not a guarantee. The
+            # difference here is that the failure is not a cosmetic one. An
+            # uncredited CC BY photograph on a commercial page is a licence
+            # breach, and it looks exactly like a correctly credited one to
+            # everything except a lawyer.
+            models.CheckConstraint(
+                condition=models.Q(license_code="")
+                | (~models.Q(attribution="") & ~models.Q(license_url="")),
+                name="media_licensed_rows_carry_attribution",
             ),
         ]
         indexes = [

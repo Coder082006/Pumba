@@ -80,6 +80,13 @@ describe('Gallery', () => {
     height: 800,
     is_primary: false,
     sort_order: 10,
+    // Own work: `license_code: ''` renders no credit, which keeps these
+    // assertions about layout rather than about provenance. The credit rule
+    // itself is tested in `packages/ui`, beside the component.
+    attribution: '',
+    license_code: '',
+    license_url: '',
+    source_url: '',
     ...over,
   });
   const srcFor = (key: string) => `https://cdn.example/${key}`;

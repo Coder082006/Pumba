@@ -568,6 +568,10 @@ def to_media_dto(media: Media) -> MediaDTO | None:
         height=media.height,
         is_primary=media.is_primary,
         sort_order=media.sort_order,
+        attribution=media.attribution,
+        license_code=media.license_code,
+        license_url=media.license_url,
+        source_url=media.source_url,
     )
 
 

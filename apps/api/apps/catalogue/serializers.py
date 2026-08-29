@@ -360,7 +360,14 @@ WRITE_SERIALIZERS: dict[str, type[StrictSerializer]] = {
 
 
 class MediaSerializer(serializers.Serializer[Any]):
-    """§7.3 `media`, ordered primary-first by `domain.media.order_media`."""
+    """§7.3 `media`, ordered primary-first by `domain.media.order_media`.
+
+    The provenance fields are always present, never conditional. A client
+    rendering a credit only when one happens to be in the payload would fail
+    open — the licence breach and the correct page look identical from the
+    outside — so the shape is fixed and `license_code == ""` is what own work
+    looks like.
+    """
 
     file_key = serializers.CharField()
     alt_text = serializers.CharField()
@@ -368,6 +375,10 @@ class MediaSerializer(serializers.Serializer[Any]):
     height = serializers.IntegerField()
     is_primary = serializers.BooleanField()
     sort_order = serializers.IntegerField()
+    attribution = serializers.CharField(allow_blank=True)
+    license_code = serializers.CharField(allow_blank=True)
+    license_url = serializers.CharField(allow_blank=True)
+    source_url = serializers.CharField(allow_blank=True)
 
 
 class CountrySerializer(serializers.Serializer[Any]):
