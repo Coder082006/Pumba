@@ -62,6 +62,8 @@ from apps.catalogue.views import (
     AttractionListView,
     DestinationDetailView,
     DestinationListView,
+    MarketDetailView,
+    MarketListView,
     SearchView,
     TagListView,
 )
@@ -80,6 +82,8 @@ urlpatterns = [
         AdminCountryRestoreView.as_view(),
         name="admin-country-restore",
     ),
+    path("markets", MarketListView.as_view(), name="market-list"),
+    path("markets/<str:reference>", MarketDetailView.as_view(), name="market-detail"),
     path("admin/markets", AdminMarketCreateView.as_view(), name="admin-market-create"),
     path(
         "admin/markets/<uuid:public_id>",

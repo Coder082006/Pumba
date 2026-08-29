@@ -62,6 +62,7 @@ __all__ = [
     "AccommodationWriteSerializer",
     "WRITE_SERIALIZERS",
     "CountrySerializer",
+    "EmptyQuerySerializer",
     "MarketRefSerializer",
     "MarketSerializer",
     "RegionSerializer",
@@ -375,6 +376,12 @@ class CountrySerializer(serializers.Serializer[Any]):
     name = serializers.CharField()
     default_currency = serializers.CharField()
     default_timezone = serializers.CharField()
+
+
+class EmptyQuerySerializer(StrictSerializer):
+    """Accepts nothing. `StrictSerializer` then makes an unknown parameter a
+    422 naming it, rather than a 200 that silently ignored the filter somebody
+    thought they were applying."""
 
 
 class MarketRefSerializer(serializers.Serializer[Any]):

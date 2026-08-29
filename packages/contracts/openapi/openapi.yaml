@@ -1613,6 +1613,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthUnavailableResponse'
           description: ''
+  /api/v1/markets:
+    get:
+      operationId: markets_list
+      description: 'Every *listed* market, which is not the same set as every open
+        one. A market that has been announced but whose catalogue is not yet browsable
+        appears here with `is_open: false`, because §24.6''s destination selector
+        has to name it. Nothing beneath such a market is reachable. Unpaginated: `market`
+        is administered, so its size is a business decision rather than a caller''s.'
+      summary: List markets the Platform names
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Market'
+          description: ''
+  /api/v1/markets/{reference}:
+    get:
+      operationId: markets_retrieve
+      description: Resolves a listed market by slug or `public_id`. Unlike every other
+        detail endpoint this one answers for a market that has not opened — that is
+        the announcement page, and 404 would make the selector tile lead nowhere.
+        Read `is_open` to tell the two apart.
+      summary: Read one market
+      parameters:
+      - in: path
+        name: reference
+        schema:
+          type: string
+        required: true
+      tags:
+      - catalogue
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Market'
+          description: ''
   /api/v1/me:
     get:
       operationId: me_retrieve
@@ -2733,6 +2776,32 @@ components:
       required:
       - email
       - password
+    Market:
+      type: object
+      description: The destination selector's row. §24.6, ADR 0018.
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        summary:
+          type:
+          - string
+          - 'null'
+        is_open:
+          type: boolean
+        country:
+          $ref: '#/components/schemas/Country'
+      required:
+      - country
+      - is_open
+      - name
+      - public_id
+      - slug
+      - summary
     MarketRef:
       type: object
       description: A market named. Carries no `is_open` — see `MarketRefDTO` for why.

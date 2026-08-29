@@ -120,6 +120,8 @@ __all__ = [
     "AdminAccommodationCreateView",
     "AdminAccommodationDetailView",
     "AdminAccommodationRestoreView",
+    "MarketListView",
+    "MarketDetailView",
     "DestinationListView",
     "DestinationDetailView",
     "AttractionListView",
@@ -554,6 +556,53 @@ class _PublicDetailView(_PublicCatalogueView):
         if dto is None:
             raise NotFoundError()
         return Response(success_envelope(dict(serializer(dto).data)))
+
+
+@extend_schema(
+    responses={200: ser.MarketSerializer(many=True)},
+    summary="List markets the Platform names",
+    description=(
+        "Every *listed* market, which is not the same set as every open one. "
+        "A market that has been announced but whose catalogue is not yet "
+        "browsable appears here with `is_open: false`, because §24.6's "
+        "destination selector has to name it. Nothing beneath such a market "
+        "is reachable. Unpaginated: `market` is administered, so its size is "
+        "a business decision rather than a caller's."
+    ),
+    tags=["catalogue"],
+    auth=[],
+)
+class MarketListView(_PublicCatalogueView):
+    """§24.6's destination selector. ADR 0018."""
+
+    query_serializer = ser.EmptyQuerySerializer
+
+    def get(self, request: Request) -> Response:
+        self._query(request)
+        markets = selectors.list_markets(today=_today())
+        return Response(success_envelope([dict(ser.MarketSerializer(m).data) for m in markets]))
+
+
+@extend_schema(
+    responses={200: ser.MarketSerializer},
+    summary="Read one market",
+    description=(
+        "Resolves a listed market by slug or `public_id`. Unlike every other "
+        "detail endpoint this one answers for a market that has not opened — "
+        "that is the announcement page, and 404 would make the selector tile "
+        "lead nowhere. Read `is_open` to tell the two apart."
+    ),
+    tags=["catalogue"],
+    auth=[],
+)
+class MarketDetailView(_PublicDetailView):
+    query_serializer = ser.EmptyQuerySerializer
+
+    def get(self, request: Request, reference: str) -> Response:
+        return self._detail(
+            selectors.get_market(reference=reference, today=_today()),
+            ser.MarketSerializer,
+        )
 
 
 @extend_schema(

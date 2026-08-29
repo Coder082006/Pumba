@@ -86,6 +86,15 @@ PUBLIC_BY_DESIGN = {
     # That is not something this file can check statically, so
     # `tests/test_catalogue_public_api.py` asserts it per route and fails the
     # build for a public catalogue route that has no such assertion.
+    # ADR 0018. The one pair here filtered by `is_listed` rather than by
+    # `visible`, and the difference is the feature: an announced market is
+    # returned, flagged `is_open: false`, so §24.6's selector can name a place
+    # the Platform is about to serve. Nothing beneath it is reachable —
+    # `market` is in every other chain in `selectors._CHAINS`, and
+    # `tests/test_markets_api.py` asserts the listed and the closed halves
+    # together, because either one alone reads as a bug.
+    "v1:catalogue:market-list": "§24.6 destination selector; filtered by is_listed (ADR 0018).",
+    "v1:catalogue:market-detail": "§24.6 announcement page; filtered by is_listed (ADR 0018).",
     "v1:catalogue:destination-list": "§9.3.2 public catalogue; filtered by visibility.",
     "v1:catalogue:destination-detail": "§9.3.2 public catalogue; filtered by visibility.",
     "v1:catalogue:attraction-list": "§9.3.2 public catalogue; filtered by visibility.",

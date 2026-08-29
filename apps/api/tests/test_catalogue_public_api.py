@@ -46,6 +46,7 @@ from apps.catalogue.tests.factories import (
     make_activity,
     make_attraction,
     make_destination,
+    make_market,
     make_media,
     make_tag,
 )
@@ -135,6 +136,25 @@ def _hidden_row_is_not_searchable() -> HiddenCase:
     return HiddenCase("/api/v1/search", destination, {"q": "Sarabande"})
 
 
+def _deactivated_market() -> HiddenCase:
+    """A market, and the one state that hides it — which is *not* the state
+    that hides a destination.
+
+    An unlaunched destination is hidden; an unlaunched market is listed, with
+    `is_open: false`, because §24.6's selector has to name a place the
+    Platform is about to serve. So the row that must not be reachable here is
+    the deactivated one — Pemba, which §4.1 defers outright.
+
+    Getting this backwards in either direction is silent. Hide the announced
+    market and the landing page loses the feature; publish the deactivated one
+    and the Platform advertises a market nobody decided to open.
+    """
+    return HiddenCase(
+        "/api/v1/markets",
+        make_market(slug="deferred-island", name="Deferred Island", is_active=False),
+    )
+
+
 def _retired_tag() -> HiddenCase:
     """A tag has no parent, so it has no visibility chain — `deleted_at` and
     `is_active` are the whole of its lifecycle, and both must remove it from
@@ -148,6 +168,8 @@ def _retired_tag() -> HiddenCase:
 #: and the request that would surface it. The list and detail routes for an
 #: entity share a scenario — the row is built once and both are checked.
 HIDDEN_ROW_CASES: dict[str, Any] = {
+    "v1:catalogue:market-list": _deactivated_market,
+    "v1:catalogue:market-detail": _deactivated_market,
     "v1:catalogue:destination-list": _hidden_destination,
     "v1:catalogue:destination-detail": _unlaunched_destination,
     "v1:catalogue:attraction-list": _attraction_under_hidden_destination,

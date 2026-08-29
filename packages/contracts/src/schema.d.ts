@@ -1086,6 +1086,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/markets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List markets the Platform names
+         * @description Every *listed* market, which is not the same set as every open one. A market that has been announced but whose catalogue is not yet browsable appears here with `is_open: false`, because §24.6's destination selector has to name it. Nothing beneath such a market is reachable. Unpaginated: `market` is administered, so its size is a business decision rather than a caller's.
+         */
+        get: operations["markets_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/markets/{reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one market
+         * @description Resolves a listed market by slug or `public_id`. Unlike every other detail endpoint this one answers for a market that has not opened — that is the announcement page, and 404 would make the selector tile lead nowhere. Read `is_open` to tell the two apart.
+         */
+        get: operations["markets_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -1570,6 +1610,16 @@ export interface components {
             email: string;
             password: string;
             mfa_code?: string;
+        };
+        /** @description The destination selector's row. §24.6, ADR 0018. */
+        Market: {
+            /** Format: uuid */
+            public_id: string;
+            name: string;
+            slug: string;
+            summary: string | null;
+            is_open: boolean;
+            country: components["schemas"]["Country"];
         };
         /** @description A market named. Carries no `is_open` — see `MarketRefDTO` for why. */
         MarketRef: {
@@ -3249,6 +3299,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthUnavailableResponse"];
+                };
+            };
+        };
+    };
+    markets_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Market"][];
+                };
+            };
+        };
+    };
+    markets_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Market"];
                 };
             };
         };

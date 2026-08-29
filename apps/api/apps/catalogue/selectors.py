@@ -114,6 +114,8 @@ __all__ = [
     "visibility_q",
     "visible",
     "listed_markets",
+    "list_markets",
+    "get_market",
     "OrderedTerm",
     "order_plan",
     "apply_order",
@@ -887,6 +889,46 @@ def list_destinations(
         tuple(to_destination_dto(row, media=galleries.get(row.id, [])) for row in rows),
         next_cursor,
     )
+
+
+def list_markets(*, today: date) -> tuple[MarketDTO, ...]:
+    """Every listed market — the destination selector's whole payload. §24.6.
+
+    **Not paginated, and that is a decision rather than an omission.** Two
+    reasons. The §16.5 ordering `_paged` compiles is built from price, rating
+    and feature rank, none of which a market has, so paginating this would
+    mean either inventing those columns or a second ordering to keep in step.
+    And the screen needs all of them at once: a selector that arrived a page at
+    a time would make the landing page's first paint depend on a cursor walk.
+
+    The usual objection to an unbounded public list does not apply here.
+    `market` has no public write path — it is administered through §27.8 —
+    so its size is a business decision, not something a caller can inflate.
+    That is the opposite of `/search`, which is why that one is bounded.
+
+    Ordered by name: the tile grid has no ranking signal to sort on, and a
+    stable alphabetical order is one a returning visitor recognises.
+    """
+    return tuple(to_market_dto(row, today=today) for row in listed_markets(today=today))
+
+
+def get_market(*, reference: str | UUID, today: date) -> MarketDTO | None:
+    """One market, **listed rather than open**.
+
+    The deliberate difference from `get_destination`. That one hides a row
+    that exists but has not launched, because a distinguishable "exists but
+    hidden" would publish an unopened market's launch date. Here the launch is
+    the thing being published: §24.6's announcement page is a market that is
+    listed and not open, and returning 404 for it would make the tile on the
+    landing page lead nowhere.
+
+    So this uses `is_listed`, and the caller reads `is_open` to decide between
+    an announcement and a catalogue. Nothing beneath the market is affected —
+    its regions, destinations and listings are still filtered by `visible`,
+    which has `market` in their chains.
+    """
+    row = listed_markets(today=today).filter(reference_q(reference)).first()
+    return None if row is None else to_market_dto(row, today=today)
 
 
 def get_destination(*, reference: str | UUID, today: date) -> DestinationDTO | None:
