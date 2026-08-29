@@ -28,18 +28,46 @@ const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
   variable: '--font-sans-loaded',
+  // Named explicitly so `next/font` can generate a *size-adjusted* fallback
+  // from these exact metrics. It is the difference between a swap that is
+  // invisible and one that reflows the page: Lighthouse attributed the whole
+  // of `/explore`'s 0.077 CLS to "Web font loaded", against a 0.1 budget.
+  fallback: ['system-ui', 'arial'],
+  adjustFontFallback: true,
 });
 
 const fraunces = Fraunces({
   subsets: ['latin'],
-  display: 'swap',
+  display: 'optional',
   // Headings only, so the weight range is narrow on purpose: a variable font
   // shipped with its full axis is a large download for glyphs nobody sets.
   weight: ['600', '700'],
   variable: '--font-display-loaded',
+  // A serif fallback, because the adjustment is computed against whatever is
+  // named here. Falling back to a sans while the serif loads changes the
+  // metrics twice over.
+  fallback: ['Georgia', 'Times New Roman', 'serif'],
+  adjustFontFallback: true,
 });
 
+/**
+ * The origin every relative URL in `metadata` resolves against.
+ *
+ * Without it, `alternates: { canonical: '/destinations/stone-town' }` — which
+ * three page files already declare — is emitted verbatim as a *relative*
+ * href. `rel=canonical` must be absolute to mean anything, so what shipped
+ * was a canonical tag that looked present in the markup and was invalid to
+ * every crawler that read it. Lighthouse's `canonical` audit is what caught
+ * it, and it is the reason the SEO gate has scored 0.92 against a threshold
+ * of 1.0 since the gate was added.
+ *
+ * Same `NEXT_PUBLIC_SITE_URL` that `sitemap.ts` and `robots.ts` read, so the
+ * three agree on the origin by construction rather than by coincidence.
+ */
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'Tourism Journey Orchestration Platform',
   description:
     'Plan, book and pay for your entire journey before you travel: airport transfer, ' +

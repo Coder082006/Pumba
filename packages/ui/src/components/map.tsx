@@ -154,8 +154,16 @@ export function Map({
           const marker = new maplibre.Marker()
             .setLngLat([pin.longitude, pin.latitude])
             .addTo(instance);
-          marker.getElement().setAttribute('aria-label', pin.label);
-          marker.getElement().setAttribute('title', pin.label);
+          // `role="img"` before `aria-label`, and the order matters more than
+          // it looks. MapLibre's marker is a bare `<div>`, and `aria-label` on
+          // an element with no role is *prohibited* by ARIA — assistive
+          // technology is entitled to ignore it, so the label was both an
+          // accessibility failure and doing nothing. Lighthouse's
+          // `aria-prohibited-attr` is what caught it.
+          const element = marker.getElement();
+          element.setAttribute('role', 'img');
+          element.setAttribute('aria-label', pin.label);
+          element.setAttribute('title', pin.label);
         }
 
         if (currentPins.length > 1) {
@@ -187,7 +195,7 @@ export function Map({
   }, [tileUrl, attribution, pinKey, centerKey, zoom]);
 
   return (
-    <figure className={cn('relative overflow-hidden rounded-lg bg-slate-100', className)}>
+    <figure className={cn('relative overflow-hidden rounded-lg bg-muted', className)}>
       {/* The reserved box. Rendered on the server with its ratio already set,
           so hydration adds pixels inside it and never changes its height. */}
       <div
@@ -198,11 +206,11 @@ export function Map({
         className="w-full"
       />
       {failed ? (
-        <p className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-slate-600">
+        <p className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-muted-foreground">
           The map could not be loaded. Locations are listed below.
         </p>
       ) : null}
-      <figcaption className="px-2 py-1 text-right text-[11px] leading-tight text-slate-500">
+      <figcaption className="px-2 py-1 text-right text-[11px] leading-tight text-muted-foreground">
         {attribution}
       </figcaption>
     </figure>

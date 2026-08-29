@@ -59,7 +59,7 @@ export function ImageCredit({ image, className }: { image: GalleryImage; classNa
 
   const who = image.attribution.trim();
   return (
-    <figcaption className={cn('mt-1 text-[11px] leading-tight text-slate-500', className)}>
+    <figcaption className={cn('mt-1 text-[11px] leading-tight text-muted-foreground', className)}>
       {image.source_url ? (
         <a href={image.source_url} rel="noopener noreferrer" className="hover:underline">
           {who}

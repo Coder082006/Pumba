@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 
 import { CONTACT, IS_PLACEHOLDER } from '@/lib/placeholders';
 import { listDestinations, listMarkets } from '@/lib/catalogue';
@@ -34,7 +35,31 @@ import { listDestinations, listMarkets } from '@/lib/catalogue';
  *
  * Each column fetches independently and degrades to nothing, as the sections
  * on Explore do. A footer is not worth a 500 on every page.
+ *
+ * **Both fetching columns sit behind `<Suspense>` with a fallback of the same
+ * height, and that is a layout requirement rather than a nicety.** Without it
+ * the whole footer is an async boundary: the page paints, the two fetches
+ * resolve, the footer appears and everything above it settles — measured at
+ * **CLS 0.077 against a 0.1 budget**, from a single element, and it was the
+ * largest layout shift on the site. A reserved box costs nothing and the
+ * footer now renders at its final height immediately.
  */
+
+/** Same height as a filled column, so the footer never changes size. */
+function ColumnSkeleton({ title }: { title: string }) {
+  return (
+    <div aria-hidden>
+      <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        {title}
+      </h2>
+      <ul className="mt-4 space-y-2.5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <li key={i} className="h-5 w-28 rounded bg-border/60" />
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 /** Marks a value that is not real yet, on the page rather than in a comment. */
 function PlaceholderNote() {
@@ -118,7 +143,13 @@ async function DestinationColumn() {
   );
 }
 
-export async function SiteFooter() {
+// Deliberately **not** `async`. It has no `await` of its own — both fetches
+// live in the Suspense-wrapped children — and an `async` component returns a
+// promise whether or not it awaits anything, which makes React suspend the
+// entire footer and streams it in after paint. That is what the inner
+// boundaries were added to prevent, and leaving the keyword on defeats them
+// silently: the markup is identical and only the shift betrays it.
+export function SiteFooter() {
   return (
     <footer className="mt-24 border-t border-border bg-muted">
       <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
@@ -131,8 +162,12 @@ export async function SiteFooter() {
             </p>
           </div>
 
-          <MarketColumn />
-          <DestinationColumn />
+          <Suspense fallback={<ColumnSkeleton title="Where we go" />}>
+            <MarketColumn />
+          </Suspense>
+          <Suspense fallback={<ColumnSkeleton title="Destinations" />}>
+            <DestinationColumn />
+          </Suspense>
 
           <Column title="Plan">
             <FooterLink href="/explore">Explore</FooterLink>

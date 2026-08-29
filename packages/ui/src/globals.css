@@ -103,6 +103,13 @@
      * in the tourist layout, which self-hosts them; the fallbacks here are
      * what the console and any non-Next surface get.
      */
+    /*
+     * `--font-*-loaded` already ends in the size-adjusted fallback that
+     * `next/font` generates, so the generic families here are only for
+     * surfaces that never set the variable — the console, and anything
+     * rendered outside the Next tree. Appending them does not weaken the
+     * adjustment; the adjusted face is reached first.
+     */
     --font-sans: var(--font-sans-loaded), ui-sans-serif, system-ui, sans-serif;
     --font-display: var(--font-display-loaded), Georgia, 'Times New Roman', serif;
 
