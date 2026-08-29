@@ -8,54 +8,159 @@
  *
  * Values are HSL channels without the wrapper so Tailwind can compose them
  * with opacity modifiers (`bg-primary/50`).
+ *
+ * ---------------------------------------------------------------------------
+ * Why this file was retuned
+ * ---------------------------------------------------------------------------
+ *
+ * It held a competent, generic shadcn palette — cold blue on blue-tinted
+ * slate — and the tourist site referenced almost none of it: 103 hard-coded
+ * `slate-*` classes against 43 token classes. Changing `--primary` changed
+ * nothing anybody could see. A design system that is configured, committed
+ * and unadopted is the same defect as a port with no adapter, and it had
+ * survived three phases.
+ *
+ * So the palette is now one somebody chose *for this product*. Deep Indian
+ * Ocean teal carries the primary actions; a warm spice amber carries
+ * emphasis; the neutrals are warmed rather than blue-shifted, because a
+ * greyscale tuned toward blue makes photographs of a coastline look cold and
+ * a page of them look clinical.
+ *
+ * ---------------------------------------------------------------------------
+ * Contrast
+ * ---------------------------------------------------------------------------
+ *
+ * Every foreground/background pair below was computed against WCAG 2.1 rather
+ * than eyeballed, in both themes. §29 sets an Accessibility floor of 95 and
+ * the gate is wired into CI, but the real reason is that a 3:1 body colour is
+ * unreadable in sunlight — which is the condition a tourist actually opens
+ * this in.
+ *
+ * The measured ratios, light theme:
+ *
+ *   foreground on background   15.7   primary on background       5.9
+ *   primary-fg on primary       6.0   muted-foreground on bg      5.5
+ *   muted-fg on muted           5.1   accent-fg on accent         5.6
+ *   accent-ink on background    5.7   destructive-fg on destr     5.9
+ *   warning-fg on warning       8.2   warning-fg on background    8.8
+ *   destructive-ink on bg       7.4
+ *
+ * `--accent` is a **surface**, not an ink: bright amber on near-white is
+ * 2.9:1 and fails. `--accent-ink` exists so that nobody reaches for the
+ * bright one to colour text — the failure is invisible to everyone with good
+ * eyes and a good screen, which is exactly the population that reviews it.
  */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    /* Surfaces — warm neutrals, not blue-tinted slate. */
+    --background: 40 33% 99%;
+    --foreground: 25 22% 13%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 25 22% 13%;
 
-    --primary: 199 89% 33%;
+    /* Indian Ocean. Deep enough to be an ink as well as a fill. */
+    --primary: 187 85% 26%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 173 58% 39%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%;
+    --secondary: 40 20% 95%;
+    --secondary-foreground: 25 22% 13%;
+
+    --muted: 40 20% 95%;
+    --muted-foreground: 30 9% 40%;
+
+    /* Spice amber. A surface colour: pair it with `--accent-foreground`. */
+    --accent: 25 88% 52%;
+    --accent-foreground: 24 35% 12%;
+    /* The same hue, dark enough to set text on a light background. */
+    --accent-ink: 22 85% 36%;
+
+    --destructive: 0 68% 45%;
     --destructive-foreground: 0 0% 100%;
+    /* Dark enough to be an ink on the page background, for the inline error
+       text beside a field rather than a filled banner. */
+    --destructive-ink: 0 70% 38%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 199 89% 33%;
+    /*
+     * Warning is its own semantic, not a shade of accent. A "this stay is
+     * unlocated" notice and a "book this" button must never be able to drift
+     * into the same colour, and they would the moment somebody reached for
+     * the amber that was already there.
+     */
+    --warning: 38 92% 94%;
+    --warning-foreground: 30 80% 24%;
+    --warning-border: 38 80% 78%;
 
-    --radius: 0.5rem;
+    --border: 35 18% 88%;
+    --input: 35 18% 88%;
+    --ring: 187 85% 26%;
+
+    --radius: 0.625rem;
+
+    /*
+     * Typography. `--font-sans` was referenced by the preset and defined
+     * nowhere, so `font-sans` silently fell through to `system-ui` — the
+     * site had no typeface of its own at all. Both are set by `next/font`
+     * in the tourist layout, which self-hosts them; the fallbacks here are
+     * what the console and any non-Next surface get.
+     */
+    --font-sans: var(--font-sans-loaded), ui-sans-serif, system-ui, sans-serif;
+    --font-display: var(--font-display-loaded), Georgia, 'Times New Roman', serif;
+
+    /*
+     * Motion. Durations and easings are tokens so that
+     * `prefers-reduced-motion` can flatten every one of them in a single
+     * place — see the media query below. A component that hard-codes
+     * `duration-300` opts itself out of that, silently.
+     */
+    --duration-fast: 120ms;
+    --duration-base: 240ms;
+    --duration-slow: 480ms;
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+    /*
+     * Elevation. Warm-tinted rather than neutral black, so a raised card on
+     * a warm background does not read as grey smudge.
+     */
+    --shadow-sm: 0 1px 2px 0 hsl(25 25% 15% / 0.05);
+    --shadow-md: 0 4px 12px -2px hsl(25 25% 15% / 0.08), 0 2px 4px -2px hsl(25 25% 15% / 0.06);
+    --shadow-lg: 0 12px 32px -8px hsl(25 25% 15% / 0.14), 0 4px 8px -4px hsl(25 25% 15% / 0.06);
   }
 
   .dark {
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 14%;
-    --card-foreground: 210 40% 98%;
+    --background: 200 24% 10%;
+    --foreground: 40 20% 96%;
+    --card: 200 22% 13%;
+    --card-foreground: 40 20% 96%;
 
-    --primary: 199 89% 48%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 217 33% 18%;
-    --secondary-foreground: 210 40% 98%;
+    --primary: 187 70% 55%;
+    --primary-foreground: 200 30% 8%;
 
-    --muted: 217 33% 18%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 173 58% 45%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 63% 51%;
-    --destructive-foreground: 210 40% 98%;
+    --secondary: 200 18% 18%;
+    --secondary-foreground: 40 20% 96%;
 
-    --border: 217 33% 20%;
-    --input: 217 33% 20%;
-    --ring: 199 89% 48%;
+    --muted: 200 18% 18%;
+    --muted-foreground: 35 12% 66%;
+
+    --accent: 25 90% 62%;
+    --accent-foreground: 24 40% 10%;
+    --accent-ink: 25 90% 62%;
+
+    --destructive: 0 62% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-ink: 0 70% 68%;
+
+    --warning: 35 40% 18%;
+    --warning-foreground: 38 92% 80%;
+    --warning-border: 35 35% 32%;
+
+    --border: 200 16% 22%;
+    --input: 200 16% 22%;
+    --ring: 187 70% 55%;
+
+    --shadow-sm: 0 1px 2px 0 hsl(200 40% 2% / 0.4);
+    --shadow-md: 0 4px 12px -2px hsl(200 40% 2% / 0.5), 0 2px 4px -2px hsl(200 40% 2% / 0.4);
+    --shadow-lg: 0 12px 32px -8px hsl(200 40% 2% / 0.6), 0 4px 8px -4px hsl(200 40% 2% / 0.4);
   }
 
   * {
@@ -64,5 +169,35 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+  }
+
+  /*
+   * Reduced motion, handled once.
+   *
+   * §29's Accessibility gate asks for it, but the reason is not the score:
+   * vestibular disorders make large scroll-driven movement a cause of nausea
+   * and migraine, not an irritation. Flattening the duration tokens here
+   * disarms every animation built on them at the root, so a component cannot
+   * forget — which is the only version of this rule that survives contact
+   * with a codebase.
+   *
+   * `0.01ms` rather than `0`: a zero-duration transition fires no
+   * `transitionend`, and anything waiting on one would hang.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --duration-fast: 0.01ms;
+      --duration-base: 0.01ms;
+      --duration-slow: 0.01ms;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

@@ -28,19 +28,44 @@ const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const APP_DIR = join(SRC_DIR, 'app');
 
 /**
+ * Next's metadata file conventions, which serve a route without a `page.tsx`.
+ *
+ * `app/sitemap.ts` answers at `/sitemap.xml` and `app/robots.ts` at
+ * `/robots.txt`. Neither is a page, so a route table built only from
+ * `page.tsx` does not know they exist — and this test failed a perfectly
+ * correct footer link to `/sitemap.xml` because of it.
+ *
+ * Recorded here rather than exempted at the call site. An allow-list of
+ * "links we have decided are fine" is how this check would rot: the next
+ * legitimate failure gets added to it too, and eventually the list is the
+ * answer to every question.
+ */
+const METADATA_ROUTES: Record<string, string> = {
+  'sitemap.ts': '/sitemap.xml',
+  'robots.ts': '/robots.txt',
+  'manifest.ts': '/manifest.webmanifest',
+};
+
+/**
  * The App Router's route table, derived the way Next derives it.
  *
- * A directory holding `page.tsx` is a route. `(group)` segments are
- * organisational and contribute no path. `[slug]` segments match anything, so
- * they become a prefix that any deeper path satisfies.
+ * A directory holding `page.tsx` is a route, as is one holding `route.ts` —
+ * the Route Handler convention. `(group)` segments are organisational and
+ * contribute no path. `[slug]` segments match anything, so they become a
+ * prefix that any deeper path satisfies. The metadata files above contribute
+ * their own fixed paths.
  */
 function routes(dir: string, prefix = ''): { exact: Set<string>; dynamic: string[] } {
   const exact = new Set<string>();
   const dynamic: string[] = [];
 
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name === 'page.tsx') {
+    if (entry.isFile() && (entry.name === 'page.tsx' || entry.name === 'route.ts')) {
       exact.add(prefix === '' ? '/' : prefix);
+      continue;
+    }
+    if (entry.isFile() && METADATA_ROUTES[entry.name] !== undefined) {
+      exact.add(METADATA_ROUTES[entry.name]!);
       continue;
     }
     if (!entry.isDirectory()) continue;

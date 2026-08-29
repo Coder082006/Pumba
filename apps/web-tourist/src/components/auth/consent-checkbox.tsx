@@ -80,7 +80,7 @@ export function ConsentCheckbox({
         // Named plainly, next to the control it undermines. The alternative —
         // saying nothing — is what "I accept the terms of use." with no link
         // already does, and that reads as though a document exists.
-        <p role="note" className="ml-6 text-xs text-amber-800">
+        <p role="note" className="ml-6 text-xs text-warning-foreground">
           The {document.name} {document.name.endsWith('s') ? 'are' : 'is'} not published yet.
           Until {document.name.endsWith('s') ? 'they are' : 'it is'}, there is nothing here for
           you to read before agreeing.

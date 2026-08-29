@@ -28,8 +28,8 @@ export default function ExplorePage() {
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Explore</h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <h1 className="font-display text-3xl font-bold leading-tight tracking-tight">Explore</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Pick a destination, then build the days around it.
         </p>
       </header>
@@ -68,7 +68,7 @@ async function TagChips() {
       <ul className="flex flex-wrap gap-2">
         {tags.map((tag) => (
           <li key={tag.slug}>
-            <span className="rounded-full border border-slate-300 px-3 py-1 text-sm">
+            <span className="rounded-full border border-border px-3 py-1 text-sm">
               {tag.label}
             </span>
           </li>
@@ -86,7 +86,7 @@ async function DestinationsSection() {
     }
     return (
       <section aria-labelledby="destinations">
-        <h2 id="destinations" className="mb-3 text-lg font-semibold">
+        <h2 id="destinations" className="mb-4 font-display text-2xl font-bold tracking-tight">
           Destinations
         </h2>
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -109,7 +109,7 @@ async function ActivitiesSection() {
     }
     return (
       <section aria-labelledby="activities">
-        <h2 id="activities" className="mb-3 text-lg font-semibold">
+        <h2 id="activities" className="mb-4 font-display text-2xl font-bold tracking-tight">
           Activities
         </h2>
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -127,12 +127,12 @@ async function ActivitiesSection() {
 function SectionSkeleton({ label, rows }: { label: string; rows: number }) {
   return (
     <section aria-busy="true" aria-label={`${label} loading`}>
-      <div className="mb-3 h-6 w-40 rounded bg-slate-100" />
+      <div className="mb-3 h-6 w-40 rounded bg-muted" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: rows }).map((_, index) => (
           // Same box the real card occupies, so the skeleton does not shift
           // the page when it is replaced (§29, CLS).
-          <div key={index} className="h-56 rounded-lg bg-slate-100" />
+          <div key={index} className="h-56 rounded-lg bg-muted" />
         ))}
       </div>
     </section>
@@ -142,8 +142,8 @@ function SectionSkeleton({ label, rows }: { label: string; rows: number }) {
 function EmptySection({ title, message }: { title: string; message: string }) {
   return (
     <section>
-      <h2 className="mb-2 text-lg font-semibold">{title}</h2>
-      <p className="text-sm text-slate-600">{message}</p>
+      <h2 className="mb-3 font-display text-2xl font-bold tracking-tight">{title}</h2>
+      <p className="text-sm text-muted-foreground">{message}</p>
     </section>
   );
 }
@@ -151,8 +151,8 @@ function EmptySection({ title, message }: { title: string; message: string }) {
 function FailedSection({ title }: { title: string }) {
   return (
     <section>
-      <h2 className="mb-2 text-lg font-semibold">{title}</h2>
-      <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+      <h2 className="mb-3 font-display text-2xl font-bold tracking-tight">{title}</h2>
+      <p className="rounded-md border border-dashed border-border bg-muted p-3 text-sm text-muted-foreground">
         This section could not be loaded. Everything else on the page is still available.
       </p>
     </section>

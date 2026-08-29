@@ -86,8 +86,8 @@ export default async function DestinationPage({ params }: Params) {
       ) : null}
 
       <header>
-        <h1 className="text-3xl font-semibold tracking-tight">{destination.name}</h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <h1 className="font-display text-3xl font-bold leading-tight tracking-tight sm:text-4xl">{destination.name}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           {destination.region.name} · {destination.region.country.name} · {destination.timezone} ·
           prices in {destination.default_currency}
         </p>
@@ -112,11 +112,11 @@ export default async function DestinationPage({ params }: Params) {
         />
         <dl className="self-center text-sm">
           <dt className="font-medium">Coordinates</dt>
-          <dd className="tabular-nums text-slate-600">
+          <dd className="tabular-nums text-muted-foreground">
             {destination.latitude}, {destination.longitude}
           </dd>
           <dt className="mt-3 font-medium">Local time zone</dt>
-          <dd className="text-slate-600">{destination.timezone}</dd>
+          <dd className="text-muted-foreground">{destination.timezone}</dd>
         </dl>
       </section>
 
@@ -167,7 +167,7 @@ async function AttractionsTab({ slug }: { slug: string }) {
     if (items.length === 0) return null;
     return (
       <section aria-labelledby="attractions">
-        <h2 id="attractions" className="mb-3 text-lg font-semibold">
+        <h2 id="attractions" className="mb-4 font-display text-2xl font-bold tracking-tight">
           Attractions
         </h2>
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -188,7 +188,7 @@ async function ActivitiesTab({ slug }: { slug: string }) {
     if (items.length === 0) return null;
     return (
       <section aria-labelledby="activities">
-        <h2 id="activities" className="mb-3 text-lg font-semibold">
+        <h2 id="activities" className="mb-4 font-display text-2xl font-bold tracking-tight">
           Activities
         </h2>
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -206,10 +206,10 @@ async function ActivitiesTab({ slug }: { slug: string }) {
 function TabSkeleton({ label }: { label: string }) {
   return (
     <section aria-busy="true" aria-label={`${label} loading`}>
-      <div className="mb-3 h-6 w-36 rounded bg-slate-100" />
+      <div className="mb-3 h-6 w-36 rounded bg-muted" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 3 }).map((_, index) => (
-          <div key={index} className="h-24 rounded-lg bg-slate-100" />
+          <div key={index} className="h-24 rounded-lg bg-muted" />
         ))}
       </div>
     </section>
@@ -219,8 +219,8 @@ function TabSkeleton({ label }: { label: string }) {
 function FailedTab({ title }: { title: string }) {
   return (
     <section>
-      <h2 className="mb-2 text-lg font-semibold">{title}</h2>
-      <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+      <h2 className="mb-3 font-display text-2xl font-bold tracking-tight">{title}</h2>
+      <p className="rounded-md border border-dashed border-border bg-muted p-3 text-sm text-muted-foreground">
         This section could not be loaded. The rest of the page is unaffected.
       </p>
     </section>

@@ -39,10 +39,24 @@ export default {
         accent: {
           DEFAULT: 'hsl(var(--accent))',
           foreground: 'hsl(var(--accent-foreground))',
+          // Dark enough to set text on a light surface. `accent` itself is
+          // 2.9:1 on the background and fails as an ink — a failure invisible
+          // to anyone with good eyes and a good screen.
+          ink: 'hsl(var(--accent-ink))',
         },
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
+          // For inline error text on the page background, where the filled
+          // banner colour is too light to read.
+          ink: 'hsl(var(--destructive-ink))',
+        },
+        // A distinct semantic from `accent`. A "this stay has no location"
+        // notice and a "book this" button must not be able to converge.
+        warning: {
+          DEFAULT: 'hsl(var(--warning))',
+          foreground: 'hsl(var(--warning-foreground))',
+          border: 'hsl(var(--warning-border))',
         },
         card: {
           DEFAULT: 'hsl(var(--card))',
@@ -56,7 +70,34 @@ export default {
       },
       fontFamily: {
         sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // Headings and pull quotes. Paired with `sans` for body text, which
+        // is the editorial arrangement a travel site wants: character in the
+        // headline, legibility in the paragraph.
+        display: ['var(--font-display)', 'Georgia', 'serif'],
         mono: ['var(--font-mono)', 'ui-monospace', 'monospace'],
+      },
+      // Both are tokens so `prefers-reduced-motion` can flatten every
+      // animation from one place in `globals.css`. A component reaching for
+      // `duration-300` opts itself out of that guarantee without saying so.
+      transitionDuration: {
+        fast: 'var(--duration-fast)',
+        base: 'var(--duration-base)',
+        slow: 'var(--duration-slow)',
+      },
+      transitionTimingFunction: {
+        out: 'var(--ease-out)',
+        'in-out': 'var(--ease-in-out)',
+      },
+      boxShadow: {
+        sm: 'var(--shadow-sm)',
+        md: 'var(--shadow-md)',
+        lg: 'var(--shadow-lg)',
+      },
+      // A tourism site leads with photographs, and a hero needs to be able to
+      // say how tall it is without a magic number in a page file.
+      height: {
+        hero: 'clamp(22rem, 62vh, 40rem)',
+        'hero-sm': 'clamp(16rem, 42vh, 26rem)',
       },
     },
   },

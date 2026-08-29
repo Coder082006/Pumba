@@ -61,15 +61,15 @@ export default async function AttractionPage({ params }: Params) {
       <Gallery images={attraction.media} srcFor={mediaSrc} priority />
 
       <header>
-        <h1 className="text-3xl font-semibold tracking-tight">{attraction.name}</h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <h1 className="font-display text-3xl font-bold leading-tight tracking-tight sm:text-4xl">{attraction.name}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           {attraction.destination.name} › {attraction.destination.region.name}
         </p>
       </header>
 
       <div className="grid gap-8 sm:grid-cols-2">
         <section aria-labelledby="about" className="space-y-4">
-          <h2 id="about" className="text-lg font-semibold">
+          <h2 id="about" className="font-display text-xl font-bold tracking-tight">
             About
           </h2>
           <p className="leading-relaxed">{attraction.description}</p>
@@ -80,10 +80,10 @@ export default async function AttractionPage({ params }: Params) {
             </p>
           ) : null}
           {attraction.tags.length > 0 ? (
-            <p className="text-sm text-slate-600">Tags {attraction.tags.join(' · ')}</p>
+            <p className="text-sm text-muted-foreground">Tags {attraction.tags.join(' · ')}</p>
           ) : null}
           {attraction.accessibility_notes ? (
-            <p className="text-sm text-slate-600">{attraction.accessibility_notes}</p>
+            <p className="text-sm text-muted-foreground">{attraction.accessibility_notes}</p>
           ) : null}
 
           <MapPanel
@@ -94,7 +94,7 @@ export default async function AttractionPage({ params }: Params) {
         </section>
 
         <section aria-labelledby="hours">
-          <h2 id="hours" className="text-lg font-semibold">
+          <h2 id="hours" className="font-display text-xl font-bold tracking-tight">
             Opening hours
           </h2>
           {rows ? <OpeningHoursTable rows={rows} timeZone={timeZone} /> : <NoPublishedHours />}
@@ -107,7 +107,7 @@ export default async function AttractionPage({ params }: Params) {
         // assumes otherwise arrives without cash.
         <p
           role="note"
-          className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          className="rounded-md border border-warning-border bg-warning p-3 text-sm text-warning-foreground"
         >
           Entrance fee {attraction.fee_currency} {attraction.entrance_fee} per person — paid on
           site, not included in your trip total.
@@ -169,7 +169,7 @@ function OpeningHoursTable({ rows, timeZone }: { rows: WeekRow[]; timeZone: stri
                   ? 'Closed'
                   : row.ranges.map(([open, close]) => `${open} – ${close}`).join(', ')}
                 {row.exceptionReason ? (
-                  <span className="text-slate-500"> — {row.exceptionReason}</span>
+                  <span className="text-muted-foreground"> — {row.exceptionReason}</span>
                 ) : null}
               </td>
             </tr>
@@ -178,14 +178,14 @@ function OpeningHoursTable({ rows, timeZone }: { rows: WeekRow[]; timeZone: stri
       </table>
       {/* Which clock these times belong to. Without it the table is ambiguous
           for every reader who is not standing in the destination. */}
-      <p className="mt-2 text-xs text-slate-500">Times shown in {timeZone}.</p>
+      <p className="mt-2 text-xs text-muted-foreground">Times shown in {timeZone}.</p>
     </>
   );
 }
 
 function NoPublishedHours() {
   return (
-    <p className="mt-2 text-sm text-slate-600">
+    <p className="mt-2 text-sm text-muted-foreground">
       Opening hours have not been published for this attraction.
     </p>
   );

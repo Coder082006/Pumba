@@ -35,29 +35,40 @@ export const metadata = {
 
 export default function HomePage() {
   return (
-    <div className="space-y-12">
-      <section className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-8 sm:p-12">
-        <h1 className="max-w-2xl text-4xl font-semibold tracking-tight sm:text-5xl">
+    <div className="space-y-16 sm:space-y-20">
+      {/* The hero is a single full-bleed panel, not a carousel — the same
+          choice nordicvisitor.com makes. A rotating hero is among the easiest
+          ways to fail LCP and CLS, and §29's gate is wired into CI.
+
+          Until a market's photography exists this is a token gradient rather
+          than a stand-in image: an obviously-decorative surface reads as
+          deliberate, where a grey placeholder box reads as broken. The image
+          replaces the gradient and nothing else about this block moves. */}
+      <section className="relative isolate overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-primary/10 via-background to-accent/10 px-6 py-16 shadow-sm sm:px-12 sm:py-24">
+        <p className="text-sm font-semibold uppercase tracking-widest text-accent-ink">
+          Zanzibar
+        </p>
+        <h1 className="mt-4 max-w-3xl font-display text-4xl font-bold leading-[1.1] tracking-tight text-foreground sm:text-6xl">
           Plan the whole journey before you travel.
         </h1>
-        <p className="mt-4 max-w-xl text-slate-600">
+        <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
           Browse destinations, pick the things worth doing, and build the days around where you
           are staying — transfers included.
         </p>
-        <div className="mt-6 flex flex-wrap gap-3">
+        <div className="mt-10 flex flex-wrap gap-3">
           {/* §24.6's "prominent Plan a Trip button". It points at Explore
               rather than at a planner: the Trip Planner is §24.14 and belongs
               to the trip module, and a button leading to a 404 is the defect
               `navigation.test.ts` now fails the build for. */}
           <Link
             href="/explore"
-            className="rounded-md bg-slate-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-slate-700"
+            className="rounded-md bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-md transition-colors duration-fast ease-out hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             Start exploring
           </Link>
           <Link
             href="/stays"
-            className="rounded-md border border-slate-300 px-5 py-2.5 text-sm font-medium hover:bg-slate-50"
+            className="rounded-md border border-border bg-card px-6 py-3 text-sm font-semibold text-foreground shadow-sm transition-colors duration-fast ease-out hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             Where are you staying?
           </Link>
@@ -127,15 +138,18 @@ function Row({
   const id = title.toLowerCase().replace(/\s+/g, '-');
   return (
     <section aria-labelledby={id}>
-      <div className="mb-3 flex items-baseline justify-between gap-4">
-        <h2 id={id} className="text-lg font-semibold">
+      <div className="mb-5 flex items-baseline justify-between gap-4">
+        <h2 id={id} className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
           {title}
         </h2>
-        <Link href={href} className="text-sm text-slate-600 hover:underline">
+        <Link
+          href={href}
+          className="shrink-0 text-sm font-medium text-primary transition-colors duration-fast ease-out hover:text-primary/80"
+        >
           {linkLabel}
         </Link>
       </div>
-      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">{children}</ul>
+      <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">{children}</ul>
     </section>
   );
 }
@@ -143,12 +157,12 @@ function Row({
 function RowSkeleton({ title }: { title: string }) {
   return (
     <section aria-busy="true" aria-label={`${title} loading`}>
-      <div className="mb-3 h-6 w-48 rounded bg-slate-100" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-5 h-9 w-56 rounded-md bg-muted" />
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
           // The same box the real card occupies, so nothing shifts when it is
           // replaced (§29, CLS).
-          <div key={index} className="h-56 rounded-lg bg-slate-100" />
+          <div key={index} className="h-56 rounded-lg bg-muted" />
         ))}
       </div>
     </section>
@@ -158,8 +172,8 @@ function RowSkeleton({ title }: { title: string }) {
 function FailedRow({ title }: { title: string }) {
   return (
     <section>
-      <h2 className="mb-2 text-lg font-semibold">{title}</h2>
-      <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+      <h2 className="mb-3 font-display text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>
+      <p className="rounded-md border border-dashed border-border bg-muted p-4 text-sm text-muted-foreground">
         This section could not be loaded. Everything else on the page is still available.
       </p>
     </section>

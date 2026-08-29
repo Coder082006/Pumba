@@ -91,7 +91,7 @@ export function StayPicker({ properties, destinationName, maxNights, map }: Stay
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <div className="space-y-3">
         {map}
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Pins show the {properties.length === 1 ? 'property' : 'properties'} we already know in{' '}
           {destinationName}.
         </p>
@@ -102,28 +102,28 @@ export function StayPicker({ properties, destinationName, maxNights, map }: Stay
           <legend className="text-sm font-medium">Dates</legend>
           <div className="flex flex-wrap gap-4">
             <label className="text-sm">
-              <span className="block text-slate-600">Check in</span>
+              <span className="block text-muted-foreground">Check in</span>
               <input
                 type="date"
                 value={checkIn}
                 disabled={maxNights === null}
                 onChange={(event) => setCheckIn(event.target.value)}
-                className="mt-1 rounded-md border border-slate-300 px-2 py-1 disabled:bg-slate-100"
+                className="mt-1 rounded-md border border-border px-2 py-1 disabled:bg-muted"
               />
             </label>
             <label className="text-sm">
-              <span className="block text-slate-600">Check out</span>
+              <span className="block text-muted-foreground">Check out</span>
               <input
                 type="date"
                 value={checkOut}
                 disabled={maxNights === null}
                 onChange={(event) => setCheckOut(event.target.value)}
-                className="mt-1 rounded-md border border-slate-300 px-2 py-1 disabled:bg-slate-100"
+                className="mt-1 rounded-md border border-border px-2 py-1 disabled:bg-muted"
               />
             </label>
           </div>
           {maxNights === null ? (
-            <p role="status" className="text-sm text-amber-800">
+            <p role="status" className="text-sm text-warning-foreground">
               Dates are temporarily unavailable — we can&rsquo;t reach the settings that bound how
               long a stay can be. The properties below are still browsable.
             </p>
@@ -132,7 +132,7 @@ export function StayPicker({ properties, destinationName, maxNights, map }: Stay
               not push the list below it down the page (§29, CLS). */}
           <p
             role={showDateError ? 'alert' : undefined}
-            className={`min-h-[1.25rem] text-sm ${showDateError ? 'text-red-700' : 'text-slate-600'}`}
+            className={`min-h-[1.25rem] text-sm ${showDateError ? 'text-destructive-ink' : 'text-muted-foreground'}`}
           >
             {stay.ok ? describeNights(stay.nights) : showDateError ? stay.message : ''}
           </p>
@@ -149,12 +149,12 @@ export function StayPicker({ properties, destinationName, maxNights, map }: Stay
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={`Search ${destinationName} properties…`}
-              className="w-full rounded-md border border-slate-300 px-3 py-2"
+              className="w-full rounded-md border border-border px-3 py-2"
             />
           </label>
 
           {matches.length > 0 ? (
-            <ul className="divide-y divide-slate-200 rounded-md border border-slate-200">
+            <ul className="divide-y divide-border rounded-md border border-border">
               {matches.map((property) => (
                 <li key={property.public_id}>
                   <button
@@ -164,10 +164,10 @@ export function StayPicker({ properties, destinationName, maxNights, map }: Stay
                       selection.kind === 'curated' &&
                       selection.property.public_id === property.public_id
                     }
-                    className="flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-50 aria-pressed:bg-slate-100"
+                    className="flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted aria-pressed:bg-muted"
                   >
                     <span className="font-medium">{property.name}</span>
-                    <span className="shrink-0 text-slate-600">
+                    <span className="shrink-0 text-muted-foreground">
                       {property.property_type} · {property.destination.name}
                     </span>
                   </button>
@@ -177,7 +177,7 @@ export function StayPicker({ properties, destinationName, maxNights, map }: Stay
           ) : (
             // §24.11: "a no-match state that offers free entry rather than a
             // dead end". An empty list with nothing after it is the dead end.
-            <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+            <p className="rounded-md border border-dashed border-border bg-muted p-3 text-sm text-muted-foreground">
               {properties.length === 0
                 ? `We do not have any properties listed in ${destinationName} yet.`
                 : `Nothing matches “${query}”.`}{' '}
@@ -204,13 +204,13 @@ export function StayPicker({ properties, destinationName, maxNights, map }: Stay
                 );
               }}
               placeholder="Enter any hotel name or address"
-              className="w-full rounded-md border border-slate-300 px-3 py-2"
+              className="w-full rounded-md border border-border px-3 py-2"
               aria-describedby="free-entry-note"
             />
           </label>
           <p
             id="free-entry-note"
-            className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+            className="rounded-md border border-warning-border bg-warning p-3 text-sm text-warning-foreground"
           >
             We record this by name. We can&rsquo;t place it on the map yet, so we won&rsquo;t be
             able to plan your airport transfers or day trips around it — pick it from the list
@@ -231,7 +231,7 @@ export function StayPicker({ properties, destinationName, maxNights, map }: Stay
             I haven&rsquo;t booked anywhere yet
             {/* VR-16 is a warning, not a block (§10.6). Saying so here keeps
                 the option from feeling like an admission of failure. */}
-            <span className="block text-slate-600">
+            <span className="block text-muted-foreground">
               That&rsquo;s fine — you can still plan the days. We&rsquo;ll flag any night with
               nowhere to stay so you can come back to it.
             </span>
@@ -248,20 +248,20 @@ function Summary({ selection, stay }: { selection: Selection; stay: StayCheck })
   const ready = stay.ok && selection.kind !== 'none';
 
   return (
-    <div className="space-y-2 border-t border-slate-200 pt-4">
+    <div className="space-y-2 border-t border-border pt-4">
       <p className="text-sm" aria-live="polite">
         {describeSelection(selection, stay)}
       </p>
       <button
         type="button"
         disabled
-        className="w-full cursor-not-allowed rounded-md border border-slate-300 bg-slate-100 px-4 py-2 text-sm text-slate-500"
+        className="w-full cursor-not-allowed rounded-md border border-border bg-muted px-4 py-2 text-sm text-muted-foreground"
       >
         {ready ? 'Add to trip — coming soon' : 'Add to trip'}
       </button>
       {/* The honest version of a disabled button. Without this it reads as a
           bug, or as the form having silently rejected what was entered. */}
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-muted-foreground">
         Saving a stay arrives with the trip planner. Nothing on this page is stored yet.
       </p>
     </div>

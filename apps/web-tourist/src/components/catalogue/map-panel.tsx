@@ -70,8 +70,8 @@ function MapUnavailable({
       // because something failed.
       style={{ aspectRatio }}
     >
-      <div className="flex h-full w-full flex-col justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-        <p className="font-medium text-slate-700">The map is temporarily unavailable.</p>
+      <div className="flex h-full w-full flex-col justify-center gap-2 rounded-lg border border-dashed border-border bg-muted p-4 text-sm text-muted-foreground">
+        <p className="font-medium text-foreground">The map is temporarily unavailable.</p>
         {/* The point of the degraded state: the locations are still here. */}
         <ul className="space-y-1">
           {pins.map((pin) => (

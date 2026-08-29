@@ -5,6 +5,7 @@ import type {
   Activity,
   Attraction,
   Destination,
+  Market,
   SearchHit,
   Tag,
 } from '@pumba/contracts';
@@ -36,6 +37,21 @@ export { listAll } from '@/lib/paginate';
 const REVALIDATE_SECONDS = 30;
 
 const cached = { next: { revalidate: REVALIDATE_SECONDS } } as Parameters<typeof apiFetch>[1];
+
+/**
+ * Every listed market — §24.6's destination selector. ADR 0018.
+ *
+ * Unpaginated at the API, so this returns the whole set. That is deliberate
+ * there and worth restating here: `market` is administered, so its size is a
+ * business decision rather than something a caller can inflate, and the
+ * selector needs every tile at once rather than behind a cursor walk.
+ *
+ * The rows include markets that are **listed and not open**. Read `is_open`
+ * before linking anywhere beneath one — its catalogue 404s by design.
+ */
+export function listMarkets() {
+  return apiFetch<Market[]>('/markets', cached);
+}
 
 export function listDestinations(
   params: { limit?: number; cursor?: string | undefined } = {},

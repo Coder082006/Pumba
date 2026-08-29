@@ -52,7 +52,7 @@ export default async function StaysPage({ searchParams }: PageProps) {
   if (destinationResult.status === 'rejected') {
     return (
       <Shell>
-        <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+        <p className="rounded-md border border-dashed border-border bg-muted p-4 text-sm text-muted-foreground">
           We could not load that destination.{' '}
           <Link href="/stays" className="underline">
             Pick another
@@ -76,7 +76,7 @@ export default async function StaysPage({ searchParams }: PageProps) {
         // tourist otherwise, and only one of them is worth retrying.
         <p
           role="status"
-          className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600"
+          className="rounded-md border border-dashed border-border bg-muted p-3 text-sm text-muted-foreground"
         >
           The property list could not be loaded just now. You can still type where you are staying.
         </p>
@@ -111,8 +111,8 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Where are you staying?</h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <h1 className="font-display text-3xl font-bold leading-tight tracking-tight">Where are you staying?</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Your stay anchors the trip — transfers and day trips are planned around it. No prices, no
           availability: just where and when.
         </p>
@@ -129,7 +129,7 @@ async function ChooseDestination() {
   } catch {
     return (
       <Shell>
-        <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+        <p className="rounded-md border border-dashed border-border bg-muted p-4 text-sm text-muted-foreground">
           Destinations could not be loaded. Please try again shortly.
         </p>
       </Shell>
@@ -140,14 +140,14 @@ async function ChooseDestination() {
     <Shell>
       <h2 className="text-sm font-medium">Which destination?</h2>
       {destinations.length === 0 ? (
-        <p className="text-sm text-slate-600">No destinations are published yet.</p>
+        <p className="text-sm text-muted-foreground">No destinations are published yet.</p>
       ) : (
         <ul className="flex flex-wrap gap-2">
           {destinations.map((item) => (
             <li key={item.public_id}>
               <Link
                 href={`/stays?destination=${encodeURIComponent(item.slug)}`}
-                className="inline-block rounded-full border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
+                className="inline-block rounded-full border border-border px-3 py-1 text-sm hover:bg-muted"
               >
                 {item.name}
               </Link>

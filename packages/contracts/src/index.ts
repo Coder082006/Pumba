@@ -59,6 +59,8 @@ export type HealthResponse = components['schemas']['HealthResponse'];
  * the pull request.
  */
 export type Country = components['schemas']['Country'];
+export type Market = components['schemas']['Market'];
+export type MarketRef = components['schemas']['MarketRef'];
 export type Region = components['schemas']['Region'];
 export type Destination = components['schemas']['Destination'];
 export type Attraction = components['schemas']['Attraction'];
