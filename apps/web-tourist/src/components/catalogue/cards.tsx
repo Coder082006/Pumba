@@ -31,6 +31,25 @@ export function mediaSrc(fileKey: string): string {
   return `${base}/${fileKey}`;
 }
 
+/**
+ * The `srcset` for one media row.
+ *
+ * `scripts/fetch_commons_media.py` writes every photograph twice — the wide
+ * file under `file_key`, and a 960px sibling as `<stem>-960.webp` — so a
+ * phone is not made to download a hero. The convention lives in two places by
+ * necessity, the script that writes the files and this function that names
+ * them, and `media-srcset.test.ts` pins the pair together.
+ *
+ * Returns `undefined` for a key that does not fit the convention, so a
+ * hand-added image degrades to the single `src` rather than requesting a
+ * variant nobody generated.
+ */
+export function mediaSrcSet(fileKey: string): string | undefined {
+  const stem = fileKey.replace(/\.webp$/, '');
+  if (stem === fileKey) return undefined;
+  return `${mediaSrc(`${stem}-960.webp`)} 960w, ${mediaSrc(fileKey)} 1600w`;
+}
+
 function primaryImage(media: { file_key: string; alt_text: string; is_primary: boolean }[] = []) {
   return media.find((m) => m.is_primary) ?? media[0];
 }
@@ -65,6 +84,11 @@ export function DestinationCard({ destination }: { destination: Destination }) {
         {image ? (
           <img
             src={mediaSrc(image.file_key)}
+            srcSet={mediaSrcSet(image.file_key)}
+            // A card is at most a quarter of a 1280px grid, and full width on
+            // a phone. Telling the browser that is what lets it pick the
+            // 960px file instead of the hero.
+            sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
             alt={image.alt_text || ''}
             aria-hidden={image.alt_text ? undefined : true}
             width={640}

@@ -95,6 +95,13 @@ services:
       # would become if it moved inside the package. Read-only: `make seed`
       # loads it and nothing in the container may edit it.
       - ./database:/database:ro
+      # Read-only, and only so `tests/test_media_seed.py` can check that every
+      # row in the media seed names a file that exists. The API never serves
+      # these — §35.7 puts them behind a CDN and the web client reads them
+      # from its own `public/`. Without the mount that check could only run on
+      # CI, which is the "green locally, red in CI" split this project has
+      # already paid for once.
+      - ./apps/web-tourist/public/media:/media-files:ro
     ports:
       - "8000:8000"
     depends_on:

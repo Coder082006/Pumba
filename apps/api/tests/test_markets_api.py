@@ -143,8 +143,41 @@ class TestTheShapeOfTheResponse:
     def test_a_market_carries_what_the_selector_tile_needs(self, public: APIClient) -> None:
         make_market(slug="zanzibar", name="Zanzibar", summary="Unguja.", is_active=True)
         [row] = _rows(public.get("/api/v1/markets"))
-        assert set(row) == {"public_id", "name", "slug", "summary", "is_open", "country"}
+        assert set(row) == {
+            "public_id",
+            "name",
+            "slug",
+            "summary",
+            "is_open",
+            "country",
+            "media",
+        }
         assert row["country"]["iso_code"]
+
+    def test_a_market_carries_its_own_photography(self, public: APIClient) -> None:
+        """ADR 0018's point made concrete: the landing page hero is a row in a
+        table, so "show what Zanzibar looks like" is data. A market with no
+        gallery is a hero with nothing to render, which the selector has to be
+        able to survive — hence the shape is always present and may be empty."""
+        from apps.catalogue.tests.factories import make_media
+
+        market = make_market(slug="zanzibar", name="Zanzibar", is_active=True)
+        # `owner_type` comes from the model's own table name, so this asserts
+        # that `MediaOwnerType.MARKET` and `Market.Meta.db_table` agree — the
+        # kind of pair that silently diverges and empties a gallery.
+        make_media(
+            owner=market,
+            file_key="stone-town.webp",
+            alt_text="Carved doors in Stone Town.",
+            is_primary=True,
+        )
+        [row] = _rows(public.get("/api/v1/markets"))
+        assert [image["file_key"] for image in row["media"]] == ["stone-town.webp"]
+
+    def test_a_market_without_photography_still_lists(self, public: APIClient) -> None:
+        make_market(slug="zanzibar", name="Zanzibar", is_active=True)
+        [row] = _rows(public.get("/api/v1/markets"))
+        assert row["media"] == []
 
     def test_it_resolves_by_public_id_as_well_as_by_slug(self, public: APIClient) -> None:
         """§7.2 exchanges the UUID; §24.6 puts the slug in the path. Both

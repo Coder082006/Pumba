@@ -1620,6 +1620,7 @@ export interface components {
             summary: string | null;
             is_open: boolean;
             country: components["schemas"]["Country"];
+            media: components["schemas"]["Media"][];
         };
         /** @description A market named. Carries no `is_open` — see `MarketRefDTO` for why. */
         MarketRef: {

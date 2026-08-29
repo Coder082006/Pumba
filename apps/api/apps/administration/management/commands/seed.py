@@ -104,6 +104,10 @@ class Command(BaseCommand):
         try:
             with transaction.atomic():
                 results = [self._load(root, stem, key) for stem, key in catalogue.SEED_FILES]
+                # Media last and through its own loader: it is not a
+                # `CatalogueEntity` (see `load_media_seed` for why), and every
+                # row names an owner that the files above have to have created.
+                results.append(self._load_media(root))
                 if options["dry_run"]:
                     self.stdout.write(self.style.WARNING("dry run — rolling back"))
                     transaction.set_rollback(True)
@@ -112,6 +116,18 @@ class Command(BaseCommand):
 
         for result in results:
             self.stdout.write(self.style.SUCCESS(str(result)))
+
+    def _load_media(self, root: Path) -> catalogue.SeedResult:
+        path = root / f"{catalogue.MEDIA_SEED_FILE}.json"
+        if not path.is_file():
+            # Optional, unlike the entity files. Photography is content rather
+            # than reference data, and a checkout without it should still
+            # produce a working catalogue — with reserved, empty image boxes.
+            return catalogue.SeedResult("media", 0, 0)
+        rows = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(rows, list):
+            raise CommandError(f"{path} must hold a JSON array")
+        return catalogue.load_media_seed(rows)
 
     def _load(self, root: Path, stem: str, entity_key: str) -> catalogue.SeedResult:
         path = root / f"{stem}.json"

@@ -416,6 +416,7 @@ class MarketSerializer(serializers.Serializer[Any]):
     #: presence would link a tile at a catalogue that 404s.
     is_open = serializers.BooleanField()
     country = CountrySerializer()
+    media = MediaSerializer(many=True)
 
 
 class RegionSerializer(serializers.Serializer[Any]):

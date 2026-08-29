@@ -58,6 +58,8 @@ from apps.catalogue.models import (
     Country,
     Destination,
     Market,
+    Media,
+    MediaOwnerType,
     Region,
     Tag,
 )
@@ -570,6 +572,35 @@ SEED_FILES: tuple[tuple[str, str], ...] = (
 )
 
 
+#: The media seed, loaded separately from `SEED_FILES`.
+#:
+#: `media` is **not** a `CatalogueEntity` and cannot be one. `Media` extends
+#: `TimestampedModel`, not `SoftDeleteModel`: it has no `public_id` for
+#: `record_audit` to use as an entity id, and no `deleted_at` for
+#: `find_by_natural_key` to filter on — both deliberate, because §7.3 makes a
+#: media row identified by its content-hashed `file_key` and §35.7 says a
+#: removed image is removed rather than retired.
+#:
+#: Forcing it into the registry would mean adding a `public_id` the model has
+#: no use for, or special-casing the audit path for one entity. A separate
+#: loader is the smaller lie: it is fifteen lines, it says plainly that media
+#: is a different kind of thing, and it leaves the registry describing exactly
+#: the entities that fit it.
+MEDIA_SEED_FILE = "09-media"
+
+#: Which table an `owner_type` names, so a seed row can say `"stone-town"`
+#: instead of a primary key no person could write.
+_MEDIA_OWNERS: Mapping[str, type[SoftDeleteModel]] = MappingProxyType(
+    {
+        MediaOwnerType.MARKET.value: Market,
+        MediaOwnerType.DESTINATION.value: Destination,
+        MediaOwnerType.ATTRACTION.value: Attraction,
+        MediaOwnerType.ACTIVITY.value: Activity,
+        MediaOwnerType.ACCOMMODATION.value: Accommodation,
+    }
+)
+
+
 @dataclass(frozen=True, slots=True)
 class SeedResult:
     """What one file did. Reported per entity so a re-run is legible."""
@@ -580,6 +611,49 @@ class SeedResult:
 
     def __str__(self) -> str:
         return f"{self.entity}: {self.created} created, {self.updated} updated"
+
+
+def load_media_seed(rows: Sequence[Mapping[str, Any]]) -> SeedResult:
+    """Load `media`, resolving each row's owner by slug.
+
+    Idempotent by `(owner_type, owner_id, file_key)`, which is the natural key
+    §35.7 gives this table: the key is a content hash, so the same photograph
+    re-seeded is the same row rather than a duplicate.
+
+    A row naming an owner that does not exist is an error rather than a skip.
+    A gallery silently missing its hero is the failure this whole phase keeps
+    finding, and a seed loader is a cheap place to refuse it.
+    """
+    created = updated = 0
+    for row in rows:
+        fields = dict(row)
+        owner_type = str(fields.pop("owner_type"))
+        owner_slug = str(fields.pop("owner"))
+
+        model = _MEDIA_OWNERS.get(owner_type)
+        if model is None:
+            raise ValidationError(f"media: unknown owner_type {owner_type!r}")
+
+        # The same lookup the entity loader uses, for the same reason: a seed
+        # file identifies a row the way a person does, and a retired owner
+        # must not be resurrected by re-seeding its photographs.
+        owner = repo.find_by_natural_key(model, "slug", owner_slug)
+        if owner is None:
+            raise ValidationError(f"media: no live {owner_type} with slug {owner_slug!r}")
+
+        existing = Media.objects.filter(
+            owner_type=owner_type, owner_id=owner.pk, file_key=fields["file_key"]
+        ).first()
+        if existing is None:
+            Media.objects.create(owner_type=owner_type, owner_id=owner.pk, **fields)
+            created += 1
+        else:
+            for key, value in fields.items():
+                setattr(existing, key, value)
+            existing.save()
+            updated += 1
+
+    return SeedResult("media", created, updated)
 
 
 def load_seed(

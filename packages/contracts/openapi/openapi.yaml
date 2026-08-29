@@ -2795,9 +2795,14 @@ components:
           type: boolean
         country:
           $ref: '#/components/schemas/Country'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Media'
       required:
       - country
       - is_open
+      - media
       - name
       - public_id
       - slug

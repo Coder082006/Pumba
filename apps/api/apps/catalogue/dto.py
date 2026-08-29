@@ -165,6 +165,9 @@ class MarketDTO:
     summary: str | None
     is_open: bool
     country: CountryDTO
+    #: What the place looks like. §24.6's hero reads this, which is what keeps
+    #: "show Zanzibar's beaches" a row in a table rather than a branch in code.
+    media: tuple[MediaDTO, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -939,6 +939,11 @@ class MediaOwnerType(models.TextChoices):
     gallery query.
     """
 
+    #: ADR 0018. A market owns the photography its landing page leads with,
+    #: which is what makes "the hero shows the place you chose" data rather
+    #: than a mapping in code (§4.2). Opening a market is a row and its
+    #: pictures.
+    MARKET = "market", "Market"
     DESTINATION = "destination", "Destination"
     ATTRACTION = "attraction", "Attraction"
     ACTIVITY = "activity", "Activity"

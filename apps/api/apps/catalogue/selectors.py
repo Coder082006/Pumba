@@ -609,7 +609,7 @@ def to_market_ref_dto(market: Any) -> MarketRefDTO:
     return MarketRefDTO(public_id=market.public_id, name=market.name, slug=market.slug)
 
 
-def to_market_dto(market: Any, *, today: date) -> MarketDTO:
+def to_market_dto(market: Any, *, today: date, media: Sequence[Media] = ()) -> MarketDTO:
     """`today` is required, not defaulted.
 
     `is_open` is a function of the clock, and a default would let a caller
@@ -634,6 +634,7 @@ def to_market_dto(market: Any, *, today: date) -> MarketDTO:
             today=today,
         ),
         country=to_country_dto(market.country),
+        media=_gallery(MediaOwnerType.MARKET, media),
     )
 
 
@@ -913,7 +914,9 @@ def list_markets(*, today: date) -> tuple[MarketDTO, ...]:
     Ordered by name: the tile grid has no ranking signal to sort on, and a
     stable alphabetical order is one a returning visitor recognises.
     """
-    return tuple(to_market_dto(row, today=today) for row in listed_markets(today=today))
+    rows = list(listed_markets(today=today))
+    galleries = _by_owner(_media_for(MediaOwnerType.MARKET, [row.id for row in rows]))
+    return tuple(to_market_dto(row, today=today, media=galleries.get(row.id, [])) for row in rows)
 
 
 def get_market(*, reference: str | UUID, today: date) -> MarketDTO | None:
@@ -932,7 +935,9 @@ def get_market(*, reference: str | UUID, today: date) -> MarketDTO | None:
     which has `market` in their chains.
     """
     row = listed_markets(today=today).filter(reference_q(reference)).first()
-    return None if row is None else to_market_dto(row, today=today)
+    if row is None:
+        return None
+    return to_market_dto(row, today=today, media=_media_for(MediaOwnerType.MARKET, [row.id]))
 
 
 def get_destination(*, reference: str | UUID, today: date) -> DestinationDTO | None:
