@@ -45,6 +45,11 @@ const DESTINATION: Destination = {
       default_currency: 'TZS',
       default_timezone: 'Africa/Dar_es_Salaam',
     },
+    market: {
+      public_id: '44444444-4444-4444-8444-444444444444',
+      name: 'Zanzibar',
+      slug: 'zanzibar',
+    },
   },
   media: [],
 };

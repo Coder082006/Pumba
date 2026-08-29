@@ -55,6 +55,7 @@ from apps.common.models import SoftDeleteModel, TimestampedModel
 __all__ = [
     "GatewayTypeChoices",
     "Country",
+    "Market",
     "Region",
     "Destination",
     "Tag",
@@ -165,10 +166,96 @@ class Country(SoftDeleteModel):
         )
 
 
+class Market(SoftDeleteModel):
+    """SRS §4.2 as amended to v1.5. ADR 0018.
+
+    The tier a tourist actually chooses between. It exists because the
+    five-level model had none: "Zanzibar" is three regions, Pemba is two more,
+    Arusha would be one, and no level made the first and the last peers.
+    `country` could not serve — both are TZ — and `region` could not, because
+    §12.4 step 3 prices the metered transfer fallback per region.
+
+    **Two predicates read this table, and they are deliberately different.**
+    `is_listed` (active, not deleted) puts a market in the destination
+    selector; `is_open` — `domain.visibility.is_publicly_visible`, with this
+    row in the ancestor chain — decides whether its catalogue is browsable.
+    A market that is listed and not open is the announced state the landing
+    page exists to render, and everything beneath it stays invisible: no
+    endpoint, no sitemap entry, 404 on direct URL.
+
+    `launch_date` therefore lives at two levels now, here and on
+    `destination`. This is the one §4.1 meant by "scheduled market launch
+    without a deployment" — the phrase names this tier, which did not exist
+    when it was written.
+    """
+
+    country = models.ForeignKey(Country, on_delete=models.PROTECT, related_name="markets")
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=140)
+
+    #: The line under the tile in the selector, and under the hero on the
+    #: market's own page. Nullable like `destination.summary` for the same
+    #: reason: a market can be created before anybody has written its copy.
+    summary = models.TextField(null=True, blank=True, default=None)
+
+    #: Defaults to `False`, matching `destination`. §41.12 has an administrator
+    #: create a market and then open it; a default of `True` would publish it
+    #: the moment it was saved, before its regions existed.
+    is_active = models.BooleanField(default=False)
+
+    #: §4.1. `None` means "open as soon as `is_active`"; a future date means
+    #: listed but not open. The past and today both mean open — a market that
+    #: launches on the 12th is open on the 12th.
+    launch_date = models.DateField(null=True, blank=True, default=None)
+
+    class Meta:
+        db_table = "market"
+        ordering = ["country__iso_code", "name"]
+        constraints = [
+            # Scoped to the country and partial, for the two reasons `region`
+            # gives one level down: two countries may each have a coastal
+            # market, and §7.7 must not let a withdrawn market hold its slug
+            # against being re-opened.
+            models.UniqueConstraint(
+                fields=["country", "slug"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="market_slug_unique_alive_per_country",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["country", "is_active"], name="market_country_active_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Region(SoftDeleteModel):
-    """§7.3 ERD: country_id, name, is_active. R6 is 1 : 1..* RESTRICT."""
+    """§7.3 ERD: country_id, name, is_active. R6 is 1 : 1..* RESTRICT.
+
+    `country` is retained alongside `market` rather than reached through it.
+    Denormalised on purpose: `country` carries the §13.1 bounding box every
+    coordinate beneath it is checked against, and `region.country` is a join
+    four `country_path` chains and both `select_related` trees already walk.
+    Routing it through `market` would make every bounds check and every
+    catalogue read one join deeper.
+
+    A denormalised column that nothing enforces is how two sources of truth
+    start, so it is enforced structurally rather than by a service-layer
+    check: `market` carries a UNIQUE on `(id, country_id)`, and `region` a
+    composite FOREIGN KEY on `(market_id, country_id)` referencing it
+    (`0008`, `region_market_shares_country_fk`). PostgreSQL then refuses a
+    region whose market belongs to a different country. Django models neither
+    constraint, so both are raw SQL — the same treatment ADR 0012's
+    cross-module keys get in `inventory/0001`.
+    """
 
     country = models.ForeignKey(Country, on_delete=models.PROTECT, related_name="regions")
+
+    #: ADR 0018. NOT NULL: a region with no market is a region no selector can
+    #: reach and no visibility chain can hide, which is the failure the whole
+    #: tier was added to prevent.
+    market = models.ForeignKey(Market, on_delete=models.PROTECT, related_name="regions")
     name = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140)
     is_active = models.BooleanField(default=True)

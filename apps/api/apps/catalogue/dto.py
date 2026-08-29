@@ -40,6 +40,8 @@ __all__ = [
     "TagDTO",
     "CancellationPolicyDTO",
     "CountryDTO",
+    "MarketRefDTO",
+    "MarketDTO",
     "RegionDTO",
     "DestinationDTO",
     "AttractionDTO",
@@ -115,11 +117,53 @@ class CountryDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketRefDTO:
+    """A market named, not described. ADR 0018.
+
+    Everything below a market needs to *name* it — the breadcrumb, and the
+    `/[market]/…` path segment every catalogue URL now carries. Almost none of
+    it needs to know whether the market is open, and `is_open` is a function
+    of the clock: putting it here would force a `today` through
+    `to_region_dto`, and from there through `create_region` and
+    `update_region`, which would have the admin write path reading the clock
+    to answer a question nobody asked it.
+
+    So identity travels freely and openness does not travel at all. `MarketDTO`
+    is the answer to "what markets are there", and it is the only one that
+    takes a date.
+    """
+
+    public_id: UUID
+    name: str
+    slug: str
+
+
+@dataclass(frozen=True, slots=True)
+class MarketDTO:
+    """The destination selector's row — §4.2 as amended to v1.5, §24.6.
+
+    `is_open` is carried rather than left to the client, and it is not the
+    same question as "did this row come back". The selector asks for *listed*
+    markets, which includes ones whose catalogue is closed, so a consumer that
+    inferred openness from presence would link a tile into a catalogue that
+    404s. The rule stays server-side; the client renders it.
+    """
+
+    public_id: UUID
+    name: str
+    slug: str
+    summary: str | None
+    is_open: bool
+    country: CountryDTO
+
+
+@dataclass(frozen=True, slots=True)
 class RegionDTO:
     public_id: UUID
     name: str
     slug: str
     country: CountryDTO
+    market: MarketRefDTO
 
 
 @dataclass(frozen=True, slots=True)

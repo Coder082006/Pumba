@@ -73,8 +73,18 @@ APPENDIX_C = {
 }
 
 
-def _rows(stem: str) -> list[dict]:
-    return json.loads((SEEDS / f"{stem}.json").read_text(encoding="utf-8"))
+#: Entity key to committed filename, read from the registry the loader obeys.
+#: These stems were literals here until ADR 0018 inserted `market` between
+#: country and region and renumbered everything below it — at which point
+#: twelve tests failed on a missing file rather than on anything they were
+#: written to check. A second copy of the ordering is a second thing to
+#: update, so there is now one.
+_STEMS = {key: stem for stem, key in SEED_FILES}
+
+
+def _rows(entity: str) -> list[dict]:
+    """The committed rows for one entity, by entity key rather than filename."""
+    return json.loads((SEEDS / f"{_STEMS[entity]}.json").read_text(encoding="utf-8"))
 
 
 def _coordinates_by_country() -> list[tuple[str, BoundingBox, Coordinates]]:
@@ -91,18 +101,18 @@ def _coordinates_by_country() -> list[tuple[str, BoundingBox, Coordinates]]:
             max_lat=Decimal(row["max_latitude"]),
             max_lon=Decimal(row["max_longitude"]),
         )
-        for row in _rows("01-countries")
+        for row in _rows("country")
     }
-    region_country = {row["slug"]: row["country"] for row in _rows("02-regions")}
+    region_country = {row["slug"]: row["country"] for row in _rows("region")}
     destination_country = {
-        row["slug"]: region_country[row["region"]] for row in _rows("03-destinations")
+        row["slug"]: region_country[row["region"]] for row in _rows("destination")
     }
 
     found: list[tuple[str, BoundingBox, Coordinates]] = []
     for stem, parent in (
-        ("03-destinations", "region"),
-        ("05-attractions", "destination"),
-        ("06-accommodation", "destination"),
+        ("destination", "region"),
+        ("attraction", "destination"),
+        ("accommodation", "destination"),
     ):
         lookup = region_country if parent == "region" else destination_country
         for row in _rows(stem):
@@ -174,7 +184,7 @@ class TestTheCommittedFiles:
     """Read as data, before anything touches a database."""
 
     def test_every_declared_file_exists_and_holds_an_array(self) -> None:
-        """The loader names six files; six files must be there.
+        """Every file the loader names must be there.
 
         A missing one is a `make seed` that half-loads — regions without their
         destinations, which looks loaded and is not.
@@ -191,8 +201,8 @@ class TestTheCommittedFiles:
         regenerated on every re-seed, and both make the file stop being the
         thing that decides what exists.
         """
-        for stem, _ in SEED_FILES:
-            for row in _rows(stem):
+        for _, entity in SEED_FILES:
+            for row in _rows(entity):
                 assert "public_id" not in row
                 assert "id" not in row
 
@@ -200,7 +210,7 @@ class TestTheCommittedFiles:
         """ADR 0013, in the data. Seeding forty properties is only defensible
         because a row asserts nothing a property's owner alone could assert:
         a name, a type, a coordinate and two wall-clock times."""
-        for row in _rows("06-accommodation"):
+        for row in _rows("accommodation"):
             for forbidden in ("base_rate", "price", "provider", "cancellation_policy", "rooms"):
                 assert forbidden not in row, f"{row['slug']} carries {forbidden}"
 
@@ -208,8 +218,8 @@ class TestTheCommittedFiles:
         """§13.1: *"a maximum of seven decimal places"*. Checked here as well
         as at the boundary, because a file is where an over-precise coordinate
         gets pasted in from a mapping tool."""
-        for stem, _ in SEED_FILES:
-            for row in _rows(stem):
+        for _, entity in SEED_FILES:
+            for row in _rows(entity):
                 for axis in ("latitude", "longitude"):
                     if axis in row:
                         _, _, fraction = row[axis].partition(".")
@@ -252,7 +262,7 @@ class TestTheCommittedFiles:
         an ordered tier list, so a market with different consumer law gets rows
         rather than a release. The codes are asserted because Appendix C
         commits to them, not because anything branches on one."""
-        assert {row["code"] for row in _rows("07-cancellation-policies")} == {
+        assert {row["code"] for row in _rows("cancellation_policy")} == {
             "FLEX_48H",
             "MODERATE_7D",
             "STRICT_14D",
@@ -263,7 +273,7 @@ class TestTheCommittedFiles:
         """§14.6's list is ordered most generous first. A ladder that climbs
         would refund more the later you cancel, which no test downstream would
         read as wrong — it would just quietly overpay."""
-        for row in _rows("07-cancellation-policies"):
+        for row in _rows("cancellation_policy"):
             tiers = row["tiers"]
             hours = [tier["hours_before"] for tier in tiers]
             refunds = [tier["refund_percent"] for tier in tiers]
@@ -278,18 +288,18 @@ class TestTheCommittedFiles:
         a data migration — which is the same mechanism §41.12 proves for
         Arusha, exercised in the opposite direction.
         """
-        [pemba] = [r for r in _rows("03-destinations") if r["slug"] == "chake-chake"]
+        [pemba] = [r for r in _rows("destination") if r["slug"] == "chake-chake"]
         assert pemba["is_active"] is False
 
     def test_the_gateway_is_declared_coherently(self) -> None:
         """§7.5.6's CHECK: `is_gateway` implies both a type and a code, and
         the absence of it implies neither."""
-        gateways = [r for r in _rows("03-destinations") if r.get("is_gateway")]
+        gateways = [r for r in _rows("destination") if r.get("is_gateway")]
         assert len(gateways) == 1, "SRS 4.1 seeds exactly one gateway"
         [znz] = gateways
         assert znz["gateway_type"] == "AIRPORT"
         assert znz["gateway_code"] == "ZNZ"
-        for other in _rows("03-destinations"):
+        for other in _rows("destination"):
             if not other.get("is_gateway"):
                 assert "gateway_code" not in other
 
@@ -297,19 +307,19 @@ class TestTheCommittedFiles:
         """`assert_known_tags` is a database trigger, so a stray slug fails the
         load. Catching it here says *which* row and *which* tag, which is the
         difference between a two-minute fix and a bisect."""
-        vocabulary = {row["slug"] for row in _rows("04-tags")}
-        for row in _rows("05-attractions"):
+        vocabulary = {row["slug"] for row in _rows("tag")}
+        for row in _rows("attraction"):
             unknown = set(row.get("tags", ())) - vocabulary
             assert not unknown, f"{row['slug']} uses {sorted(unknown)}"
 
     def test_every_reference_names_a_row_that_is_seeded(self) -> None:
         """The order in `SEED_FILES` is load order, and a forward reference
         would fail at run time in whichever environment ran it first."""
-        regions = {r["slug"] for r in _rows("02-regions")}
-        destinations = {r["slug"] for r in _rows("03-destinations")}
-        for row in _rows("03-destinations"):
+        regions = {r["slug"] for r in _rows("region")}
+        destinations = {r["slug"] for r in _rows("destination")}
+        for row in _rows("destination"):
             assert row["region"] in regions, row["slug"]
-        for stem in ("05-attractions", "06-accommodation"):
+        for stem in ("attraction", "accommodation"):
             for row in _rows(stem):
                 assert row["destination"] in destinations, row["slug"]
 
@@ -342,9 +352,14 @@ class TestLoadingIt:
         which is the first question asked when one of them is wrong."""
         call_command("seed", verbosity=0)
         entries = AuditLog.objects.filter(action="catalogue.created")
-        assert entries.count() == sum(APPENDIX_C.values()) + 7  # + tags
+        # Appendix C's rows, plus the seven tags it does not count, plus the
+        # two markets ADR 0018 added. Markets are deliberately *not* in
+        # `APPENDIX_C`: that dict is the appendix's own commitment, and
+        # padding it would make the SRS appear to promise a table it predates.
+        assert entries.count() == sum(APPENDIX_C.values()) + 7 + 2
         assert set(entries.values_list("entity_type", flat=True)) == {
             "country",
+            "market",
             "region",
             "destination",
             "tag",
@@ -419,7 +434,15 @@ class TestTheLoaderIsNotZanzibarShaped:
                 }
             ],
         )
-        catalogue.load_seed("region", [{"country": "KE", "slug": "coast", "name": "Coast"}])
+        # §41.12 as amended to v1.5: the administrator creates a market too.
+        catalogue.load_seed(
+            "market",
+            [{"country": "KE", "slug": "kenyan-coast", "name": "Kenyan Coast", "is_active": True}],
+        )
+        catalogue.load_seed(
+            "region",
+            [{"country": "KE", "market": "kenyan-coast", "slug": "coast", "name": "Coast"}],
+        )
         result = catalogue.load_seed(
             "destination",
             [

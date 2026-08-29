@@ -57,6 +57,7 @@ from apps.catalogue.models import (
     CancellationPolicy,
     Country,
     Destination,
+    Market,
     Region,
     Tag,
 )
@@ -128,12 +129,24 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
                 natural_key="iso_code",
             ),
             CatalogueEntity(
+                "market",
+                Market,
+                Resource.MARKET,
+                repo.create_market,
+                repo.update_market,
+                {"country": Country},
+            ),
+            CatalogueEntity(
                 "region",
                 Region,
                 Resource.REGION,
                 repo.create_region,
                 repo.update_region,
-                {"country": Country},
+                # Both, not just `market`. `region.country` is denormalised
+                # (see the model), and the pair is held together by a composite
+                # FOREIGN KEY, so a create naming a market in another country
+                # is refused by PostgreSQL rather than silently stored.
+                {"country": Country, "market": Market},
             ),
             CatalogueEntity(
                 "destination",
@@ -538,17 +551,22 @@ def restore(
 #: the directory, and this mapping is what the loader actually obeys.
 SEED_FILES: tuple[tuple[str, str], ...] = (
     ("01-countries", "country"),
-    ("02-regions", "region"),
-    ("03-destinations", "destination"),
-    ("04-tags", "tag"),
-    ("05-attractions", "attraction"),
-    ("06-accommodation", "accommodation"),
+    # ADR 0018. Between country and region, because a region now names its
+    # market. Everything below it was renumbered rather than given a fractional
+    # prefix: the numbers exist to tell a reader the order, and `015` would
+    # have told them something false to save six renames.
+    ("02-markets", "market"),
+    ("03-regions", "region"),
+    ("04-destinations", "destination"),
+    ("05-tags", "tag"),
+    ("06-attractions", "attraction"),
+    ("07-accommodation", "accommodation"),
     # Last by number and independent of everything above it: the four §14.6
     # policies are referenced by `activity`, and activities are provider-
     # supplied rather than seeded (Appendix C as amended by ADR 0013). They are
     # seeded anyway because they are the vocabulary a provider picks from — a
     # portal offering an empty policy list is a portal nobody can list on.
-    ("07-cancellation-policies", "cancellation_policy"),
+    ("08-cancellation-policies", "cancellation_policy"),
 )
 
 

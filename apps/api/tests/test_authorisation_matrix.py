@@ -119,9 +119,12 @@ NO_ROWS_EXPOSED = {
     # looks up no row, so there is nothing for an ownership predicate to
     # filter: what stands between a caller and a new curated row is the role
     # check, `HasPermission.for_(Permission.CATALOGUE_MANAGE)`. Listed one per
-    # entity rather than matched by prefix, so that adding an eighth curated
-    # table is a line in this file that a reviewer sees.
+    # entity rather than matched by prefix, so that adding a ninth curated
+    # table is a line in this file that a reviewer sees — which is how ADR
+    # 0018's `market` arrived here, by failing this test rather than by
+    # anybody remembering.
     "v1:catalogue:admin-country-create": "Creates a row; looks none up.",
+    "v1:catalogue:admin-market-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-region-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-destination-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-tag-create": "Creates a row; looks none up.",

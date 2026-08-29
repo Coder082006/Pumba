@@ -96,6 +96,9 @@ __all__ = [
     "AdminCountryCreateView",
     "AdminCountryDetailView",
     "AdminCountryRestoreView",
+    "AdminMarketCreateView",
+    "AdminMarketDetailView",
+    "AdminMarketRestoreView",
     "AdminRegionCreateView",
     "AdminRegionDetailView",
     "AdminRegionRestoreView",
@@ -352,6 +355,21 @@ class AdminCountryDetailView(_AdminDetailView):
 @_restore_schema("country")
 class AdminCountryRestoreView(_AdminRestoreView):
     entity_key = "country"
+
+
+@_create_schema("market")
+class AdminMarketCreateView(_AdminCreateView):
+    entity_key = "market"
+
+
+@_detail_schema("market")
+class AdminMarketDetailView(_AdminDetailView):
+    entity_key = "market"
+
+
+@_restore_schema("market")
+class AdminMarketRestoreView(_AdminRestoreView):
+    entity_key = "market"
 
 
 @_create_schema("region")

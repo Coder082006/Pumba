@@ -17,6 +17,12 @@ destination inside a deactivated region likewise. Without that, deactivating
 Pemba would hide the destination and leave its attractions reachable by direct
 URL and listed in the sitemap.
 
+Since ADR 0018 the chain is one level deeper — ``market`` sits between country
+and region and carries its own ``launch_date`` — and there is one weaker
+predicate beside the rule, ``is_listed``, for the single screen that has to
+show a market it is not yet serving. See its docstring for why it takes no
+``launch_date`` rather than ignoring one.
+
 Those four are one rule, not four checks. Keeping them one rule is the whole
 point of this module: three flags and a parent chain evaluated in four
 different places will drift, and the drift is silent — a row that should be
@@ -38,7 +44,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 
-__all__ = ["VisibilityNode", "is_publicly_visible", "visible_chain", "hidden_reason"]
+__all__ = [
+    "VisibilityNode",
+    "is_listed",
+    "is_publicly_visible",
+    "visible_chain",
+    "hidden_reason",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +68,24 @@ class VisibilityNode:
     launch_date: date | None = None
 
 
+def is_listed(*, is_active: bool, deleted_at: datetime | None) -> bool:
+    """Does this row exist as far as the public is concerned?
+
+    Weaker than `is_publicly_visible` by exactly one term: it does not consult
+    `launch_date`. **It takes no `launch_date` and no `today`, so it cannot
+    consult one** — a version that accepted the argument and ignored it would
+    be one refactor away from reading it.
+
+    This is the predicate ADR 0018 gives the destination selector, and the
+    market tier is the only caller. An announced market has to appear on the
+    landing page saying it is not open yet, which is precisely a row that is
+    *listed* and not *visible*. Nothing else in the catalogue has that state,
+    and nothing else may use this: an attraction that is listed but not
+    visible is a leak.
+    """
+    return deleted_at is None and is_active
+
+
 def is_publicly_visible(
     *,
     is_active: bool,
@@ -67,10 +97,16 @@ def is_publicly_visible(
 
     A `launch_date` of exactly `today` **is** visible: §4.1 calls it a launch
     date, and a market that launches on the 12th is open on the 12th.
+
+    Written as a *narrowing of* `is_listed` rather than as its own three
+    checks. That is what makes the pair safe: the two predicates cannot drift
+    apart on activation or deletion, because there is one implementation of
+    those, and the single cell where they differ — active, undeleted, not yet
+    launched — is the only thing this function adds. ADR 0018's whole design
+    rests on that difference being exactly one cell wide, and this is the
+    cheapest way to make it true by construction instead of by test.
     """
-    if deleted_at is not None:
-        return False
-    if not is_active:
+    if not is_listed(is_active=is_active, deleted_at=deleted_at):
         return False
     return not (launch_date is not None and launch_date > today)
 

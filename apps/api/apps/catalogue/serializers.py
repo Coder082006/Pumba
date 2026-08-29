@@ -51,6 +51,7 @@ from apps.common.serializers import StrictSerializer
 
 __all__ = [
     "CountryWriteSerializer",
+    "MarketWriteSerializer",
     "RegionWriteSerializer",
     "DestinationWriteSerializer",
     "TagWriteSerializer",
@@ -61,6 +62,8 @@ __all__ = [
     "AccommodationWriteSerializer",
     "WRITE_SERIALIZERS",
     "CountrySerializer",
+    "MarketRefSerializer",
+    "MarketSerializer",
     "RegionSerializer",
     "DestinationSerializer",
     "TagSerializer",
@@ -158,8 +161,30 @@ class CountryWriteSerializer(StrictSerializer):
     max_longitude = _degrees()
 
 
-class RegionWriteSerializer(StrictSerializer):
+class MarketWriteSerializer(StrictSerializer):
+    """ADR 0018.
+
+    `is_active` is optional and the model defaults it to false, for the reason
+    `DestinationWriteSerializer` gives one level down: §41.12 has an
+    administrator open a market, and "created" and "open" are two decisions.
+    `launch_date` is how the second one is scheduled without a deployment.
+    """
+
     country = serializers.UUIDField()
+    name = serializers.CharField(max_length=120)
+    slug = serializers.SlugField(max_length=140)
+    summary = serializers.CharField(allow_null=True, required=False)
+    launch_date = serializers.DateField(allow_null=True, required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+class RegionWriteSerializer(StrictSerializer):
+    #: Both parents, and they must agree. The composite FOREIGN KEY behind
+    #: `region(market_id, country_id)` refuses the pair otherwise, so a console
+    #: form that mismatched them gets an error rather than a stored
+    #: inconsistency.
+    country = serializers.UUIDField()
+    market = serializers.UUIDField()
     name = serializers.CharField(max_length=120)
     slug = serializers.SlugField(max_length=140)
     is_active = serializers.BooleanField(required=False)
@@ -313,6 +338,7 @@ class AccommodationWriteSerializer(_CoordinateWriteSerializer):
 
 WRITE_SERIALIZERS: dict[str, type[StrictSerializer]] = {
     "country": CountryWriteSerializer,
+    "market": MarketWriteSerializer,
     "region": RegionWriteSerializer,
     "destination": DestinationWriteSerializer,
     "tag": TagWriteSerializer,
@@ -351,11 +377,35 @@ class CountrySerializer(serializers.Serializer[Any]):
     default_timezone = serializers.CharField()
 
 
+class MarketRefSerializer(serializers.Serializer[Any]):
+    """A market named. Carries no `is_open` — see `MarketRefDTO` for why."""
+
+    public_id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+
+
+class MarketSerializer(serializers.Serializer[Any]):
+    """The destination selector's row. §24.6, ADR 0018."""
+
+    public_id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+    summary = serializers.CharField(allow_null=True)
+    #: Whether the catalogue beneath this market is browsable *today*. Not the
+    #: same question as whether the row came back: the selector lists markets
+    #: that are announced and closed, and a client inferring openness from
+    #: presence would link a tile at a catalogue that 404s.
+    is_open = serializers.BooleanField()
+    country = CountrySerializer()
+
+
 class RegionSerializer(serializers.Serializer[Any]):
     public_id = serializers.UUIDField()
     name = serializers.CharField()
     slug = serializers.CharField()
     country = CountrySerializer()
+    market = MarketRefSerializer()
 
 
 class TagSerializer(serializers.Serializer[Any]):
@@ -606,6 +656,7 @@ class AccommodationQuerySerializer(_PageQuerySerializer):
 
 READ_SERIALIZERS: dict[str, type[serializers.Serializer[Any]]] = {
     "country": CountrySerializer,
+    "market": MarketRefSerializer,
     "region": RegionSerializer,
     "destination": DestinationSerializer,
     "tag": TagSerializer,

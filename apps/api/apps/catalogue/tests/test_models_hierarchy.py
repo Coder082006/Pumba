@@ -27,7 +27,7 @@ from django.utils import timezone
 
 from apps.catalogue.domain.geo import Coordinates
 from apps.catalogue.models import Country, Destination, GatewayTypeChoices, Region
-from apps.catalogue.tests.factories import make_country
+from apps.catalogue.tests.factories import make_country, make_region
 
 # A zone deliberately unlike the seed market's, so anything that hard-codes
 # East Africa fails here rather than in Phase 12.
@@ -235,7 +235,7 @@ class TestTheHierarchyAgainstRealPostgres:
 
     @pytest.fixture()
     def region(self, country: Country) -> Region:
-        return Region.objects.create(country=country, name="Coastal", slug="coastal")
+        return make_region(country=country, name="Coastal", slug="coastal")
 
     def _destination(self, region: Region, **overrides: object) -> Destination:
         values: dict[str, object] = {
@@ -262,7 +262,7 @@ class TestTheHierarchyAgainstRealPostgres:
         other = make_country(
             iso_code="NZ", name="New Zealand", default_currency="NZD", default_timezone=FAR_ZONE
         )
-        other_region = Region.objects.create(country=other, name="Northland", slug="northland")
+        other_region = make_region(country=other, name="Northland", slug="northland")
         destination = self._destination(
             other_region,
             slug="bay-of-islands",
@@ -276,13 +276,13 @@ class TestTheHierarchyAgainstRealPostgres:
         other = make_country(
             iso_code="KE", name="Kenya", default_currency="KES", default_timezone="Africa/Nairobi"
         )
-        Region.objects.create(country=other, name="Coast", slug="coastal")
+        make_region(country=other, name="Coast", slug="coastal")
 
     def test_a_region_slug_may_not_repeat_within_one_country(
         self, country: Country, region: Region
     ) -> None:
         with pytest.raises(IntegrityError):
-            Region.objects.create(country=country, name="Coast again", slug="coastal")
+            make_region(country=country, name="Coast again", slug="coastal")
 
     def test_a_soft_deleted_slug_is_released(self, region: Region) -> None:
         """§7.7: soft-deleted rows are excluded from uniqueness, so a mistake
@@ -309,7 +309,7 @@ class TestDatabaseConstraints:
             default_currency="TZS",
             default_timezone="Africa/Nairobi",
         )
-        return Region.objects.create(country=country, name="Coastal", slug="coastal")
+        return make_region(country=country, name="Coastal", slug="coastal")
 
     def _values(self, region: Region, **overrides: object) -> dict[str, object]:
         values: dict[str, object] = {
@@ -374,7 +374,7 @@ class TestTheZoneTriggerCannotBeRoutedAround:
             default_currency="TZS",
             default_timezone="Africa/Nairobi",
         )
-        return Region.objects.create(country=country, name="Coastal", slug="coastal")
+        return make_region(country=country, name="Coastal", slug="coastal")
 
     def _create(self, region: Region, zone: str) -> Destination:
         return Destination.objects.create(
@@ -427,7 +427,7 @@ class TestLocalDate:
             default_currency="TZS",
             default_timezone="Africa/Nairobi",
         )
-        region = Region.objects.create(country=country, name="Coastal", slug="coastal")
+        region = make_region(country=country, name="Coastal", slug="coastal")
         near = Destination.objects.create(
             region=region,
             name="Near",

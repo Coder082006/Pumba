@@ -568,6 +568,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/markets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a market
+         * @description POST one new curated row.
+         *
+         *     Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+         *     yet, so a filter here would provably run against nothing while reporting to
+         *     the §37.2 matrix that ownership was enforced. What stands between a caller
+         *     and a new row is the role check, and the matrix records that by name in
+         *     `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+         */
+        post: operations["admin_markets_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/markets/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire a market
+         * @description §7.7's soft deletion. The row survives; the slug is released.
+         */
+        delete: operations["admin_markets_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Amend a market
+         * @description A partial update — including the one that opens or closes a market.
+         *
+         *     §4.1 wants a destination published and withdrawn without a deployment,
+         *     and both are `is_active` moving in this one call. There is deliberately
+         *     no separate activate endpoint, so there is no second path that could
+         *     record the change differently or not at all.
+         */
+        patch: operations["admin_markets_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/markets/{public_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a retired market
+         * @description Undo a soft deletion.
+         *
+         *     A POST to its own resource rather than a PATCH setting `deleted_at`.
+         *     `deleted_at` is not a writable field, and adding it to the update
+         *     serializer to support this would open the mass-assignment hole that
+         *     `repositories._WRITABLE` exists to close.
+         */
+        post: operations["admin_markets_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/regions": {
         parameters: {
             query?: never;
@@ -1491,6 +1571,29 @@ export interface components {
             password: string;
             mfa_code?: string;
         };
+        /** @description A market named. Carries no `is_open` — see `MarketRefDTO` for why. */
+        MarketRef: {
+            /** Format: uuid */
+            public_id: string;
+            name: string;
+            slug: string;
+        };
+        /** @description ADR 0018.
+         *
+         *     `is_active` is optional and the model defaults it to false, for the reason
+         *     `DestinationWriteSerializer` gives one level down: §41.12 has an
+         *     administrator open a market, and "created" and "open" are two decisions.
+         *     `launch_date` is how the second one is scheduled without a deployment. */
+        MarketWriteRequest: {
+            /** Format: uuid */
+            country: string;
+            name: string;
+            slug: string;
+            summary?: string | null;
+            /** Format: date */
+            launch_date?: string | null;
+            is_active?: boolean;
+        };
         /** @description §7.3 `media`, ordered primary-first by `domain.media.order_media`. */
         Media: {
             file_key: string;
@@ -1668,6 +1771,22 @@ export interface components {
             feature_rank?: number;
             is_active?: boolean;
         };
+        /** @description ADR 0018.
+         *
+         *     `is_active` is optional and the model defaults it to false, for the reason
+         *     `DestinationWriteSerializer` gives one level down: §41.12 has an
+         *     administrator open a market, and "created" and "open" are two decisions.
+         *     `launch_date` is how the second one is scheduled without a deployment. */
+        PatchedMarketWriteRequest: {
+            /** Format: uuid */
+            country?: string;
+            name?: string;
+            slug?: string;
+            summary?: string | null;
+            /** Format: date */
+            launch_date?: string | null;
+            is_active?: boolean;
+        };
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
@@ -1681,6 +1800,8 @@ export interface components {
         PatchedRegionWriteRequest: {
             /** Format: uuid */
             country?: string;
+            /** Format: uuid */
+            market?: string;
             name?: string;
             slug?: string;
             is_active?: boolean;
@@ -1727,6 +1848,7 @@ export interface components {
             name: string;
             slug: string;
             country: components["schemas"]["Country"];
+            market: components["schemas"]["MarketRef"];
         };
         /** @description Rejects unknown fields — SRS §30.6.
          *
@@ -1741,6 +1863,8 @@ export interface components {
         RegionWriteRequest: {
             /** Format: uuid */
             country: string;
+            /** Format: uuid */
+            market: string;
             name: string;
             slug: string;
             is_active?: boolean;
@@ -2483,6 +2607,98 @@ export interface operations {
         };
     };
     admin_destinations_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_markets_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarketWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["MarketWriteRequest"];
+                "multipart/form-data": components["schemas"]["MarketWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketRef"];
+                };
+            };
+        };
+    };
+    admin_markets_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_markets_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedMarketWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedMarketWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedMarketWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketRef"];
+                };
+            };
+        };
+    };
+    admin_markets_restore_create: {
         parameters: {
             query?: never;
             header?: never;

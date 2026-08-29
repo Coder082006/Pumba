@@ -875,6 +875,124 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/admin/markets:
+    post:
+      operationId: admin_markets_create
+      description: |-
+        POST one new curated row.
+
+        Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+        yet, so a filter here would provably run against nothing while reporting to
+        the §37.2 matrix that ownership was enforced. What stands between a caller
+        and a new row is the role check, and the matrix records that by name in
+        `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+      summary: Create a market
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarketWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MarketWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MarketWriteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketRef'
+          description: ''
+  /api/v1/admin/markets/{public_id}:
+    patch:
+      operationId: admin_markets_partial_update
+      description: |-
+        A partial update — including the one that opens or closes a market.
+
+        §4.1 wants a destination published and withdrawn without a deployment,
+        and both are `is_active` moving in this one call. There is deliberately
+        no separate activate endpoint, so there is no second path that could
+        record the change differently or not at all.
+      summary: Amend a market
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedMarketWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedMarketWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedMarketWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketRef'
+          description: ''
+    delete:
+      operationId: admin_markets_destroy
+      description: §7.7's soft deletion. The row survives; the slug is released.
+      summary: Retire a market
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/markets/{public_id}/restore:
+    post:
+      operationId: admin_markets_restore_create
+      description: |-
+        Undo a soft deletion.
+
+        A POST to its own resource rather than a PATCH setting `deleted_at`.
+        `deleted_at` is not a writable field, and adding it to the update
+        serializer to support this would open the mass-assignment hole that
+        `repositories._WRITABLE` exists to close.
+      summary: Restore a retired market
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/admin/regions:
     post:
       operationId: admin_regions_create
@@ -2615,6 +2733,59 @@ components:
       required:
       - email
       - password
+    MarketRef:
+      type: object
+      description: A market named. Carries no `is_open` — see `MarketRefDTO` for why.
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+      required:
+      - name
+      - public_id
+      - slug
+    MarketWriteRequest:
+      type: object
+      description: |-
+        ADR 0018.
+
+        `is_active` is optional and the model defaults it to false, for the reason
+        `DestinationWriteSerializer` gives one level down: §41.12 has an
+        administrator open a market, and "created" and "open" are two decisions.
+        `launch_date` is how the second one is scheduled without a deployment.
+      properties:
+        country:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        summary:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        launch_date:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_active:
+          type: boolean
+      required:
+      - country
+      - name
+      - slug
     Media:
       type: object
       description: §7.3 `media`, ordered primary-first by `domain.media.order_media`.
@@ -3025,6 +3196,40 @@ components:
           minimum: 1
         is_active:
           type: boolean
+    PatchedMarketWriteRequest:
+      type: object
+      description: |-
+        ADR 0018.
+
+        `is_active` is optional and the model defaults it to false, for the reason
+        `DestinationWriteSerializer` gives one level down: §41.12 has an
+        administrator open a market, and "created" and "open" are two decisions.
+        `launch_date` is how the second one is scheduled without a deployment.
+      properties:
+        country:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 140
+          pattern: ^[-a-zA-Z0-9_]+$
+        summary:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        launch_date:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_active:
+          type: boolean
     PatchedRegionWriteRequest:
       type: object
       description: |-
@@ -3040,6 +3245,9 @@ components:
         a serializer — the seed loader, a management command, a console shell.
       properties:
         country:
+          type: string
+          format: uuid
+        market:
           type: string
           format: uuid
         name:
@@ -3122,8 +3330,11 @@ components:
           type: string
         country:
           $ref: '#/components/schemas/Country'
+        market:
+          $ref: '#/components/schemas/MarketRef'
       required:
       - country
+      - market
       - name
       - public_id
       - slug
@@ -3144,6 +3355,9 @@ components:
         country:
           type: string
           format: uuid
+        market:
+          type: string
+          format: uuid
         name:
           type: string
           minLength: 1
@@ -3157,6 +3371,7 @@ components:
           type: boolean
       required:
       - country
+      - market
       - name
       - slug
     RegisterRequest:

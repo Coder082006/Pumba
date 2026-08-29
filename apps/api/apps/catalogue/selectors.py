@@ -78,6 +78,7 @@ from apps.catalogue.domain.search import (
     normalise_query,
     to_websearch_query,
 )
+from apps.catalogue.domain.visibility import is_publicly_visible
 from apps.catalogue.dto import (
     AccommodationDTO,
     ActivityDTO,
@@ -85,6 +86,8 @@ from apps.catalogue.dto import (
     CancellationPolicyDTO,
     CountryDTO,
     DestinationDTO,
+    MarketDTO,
+    MarketRefDTO,
     MediaDTO,
     RegionDTO,
     SearchHitDTO,
@@ -96,6 +99,7 @@ from apps.catalogue.models import (
     Attraction,
     CancellationPolicy,
     Destination,
+    Market,
     Media,
     MediaOwnerType,
     Tag,
@@ -105,8 +109,11 @@ from apps.common.pagination import Page, decode_cursor, encode_cursor
 
 __all__ = [
     "to_cancellation_policy_dto",
+    "to_market_ref_dto",
+    "to_market_dto",
     "visibility_q",
     "visible",
+    "listed_markets",
     "OrderedTerm",
     "order_plan",
     "apply_order",
@@ -133,26 +140,37 @@ _M = TypeVar("_M", bound=Model)
 # ---------------------------------------------------------------------------
 
 #: The ancestor chain each model must pass, as ORM lookup prefixes, outermost
-#: last. `""` is the row itself. Only `destination` carries a `launch_date`,
-#: which is why the flag travels with the level rather than being assumed.
+#: last. `""` is the row itself. `destination` and `market` carry a
+#: `launch_date`, which is why the flag travels with the level rather than
+#: being assumed — ADR 0018 added the second one, and the chains below are the
+#: only place that had to know.
 _CHAINS: Mapping[type[Model], tuple[tuple[str, bool], ...]] = {
-    Destination: (("", True), ("region__", False), ("region__country__", False)),
+    Market: (("", True), ("country__", False)),
+    Destination: (
+        ("", True),
+        ("region__", False),
+        ("region__market__", True),
+        ("region__country__", False),
+    ),
     Attraction: (
         ("", False),
         ("destination__", True),
         ("destination__region__", False),
+        ("destination__region__market__", True),
         ("destination__region__country__", False),
     ),
     Activity: (
         ("", False),
         ("destination__", True),
         ("destination__region__", False),
+        ("destination__region__market__", True),
         ("destination__region__country__", False),
     ),
     Accommodation: (
         ("", False),
         ("destination__", True),
         ("destination__region__", False),
+        ("destination__region__market__", True),
         ("destination__region__country__", False),
     ),
 }
@@ -192,6 +210,44 @@ def visibility_q(model: type[Model], *, today: date) -> Q:
 def visible(queryset: QuerySet[_M], *, today: date) -> QuerySet[_M]:
     """Restrict `queryset` to what the public may see."""
     return queryset.filter(visibility_q(queryset.model, today=today))
+
+
+def listed_markets(*, today: date) -> QuerySet[Market]:
+    """The destination selector's rows — ADR 0018, §24.6.
+
+    **The one place in this module that does not use `visible`,** and the
+    reason is the feature rather than an oversight. `visible(Market...)` would
+    return only *open* markets, so an announced one would vanish from the
+    landing page and the screen would say nothing about a place the Platform
+    is about to serve. That reads as a broken selector, not as a guard.
+
+    So this compiles `domain.visibility.is_listed` instead: active, not
+    deleted, `launch_date` not consulted. It is a deliberate hole in the
+    visibility guarantee, exactly one table wide and one column deep, and it
+    leaks nothing — a listed market's regions, destinations and listings are
+    still filtered by `visible`, which now has `market` in their chains.
+
+    `today` is not used by the predicate. It is used by the annotation: every
+    row comes back knowing whether it is `is_open`, because the caller renders
+    a tile that either links into the catalogue or says the market is not open
+    yet, and asking the caller to recompute that would put the rule in two
+    places again.
+    """
+    # Bound before returning: `annotate` is typed as widening to
+    # `QuerySet[Any]`, and returning it directly loses `Market` at the
+    # boundary — where every caller then gets no checking at all.
+    markets: QuerySet[Market] = (
+        Market.objects.filter(deleted_at__isnull=True, is_active=True)
+        .select_related("country")
+        .annotate(
+            is_open=ExpressionWrapper(
+                Q(launch_date__isnull=True) | Q(launch_date__lte=today),
+                output_field=BooleanField(),
+            )
+        )
+        .order_by("name")
+    )
+    return markets
 
 
 # ---------------------------------------------------------------------------
@@ -543,12 +599,45 @@ def to_country_dto(country: Any) -> CountryDTO:
     )
 
 
+def to_market_ref_dto(market: Any) -> MarketRefDTO:
+    return MarketRefDTO(public_id=market.public_id, name=market.name, slug=market.slug)
+
+
+def to_market_dto(market: Any, *, today: date) -> MarketDTO:
+    """`today` is required, not defaulted.
+
+    `is_open` is a function of the clock, and a default would let a caller
+    omit the one argument that decides whether a tile links into a catalogue
+    or says the market is not open yet — the same reasoning that keeps `today`
+    a parameter throughout this module and the domain.
+
+    It reads `domain.visibility.is_publicly_visible` rather than restating the
+    comparison. `listed_markets` annotates the same value in SQL for ordering
+    and filtering; this is the one that reaches a client, and the two must not
+    be two rules.
+    """
+    return MarketDTO(
+        public_id=market.public_id,
+        name=market.name,
+        slug=market.slug,
+        summary=market.summary,
+        is_open=is_publicly_visible(
+            is_active=market.is_active,
+            deleted_at=market.deleted_at,
+            launch_date=market.launch_date,
+            today=today,
+        ),
+        country=to_country_dto(market.country),
+    )
+
+
 def to_region_dto(region: Any) -> RegionDTO:
     return RegionDTO(
         public_id=region.public_id,
         name=region.name,
         slug=region.slug,
         country=to_country_dto(region.country),
+        market=to_market_ref_dto(region.market),
     )
 
 
@@ -688,8 +777,18 @@ def to_tag_dto(tag: Tag) -> TagDTO:
 #: Every list query eager-loads the whole ancestor chain. §29's NFR-P01 budget
 #: does not survive one query per row for the destination, and the chain is
 #: needed anyway because `visibility_q` already joins it.
-_DESTINATION_TREE = ("region", "region__country")
-_LISTING_TREE = ("destination", "destination__region", "destination__region__country")
+#: `market` is here as well as in `_CHAINS`, and it has to be: a level that
+#: the visibility filter joins but `select_related` does not is a lazy load per
+#: row, which is how a two-query page became a twenty-seven-query one the
+#: moment ADR 0018 landed. `test_a_page_is_a_constant_number_of_queries` is
+#: what said so.
+_DESTINATION_TREE = ("region", "region__market", "region__country")
+_LISTING_TREE = (
+    "destination",
+    "destination__region",
+    "destination__region__market",
+    "destination__region__country",
+)
 
 
 def _media_for(owner_type: MediaOwnerType, owner_ids: Sequence[int]) -> list[Media]:

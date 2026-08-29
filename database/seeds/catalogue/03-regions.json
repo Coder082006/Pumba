@@ -1,26 +1,31 @@
 [
   {
     "country": "TZ",
+    "market": "zanzibar",
     "slug": "zanzibar-urban-west",
     "name": "Zanzibar Urban/West"
   },
   {
     "country": "TZ",
+    "market": "zanzibar",
     "slug": "zanzibar-north",
     "name": "Zanzibar North"
   },
   {
     "country": "TZ",
+    "market": "zanzibar",
     "slug": "zanzibar-central-south",
     "name": "Zanzibar Central/South"
   },
   {
     "country": "TZ",
+    "market": "pemba",
     "slug": "pemba-north",
     "name": "Pemba North"
   },
   {
     "country": "TZ",
+    "market": "pemba",
     "slug": "pemba-south",
     "name": "Pemba South"
   }

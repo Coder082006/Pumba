@@ -85,11 +85,33 @@ def _country(client: APIClient) -> dict[str, Any]:
     return dict(response.data["data"])
 
 
-def _region(client: APIClient, country: dict[str, Any]) -> dict[str, Any]:
+def _market(client: APIClient, country: dict[str, Any], **overrides: Any) -> dict[str, Any]:
+    """ADR 0018. Between the country and the region, through the console."""
+    body: dict[str, Any] = {
+        "country": country["public_id"],
+        "name": "Arusha",
+        "slug": "arusha",
+        "is_active": True,
+    }
+    body.update(overrides)
+    response = _post(client, "/api/v1/admin/markets", body)
+    assert response.status_code == 201, response.data
+    return dict(response.data["data"])
+
+
+def _region(
+    client: APIClient, country: dict[str, Any], market: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    market = market if market is not None else _market(client, country)
     response = _post(
         client,
         "/api/v1/admin/regions",
-        {"country": country["public_id"], "name": "Arusha Region", "slug": "arusha-region"},
+        {
+            "country": country["public_id"],
+            "market": market["public_id"],
+            "name": "Arusha Region",
+            "slug": "arusha-region",
+        },
     )
     assert response.status_code == 201, response.data
     return dict(response.data["data"])
@@ -377,10 +399,16 @@ class TestTheRequestShapeIsClosed:
         kenya = dict(created.data["data"])
 
         destination = _destination(admin, _region(admin, tanzania))
+        kenyan_market = _market(admin, kenya, name="Kenyan Coast", slug="kenyan-coast")
         made = _post(
             admin,
             "/api/v1/admin/regions",
-            {"country": kenya["public_id"], "name": "Coast", "slug": "coast"},
+            {
+                "country": kenya["public_id"],
+                "market": kenyan_market["public_id"],
+                "name": "Coast",
+                "slug": "coast",
+            },
         )
         assert made.status_code == 201, made.data
         coast = dict(made.data["data"])
@@ -674,8 +702,10 @@ class TestTheAuditTrailCoversEveryCuratedEntity:
                 },
             ),
         }
-        # The three already created above, plus one of each remaining entity.
-        assert set(bodies) | {"country", "region", "destination"} == set(ENTITIES)
+        # The four already created above, plus one of each remaining entity.
+        # `market` joined that group with ADR 0018 — `_region` creates one on
+        # the way past, so it is audited above rather than here.
+        assert set(bodies) | {"country", "market", "region", "destination"} == set(ENTITIES)
 
         for key, (path, body) in bodies.items():
             assert _post(admin, path, body).status_code == 201, key

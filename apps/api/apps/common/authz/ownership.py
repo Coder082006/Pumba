@@ -70,6 +70,7 @@ class Resource(StrEnum):
 
     # Phase 3 - catalogue (§27.8) and the capacity counters it does not own.
     COUNTRY = "COUNTRY"
+    MARKET = "MARKET"
     REGION = "REGION"
     DESTINATION = "DESTINATION"
     TAG = "TAG"
@@ -221,6 +222,8 @@ OWNERSHIP: Mapping[tuple[Role, Resource], OwnershipRule] = MappingProxyType(
         # Geography and vocabulary: administered, never provider-owned. A
         # provider does not get to create the destination it sells in.
         **_administered(Resource.COUNTRY),
+        # ADR 0018. Geography, so administered like the tiers either side of it.
+        **_administered(Resource.MARKET),
         **_administered(Resource.REGION),
         **_administered(Resource.DESTINATION),
         **_administered(Resource.TAG),

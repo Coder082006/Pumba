@@ -51,6 +51,7 @@ from apps.catalogue.dto import (
     CancellationPolicyDTO,
     CountryDTO,
     DestinationDTO,
+    MarketRefDTO,
     RegionDTO,
     TagDTO,
 )
@@ -61,6 +62,7 @@ from apps.catalogue.models import (
     CancellationPolicy,
     Country,
     Destination,
+    Market,
     Region,
     Tag,
 )
@@ -71,6 +73,7 @@ from apps.catalogue.selectors import (
     to_cancellation_policy_dto,
     to_country_dto,
     to_destination_dto,
+    to_market_ref_dto,
     to_region_dto,
     to_tag_dto,
 )
@@ -137,7 +140,12 @@ _WRITABLE: Mapping[type[Model], frozenset[str]] = {
             "max_longitude",
         }
     ),
-    Region: frozenset({"country", "name", "slug", "is_active"}),
+    # ADR 0018. `launch_date` is writable for the same reason it is on
+    # `destination`: §4.1's scheduled launch is a console form, not a
+    # deployment. `country` is writable and `market` is not derived from it —
+    # the composite FOREIGN KEY refuses the pair if they disagree.
+    Market: frozenset({"country", "name", "slug", "summary", "launch_date", "is_active"}),
+    Region: frozenset({"country", "market", "name", "slug", "is_active"}),
     CancellationPolicy: frozenset({"code", "name", "description", "tiers", "is_active"}),
     Destination: frozenset(
         {
@@ -389,6 +397,27 @@ def create_country(**fields: Any) -> CountryDTO:
 @transaction.atomic
 def update_country(public_id: UUID, **fields: Any) -> CountryDTO:
     return to_country_dto(_update(_get(Country, public_id), fields))
+
+
+@transaction.atomic
+def create_market(**fields: Any) -> MarketRefDTO:
+    """ADR 0018.
+
+    Returns the *reference* DTO, not `MarketDTO`. `is_open` depends on the
+    clock and answering it here would make a write path read one; an
+    administrator who has just created a market learns whether it is open by
+    reading it back, where the question is asked with a date.
+
+    Like `create_destination`, `is_active` is not defaulted to `True`. §41.12
+    has an administrator create a market and then open it, and a repository
+    that published it on save would make that test pass by accident.
+    """
+    return to_market_ref_dto(_create(Market, fields))
+
+
+@transaction.atomic
+def update_market(public_id: UUID, **fields: Any) -> MarketRefDTO:
+    return to_market_ref_dto(_update(_get(Market, public_id), fields))
 
 
 @transaction.atomic

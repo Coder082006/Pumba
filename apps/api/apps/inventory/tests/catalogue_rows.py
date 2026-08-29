@@ -56,7 +56,15 @@ def _destination() -> Any:
         # are ever written through the service instead of the ORM.
         **BOUNDS,
     )
-    region = _model("Region").objects.create(country=country, name="Northland", slug="northland")
+    # ADR 0018 put `market` between country and region. Built here rather
+    # than imported for the same reason the country above is: this file talks
+    # to catalogue through `_model`, never through its factories.
+    market = _model("Market").objects.create(
+        country=country, name="Far North", slug="far-north", is_active=True
+    )
+    region = _model("Region").objects.create(
+        country=country, market=market, name="Northland", slug="northland"
+    )
     return _model("Destination").objects.create(
         region=region,
         name="Bay of Islands",

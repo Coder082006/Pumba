@@ -49,6 +49,9 @@ from apps.catalogue.views import (
     AdminDestinationCreateView,
     AdminDestinationDetailView,
     AdminDestinationRestoreView,
+    AdminMarketCreateView,
+    AdminMarketDetailView,
+    AdminMarketRestoreView,
     AdminRegionCreateView,
     AdminRegionDetailView,
     AdminRegionRestoreView,
@@ -76,6 +79,17 @@ urlpatterns = [
         "admin/countries/<uuid:public_id>/restore",
         AdminCountryRestoreView.as_view(),
         name="admin-country-restore",
+    ),
+    path("admin/markets", AdminMarketCreateView.as_view(), name="admin-market-create"),
+    path(
+        "admin/markets/<uuid:public_id>",
+        AdminMarketDetailView.as_view(),
+        name="admin-market-detail",
+    ),
+    path(
+        "admin/markets/<uuid:public_id>/restore",
+        AdminMarketRestoreView.as_view(),
+        name="admin-market-restore",
     ),
     path("admin/regions", AdminRegionCreateView.as_view(), name="admin-region-create"),
     path(

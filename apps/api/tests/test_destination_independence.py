@@ -1,14 +1,15 @@
 """§41.12 — destination independence, as a formal acceptance test. Validates OBJ-6.
 
     An administrator, using only the admin console and the seed loader,
-    creates a new country, region and destination (for example Arusha), adds
+    creates a new country, market, region and destination (for example
+    Arusha), adds
     one attraction, one activity, one accommodation with a room type and
     calendar, and one transfer corridor with a tariff. A tourist can then
     plan, quote, pay for and complete a trip to that destination. Pass
     condition: no application code change, no deployment, and no database
     migration is required at any point.
 
-This file is the Phase 3 half of that criterion: country, region, destination
+This file is the Phase 3 half of that criterion: country, market, region,
 and attraction, created and then read back. The trip, quote, payment and
 transfer corridor arrive with the phases that build them, and this file grows
 to meet them.
@@ -141,10 +142,32 @@ class TestAnAdministratorCanOpenANewMarket:
             ),
             "country",
         )
+        # §41.12 as amended to v1.5 (ADR 0018): the administrator creates a
+        # market as well, between the country and the region. `is_active` is
+        # passed explicitly because the model stages a market closed — which
+        # is the behaviour, not an obstacle.
+        market = _created(
+            admin.post(
+                "/api/v1/admin/markets",
+                {
+                    "country": country["public_id"],
+                    "name": "Arusha",
+                    "slug": "arusha",
+                    "is_active": True,
+                },
+                format="json",
+            ),
+            "market",
+        )
         region = _created(
             admin.post(
                 "/api/v1/admin/regions",
-                {"country": country["public_id"], "name": "Arusha Region", "slug": "arusha-region"},
+                {
+                    "country": country["public_id"],
+                    "market": market["public_id"],
+                    "name": "Arusha Region",
+                    "slug": "arusha-region",
+                },
                 format="json",
             ),
             "region",
@@ -238,10 +261,32 @@ class TestAnAdministratorCanOpenANewMarket:
             ),
             "country",
         )
+        # §41.12 as amended to v1.5 (ADR 0018): the administrator creates a
+        # market as well, between the country and the region. `is_active` is
+        # passed explicitly because the model stages a market closed — which
+        # is the behaviour, not an obstacle.
+        market = _created(
+            admin.post(
+                "/api/v1/admin/markets",
+                {
+                    "country": country["public_id"],
+                    "name": "Arusha",
+                    "slug": "arusha",
+                    "is_active": True,
+                },
+                format="json",
+            ),
+            "market",
+        )
         region = _created(
             admin.post(
                 "/api/v1/admin/regions",
-                {"country": country["public_id"], "name": "Arusha Region", "slug": "arusha-region"},
+                {
+                    "country": country["public_id"],
+                    "market": market["public_id"],
+                    "name": "Arusha Region",
+                    "slug": "arusha-region",
+                },
                 format="json",
             ),
             "region",

@@ -1,0 +1,16 @@
+[
+  {
+    "country": "TZ",
+    "slug": "zanzibar",
+    "name": "Zanzibar",
+    "summary": "Unguja and its coast — Stone Town, the northern beaches, the spice farms and the reef.",
+    "is_active": true
+  },
+  {
+    "country": "TZ",
+    "slug": "pemba",
+    "name": "Pemba",
+    "summary": "The second island. Deferred in v1 — the record exists so it can be opened without a deployment.",
+    "is_active": false
+  }
+]
