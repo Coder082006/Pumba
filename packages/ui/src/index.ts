@@ -9,4 +9,12 @@ export {
   type GalleryProps,
   type GalleryImage,
 } from './components/gallery';
+export {
+  CrossfadeHero,
+  Reveal,
+  usePrefersReducedMotion,
+  type CrossfadeHeroProps,
+  type RevealProps,
+  type HeroImage,
+} from './components/motion';
 export { cn } from './lib/cn';

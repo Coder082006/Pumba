@@ -91,6 +91,24 @@ const RULES: { name: string; pattern: RegExp; fix: string }[] = [
   },
 ];
 
+/**
+ * Source with comments removed.
+ *
+ * A rule that scans text cannot tell a class name from a mention of one, and
+ * documentation that explains *why* a class is forbidden necessarily contains
+ * it. That has now tripped a filesystem-scanning guard twice — a literal
+ * `href` in a footer comment, and a literal duration in the docstring
+ * explaining why literal durations are banned. Both were guards working
+ * exactly as written, on text that was never code.
+ *
+ * Block comments only. `//` also begins the `https://` in every URL, and
+ * stripping from there would eat the rest of the line.
+ */
+function code(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+
 /** Every `.tsx` under `src/`, except this file and the tests beside it. */
 function sources(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -120,8 +138,7 @@ describe('the tourist site is styled from its tokens', () => {
       const offences: string[] = [];
 
       for (const file of files) {
-        const text = readFileSync(file, 'utf8');
-        const matches = text.match(rule.pattern);
+        const matches = code(readFileSync(file, 'utf8')).match(rule.pattern);
         if (matches) {
           offences.push(`${relative(SRC_DIR, file)}: ${[...new Set(matches)].join(', ')}`);
         }

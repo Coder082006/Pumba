@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { Suspense } from 'react';
 
 import { ActivityCard, DestinationCard } from '@/components/catalogue/cards';
+import { FeatureBands, FeatureBandsSkeleton } from '@/components/home/feature-bands';
+import { MarketHero, MarketHeroSkeleton } from '@/components/home/market-hero';
 import { listActivities, listDestinations } from '@/lib/catalogue';
 
 /**
@@ -35,45 +37,27 @@ export const metadata = {
 
 export default function HomePage() {
   return (
-    <div className="space-y-16 sm:space-y-20">
-      {/* The hero is a single full-bleed panel, not a carousel — the same
-          choice nordicvisitor.com makes. A rotating hero is among the easiest
-          ways to fail LCP and CLS, and §29's gate is wired into CI.
+    <div className="space-y-16 sm:space-y-24">
+      {/* The hero cycles the open market's own photography — Stone Town,
+          Nungwi, a dhow, Jozani, a spice farm. Behind a Suspense boundary
+          with a same-height fallback, so the page never changes shape while
+          the gallery is being fetched.
 
-          Until a market's photography exists this is a token gradient rather
-          than a stand-in image: an obviously-decorative surface reads as
-          deliberate, where a grey placeholder box reads as broken. The image
-          replaces the gradient and nothing else about this block moves. */}
-      <section className="relative isolate overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-primary/10 via-background to-accent/10 px-6 py-16 shadow-sm sm:px-12 sm:py-24">
-        <p className="text-sm font-semibold uppercase tracking-widest text-accent-ink">
-          Zanzibar
-        </p>
-        <h1 className="mt-4 max-w-3xl font-display text-4xl font-bold leading-[1.1] tracking-tight text-foreground sm:text-6xl">
-          Plan the whole journey before you travel.
-        </h1>
-        <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
-          Browse destinations, pick the things worth doing, and build the days around where you
-          are staying — transfers included.
-        </p>
-        <div className="mt-10 flex flex-wrap gap-3">
-          {/* §24.6's "prominent Plan a Trip button". It points at Explore
-              rather than at a planner: the Trip Planner is §24.14 and belongs
-              to the trip module, and a button leading to a 404 is the defect
-              `navigation.test.ts` now fails the build for. */}
-          <Link
-            href="/explore"
-            className="rounded-md bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-md transition-colors duration-fast ease-out hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            Start exploring
-          </Link>
-          <Link
-            href="/stays"
-            className="rounded-md border border-border bg-card px-6 py-3 text-sm font-semibold text-foreground shadow-sm transition-colors duration-fast ease-out hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            Where are you staying?
-          </Link>
-        </div>
-      </section>
+          This is not the rotating hero I argued against. Only the first image
+          is eager, so LCP measures one photograph exactly as a static hero
+          does; the box is a fixed `h-hero`, so CLS is zero by construction;
+          and the cycle stops entirely under `prefers-reduced-motion` rather
+          than merely running faster. See `packages/ui/components/motion.tsx`. */}
+      <Suspense fallback={<MarketHeroSkeleton />}>
+        <MarketHero />
+      </Suspense>
+
+      {/* What the place looks like, revealed as the reader arrives at each
+          one. Built from the market's destinations and their photography, so
+          adding a market adds its own bands. */}
+      <Suspense fallback={<FeatureBandsSkeleton />}>
+        <FeatureBands />
+      </Suspense>
 
       {/* Each carousel fetches and fails on its own, as on Explore: one broken
           section must not blank the front page. */}
