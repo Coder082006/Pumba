@@ -187,11 +187,13 @@ export function Map({
     // objects on every render at every call site — the values are what should
     // re-run this, never the identities. `latest` supplies the objects.
     //
-    // No `eslint-disable` here: `react-hooks/exhaustive-deps` is not
-    // configured in this workspace at all, so the directive would name a rule
-    // that does not exist and fail the lint that is configured. Enabling the
-    // plugin across the workspace is worth doing and is a separate change —
-    // this deliberate omission is the first thing it would flag.
+    // `react-hooks/exhaustive-deps` now runs across the workspace and has
+    // nothing to say about this, which is the point: the objects are read
+    // through a ref, and a ref is not a dependency. An earlier note here
+    // predicted the rule would flag it and want an `eslint-disable`. It does
+    // not, because the fix was to stop depending on the identities rather
+    // than to suppress the complaint about depending on them — and a
+    // suppression would have kept the flicker while silencing the report.
   }, [tileUrl, attribution, pinKey, centerKey, zoom]);
 
   return (
