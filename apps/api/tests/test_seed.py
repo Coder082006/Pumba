@@ -41,7 +41,6 @@ from django.core.management import call_command
 
 from apps.administration.management.commands.seed import DEFAULT_ROOT, find_seed_root
 from apps.administration.models import AuditLog
-from apps.common.geo import BoundingBox, Coordinates
 from apps.catalogue.models import (
     Accommodation,
     Attraction,
@@ -52,6 +51,7 @@ from apps.catalogue.models import (
     Tag,
 )
 from apps.catalogue.services import SEED_FILES
+from apps.common.geo import BoundingBox, Coordinates
 
 pytestmark = pytest.mark.django_db
 
