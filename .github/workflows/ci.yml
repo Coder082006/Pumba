@@ -390,6 +390,10 @@ jobs:
           grep -E "failure for|expected:|found:" lhci-assert.log | head -40 | while IFS= read -r line; do
             echo "::error::${line}"
           done
+          # A category score names a category, not a defect. This names the
+          # individual audits that lost the points, which is the difference
+          # between "SEO 0.92" and something a person can go and fix.
+          python3 scripts/lighthouse_failing_audits.py .lighthouseci
           exit 1
 
       # `include-hidden-files` is required, and its absence is why every failed

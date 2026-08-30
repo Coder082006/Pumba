@@ -1,0 +1,82 @@
+"""Name the Lighthouse audits that cost a category its points.
+
+`lhci assert` reports a category score — "categories.seo failure for minScore
+assertion, expected >=1, found 0.92". That names a category, not a defect. It
+is the difference between knowing the gate is red and knowing what to fix, and
+on this repository the gap is expensive: job logs need repository-admin auth to
+read and artifact downloads need a token, so a contributor without credentials
+has no way to open the reports at all. GitHub *annotations* are public, and
+this script writes to that channel.
+
+Run against the directory `lhci collect` writes:
+
+    python3 scripts/lighthouse_failing_audits.py .lighthouseci
+
+Every audit that carries weight in a failing category and scored below 1 is
+printed as a `::error::` annotation, with its URL, its id, its score and its
+weight. The weight matters as much as the score: a category loses points in
+proportion to it, so a 0-scoring audit with weight 1 out of a total of 13 is
+the whole of a 0.92, and knowing that is what makes the arithmetic check out
+rather than merely look plausible.
+
+Audits with no weight are skipped. Lighthouse carries a large number of them
+as informational or manual entries, and they never move a score — listing them
+would bury the one line that matters.
+"""
+
+from __future__ import annotations
+
+import glob
+import json
+import os
+import sys
+
+#: Lighthouse rounds a displayed category score to two places, so an audit can
+#: score fractionally below 1 without being a failure anybody should chase.
+_PASS = 1.0
+
+
+def failing_audits(report: dict) -> list[str]:
+    """Annotation lines for one Lighthouse report."""
+    url = report.get("finalDisplayedUrl") or report.get("requestedUrl") or "(unknown url)"
+    audits = report.get("audits", {})
+    lines: list[str] = []
+
+    for category in report.get("categories", {}).values():
+        score = category.get("score")
+        if score is None or score >= _PASS:
+            continue
+        for ref in category.get("auditRefs", []):
+            weight = ref.get("weight", 0)
+            if not weight:
+                continue
+            audit = audits.get(ref["id"], {})
+            audit_score = audit.get("score")
+            # `None` is Lighthouse's "not applicable" — an audit that did not
+            # run against this page. It costs nothing and is not a finding.
+            if audit_score is None or audit_score >= _PASS:
+                continue
+            lines.append(
+                f"::error::{url} — {category.get('title', '?')}: "
+                f"audit '{ref['id']}' scored {audit_score} (weight {weight}). "
+                f"{audit.get('title', '')}".strip()
+            )
+    return lines
+
+
+def main(directory: str) -> int:
+    paths = sorted(glob.glob(os.path.join(directory, "lhr-*.json")))
+    if not paths:
+        print(f"::warning::No Lighthouse reports found in {directory}.")
+        return 0
+
+    for path in paths:
+        with open(path, encoding="utf-8") as handle:
+            report = json.load(handle)
+        for line in failing_audits(report):
+            print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1] if len(sys.argv) > 1 else ".lighthouseci"))
