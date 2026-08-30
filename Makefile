@@ -154,7 +154,7 @@ build: ## Build both web apps (the only local check of Next route module shape)
 coverage: ## Backend tests with both SRS §35.3 coverage gates
 	$(COMPOSE) run --rm api pytest --cov --cov-report=term-missing --cov-fail-under=80
 	$(COMPOSE) run --rm api coverage report \
-		--include="apps/*/domain/*,apps/common/authz/*,apps/common/geo.py,apps/common/money.py,apps/common/state_machine.py" \
+		--include="apps/*/domain/*,apps/common/authz/*,apps/common/geo.py,apps/common/money.py,apps/common/reference.py,apps/common/state_machine.py" \
 		--fail-under=95
 
 # ---------------------------------------------------------------------------
