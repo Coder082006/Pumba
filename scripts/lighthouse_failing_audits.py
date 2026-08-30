@@ -64,6 +64,41 @@ def _join(lines: list[str]) -> str:
     return "%0A".join(lines)
 
 
+#: How many rows of an audit's own evidence table to quote. Enough to show a
+#: pattern, few enough that one noisy audit cannot bury the rest.
+_MAX_EVIDENCE = 4
+
+
+def _evidence(audit: dict) -> list[str]:
+    """The rows an audit collected, where it collected any.
+
+    A title says *that* something is wrong; the details table says *what*.
+    `errors-in-console` is the case that forced this: knowing browser errors
+    were logged is nearly useless, and knowing which ones is the whole
+    diagnosis. Lighthouse's detail rows are heterogeneous, so this picks the
+    handful of fields that carry meaning across audit types and ignores the
+    rest rather than guessing at a schema.
+    """
+    items = (audit.get("details") or {}).get("items") or []
+    out: list[str] = []
+    for item in items[:_MAX_EVIDENCE]:
+        if not isinstance(item, dict):
+            continue
+        parts = [
+            str(item[key])
+            for key in ("description", "reason", "source", "sourceLocation", "url", "label")
+            if item.get(key)
+        ]
+        node = item.get("node")
+        if isinstance(node, dict) and node.get("snippet"):
+            parts.append(str(node["snippet"]))
+        if parts:
+            out.append(" | ".join(parts)[:300])
+    if len(items) > _MAX_EVIDENCE:
+        out.append(f"... and {len(items) - _MAX_EVIDENCE} more")
+    return out
+
+
 def failing_audits(report: dict) -> list[str]:
     """Annotation lines for one Lighthouse report."""
     url = report.get("finalDisplayedUrl") or report.get("requestedUrl") or "(unknown url)"
@@ -102,15 +137,13 @@ def failing_audits(report: dict) -> list[str]:
 
             detail = audit.get("title", "")
             if mode == "error":
-                detail = (
-                    f"AUDIT ERRORED (counts as zero): "
-                    f"{audit.get('errorMessage') or detail}"
-                )
+                detail = f"AUDIT ERRORED (counts as zero): {audit.get('errorMessage') or detail}"
             lines.append(
                 f"{url} — {category.get('title', '?')}: "
                 f"audit '{ref['id']}' scored {audit_score} (weight {weight}). "
                 f"{detail}".strip()
             )
+            lines.extend(f"      {evidence}" for evidence in _evidence(audit))
     return lines
 
 
