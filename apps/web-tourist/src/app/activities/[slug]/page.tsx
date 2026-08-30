@@ -5,6 +5,7 @@ import { Gallery, Money } from '@pumba/ui';
 import { mediaSrc } from '@/components/catalogue/cards';
 import { MapPanel } from '@/components/catalogue/map-panel';
 import { ApiRequestError, apiFetch } from '@/lib/api';
+import { fallbackDescription } from '@/lib/metadata';
 import type { Activity } from '@pumba/contracts';
 
 /**
@@ -51,11 +52,12 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     const activity = await load(slug);
     return {
       title: `${activity.name} — ${activity.destination.name}`,
-      description: activity.summary ?? undefined,
+      description: activity.summary ?? fallbackDescription('activity', activity.name),
       alternates: { canonical: `/activities/${activity.slug}` },
     };
   } catch {
-    return { title: 'Activity' };
+    // §24.8: never a page with no description. See `lib/metadata`.
+    return { title: 'Activity', description: fallbackDescription('activity') };
   }
 }
 

@@ -6,6 +6,7 @@ import { ActivityCard, AttractionCard, mediaSrc } from '@/components/catalogue/c
 import { MapPanel } from '@/components/catalogue/map-panel';
 import { ApiRequestError } from '@/lib/api';
 import { getDestination, listActivities, listAttractions } from '@/lib/catalogue';
+import { fallbackDescription } from '@/lib/metadata';
 
 /**
  * Destination — SRS §24.8, and the page §29's NFR-P01 gate is measured on.
@@ -44,17 +45,24 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   try {
     destination = await getDestination(slug);
   } catch {
-    return { title: 'Destination' };
+    // The catch is reached by a transient API failure, and `generateMetadata`
+    // runs concurrently with the page body rather than sharing its result — so
+    // the body can render perfectly while this half fails. Returning a title
+    // alone made that invisible: a page that looked complete and carried no
+    // description. It now degrades to a description rather than to none.
+    return { title: 'Destination', description: fallbackDescription('destination') };
   }
 
   const image = destination.media?.find((m) => m.is_primary) ?? destination.media?.[0];
+  const description =
+    destination.summary ?? fallbackDescription('destination', destination.name);
   return {
     title: `${destination.name} — attractions, activities and places to stay`,
-    description: destination.summary ?? undefined,
+    description,
     alternates: { canonical: `/destinations/${destination.slug}` },
     openGraph: {
       title: destination.name,
-      description: destination.summary ?? undefined,
+      description,
       images: image ? [{ url: mediaSrc(image.file_key), alt: image.alt_text }] : undefined,
     },
   };

@@ -6,6 +6,7 @@ import { mediaSrc } from '@/components/catalogue/cards';
 import { MapPanel } from '@/components/catalogue/map-panel';
 import { ApiRequestError, apiFetch } from '@/lib/api';
 import { weekTable, type WeekRow } from '@/lib/opening-hours';
+import { fallbackDescription } from '@/lib/metadata';
 import type { Attraction } from '@pumba/contracts';
 
 /**
@@ -39,11 +40,13 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     const attraction = await load(slug);
     return {
       title: `${attraction.name} — ${attraction.destination.name}`,
-      description: attraction.summary ?? undefined,
+      description:
+        attraction.summary ?? fallbackDescription('attraction', attraction.name),
       alternates: { canonical: `/attractions/${attraction.slug}` },
     };
   } catch {
-    return { title: 'Attraction' };
+    // §24.8: never a page with no description. See `lib/metadata`.
+    return { title: 'Attraction', description: fallbackDescription('attraction') };
   }
 }
 
