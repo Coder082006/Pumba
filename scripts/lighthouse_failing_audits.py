@@ -22,6 +22,14 @@ rather than merely look plausible.
 Audits with no weight are skipped. Lighthouse carries a large number of them
 as informational or manual entries, and they never move a score — listing them
 would bury the one line that matters.
+
+**A null score is reported when, and only when, the audit errored.** Lighthouse
+uses `score: null` for two opposite situations, distinguished only by
+`scoreDisplayMode`: `notApplicable` means the audit did not apply and is
+dropped from the weighted average, while `error` means it could not run and is
+counted as zero. They are identical in the JSON apart from that one field, and
+treating them alike is how the first version of this script reported a failing
+SEO category containing no failing SEO audits.
 """
 
 from __future__ import annotations
@@ -52,14 +60,36 @@ def failing_audits(report: dict) -> list[str]:
                 continue
             audit = audits.get(ref["id"], {})
             audit_score = audit.get("score")
-            # `None` is Lighthouse's "not applicable" — an audit that did not
-            # run against this page. It costs nothing and is not a finding.
-            if audit_score is None or audit_score >= _PASS:
+            mode = audit.get("scoreDisplayMode", "")
+
+            # A null score means one of two opposite things, and conflating
+            # them is how this script missed the audit it was written to find.
+            #
+            #   notApplicable — the audit did not apply to this page. It is
+            #                   dropped from the weighted average entirely and
+            #                   costs nothing.
+            #   error         — the audit could not run. Lighthouse counts it
+            #                   as **zero**, so it costs the category its full
+            #                   weight while looking, in the JSON, exactly like
+            #                   the harmless case.
+            #
+            # The first version of this file skipped every null score, and so
+            # reported a failing SEO category with no failing SEO audits in it.
+            if audit_score is None and mode != "error":
                 continue
+            if audit_score is not None and audit_score >= _PASS:
+                continue
+
+            detail = audit.get("title", "")
+            if mode == "error":
+                detail = (
+                    f"AUDIT ERRORED (counts as zero): "
+                    f"{audit.get('errorMessage') or detail}"
+                )
             lines.append(
                 f"::error::{url} — {category.get('title', '?')}: "
                 f"audit '{ref['id']}' scored {audit_score} (weight {weight}). "
-                f"{audit.get('title', '')}".strip()
+                f"{detail}".strip()
             )
     return lines
 
