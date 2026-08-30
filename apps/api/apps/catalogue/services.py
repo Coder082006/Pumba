@@ -40,16 +40,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from types import MappingProxyType
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from django.contrib.gis.geos import Point
 from django.db import transaction
 
 from apps.catalogue import repositories as repo
+from apps.catalogue.domain import opening_hours
 from apps.catalogue.dto import ListingRefDTO
 from apps.catalogue.models import (
     Accommodation,
@@ -68,7 +70,7 @@ from apps.catalogue.selectors import reference_q, visible
 from apps.common.audit import AuditAction, record_audit
 from apps.common.authz import Permission, Principal, Resource, Role
 from apps.common.errors import NotFoundError, ValidationError
-from apps.common.geo import Coordinates
+from apps.common.geo import COORDINATE_PRECISION, Coordinates
 from apps.common.models import SoftDeleteModel
 
 __all__ = [
@@ -79,6 +81,13 @@ __all__ = [
     "resolve_refs",
     "PlanningRef",
     "resolve_planning_ref",
+    "PlaceFacts",
+    "ActivityFacts",
+    "AttractionFacts",
+    "place_facts",
+    "activity_facts",
+    "attraction_facts",
+    "opening_status",
     "resolve_references",
     "to_orm_fields",
     "SEED_FILES",
@@ -864,3 +873,170 @@ def resolve_planning_ref(reference: str | UUID, *, today: date) -> PlanningRef |
         name=row.name,
         default_currency=row.default_currency,
     )
+
+
+# ---------------------------------------------------------------------------
+# Planning facts — everything §10.4 and §10.6 need to know about a listing.
+# ---------------------------------------------------------------------------
+#
+# `resolve_refs` names a row; this describes one. They are separate because
+# they are read at different moments and cost different amounts: rendering a
+# stored itinerary needs only names, and generating one needs coordinates,
+# capacities and cutoffs. Merging them would put the expensive read on the
+# cheap path.
+#
+# Visibility is **not** applied here, for the same reason `resolve_refs`
+# does not apply it: a trip may hold an item whose listing has been withdrawn,
+# and VR-09's job is to say so by name. `is_active` is returned instead, so the
+# validator decides rather than the query.
+
+
+@dataclass(frozen=True, slots=True)
+class PlaceFacts:
+    """Where a listing is, and whether it is still on sale."""
+
+    storage_id: int
+    slug: str
+    name: str
+    coordinates: Coordinates
+    is_active: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityFacts:
+    """§7.5.9, as §10.4's sequencing and §10.6's VR-05, VR-06 and VR-15 read it."""
+
+    place: PlaceFacts
+    duration_minutes: int
+    min_pax: int
+    max_pax: int
+    min_age: int | None
+    booking_cutoff_hours: int
+    price_per_person: Decimal
+    price_per_group: Decimal | None
+    currency: str
+
+
+@dataclass(frozen=True, slots=True)
+class AttractionFacts:
+    """§7.5.6's attraction, as VR-12 and §10.4's flexible placement read it.
+
+    `visit_minutes` is nullable in the schema and §15.1 calls it a
+    *recommended* duration, so an attraction without one is placed as a
+    zero-length anchor rather than being given an invented length.
+    """
+
+    place: PlaceFacts
+    visit_minutes: int | None
+
+
+def _place(row: Any) -> PlaceFacts:
+    point = row.coordinates if hasattr(row, "coordinates") else row.centroid
+    return PlaceFacts(
+        storage_id=int(row.id),
+        slug=row.slug,
+        name=row.name,
+        coordinates=Coordinates(
+            lat=Decimal(str(round(point.y, COORDINATE_PRECISION))),
+            lon=Decimal(str(round(point.x, COORDINATE_PRECISION))),
+        ),
+        is_active=row.is_active,
+    )
+
+
+def place_facts(kind: str, ids: Sequence[int]) -> dict[int, PlaceFacts]:
+    """Coordinates for rows another module holds ids for — one query per kind.
+
+    §10.4 compares locations and asks for travel between them; this is where
+    the coordinates come from. `trip` never reads a geometry column itself,
+    which is what keeps §13.1's "geography, never planar" a decision made in
+    one module.
+    """
+    try:
+        model = REFERENCEABLE[kind]
+    except KeyError as exc:
+        raise ValidationError(
+            f"{kind!r} is not a referenceable catalogue table; "
+            f"expected one of {sorted(REFERENCEABLE)}."
+        ) from exc
+    wanted = {int(value) for value in ids if value is not None}
+    if not wanted:
+        return {}
+    return {row.id: _place(row) for row in model.objects.filter(pk__in=wanted)}
+
+
+def activity_facts(ids: Sequence[int]) -> dict[int, ActivityFacts]:
+    """One query. VR-05, VR-06 and VR-15 each need a different column of this,
+    and fetching them separately would be three passes over the same rows."""
+    wanted = {int(value) for value in ids if value is not None}
+    if not wanted:
+        return {}
+    return {
+        row.id: ActivityFacts(
+            place=_place(row),
+            duration_minutes=row.duration_minutes,
+            min_pax=row.min_pax,
+            max_pax=row.max_pax,
+            min_age=row.min_age,
+            booking_cutoff_hours=row.booking_cutoff_hours,
+            price_per_person=row.price_per_person,
+            price_per_group=row.price_per_group,
+            currency=row.currency,
+        )
+        for row in Activity.objects.filter(pk__in=wanted)
+    }
+
+
+def attraction_facts(ids: Sequence[int]) -> dict[int, AttractionFacts]:
+    wanted = {int(value) for value in ids if value is not None}
+    if not wanted:
+        return {}
+    return {
+        row.id: AttractionFacts(place=_place(row), visit_minutes=row.visit_minutes)
+        for row in Attraction.objects.filter(pk__in=wanted)
+    }
+
+
+def opening_status(when: Sequence[tuple[int, datetime]]) -> dict[int, bool | None]:
+    """VR-12, evaluated here rather than in the module that asks.
+
+    §15.2 puts opening hours in a fixed JSONB schema and evaluates them **in
+    the destination's own timezone**, and `domain.opening_hours` already
+    implements that, tested. `trip` asks "was it open then" and this answers;
+    a copy of the rule over there would be a second implementation of
+    something subtle — a range crossing midnight belongs to the previous local
+    day — and the two would drift.
+
+    `None` means the attraction publishes no hours (§15.2), which is not the
+    same as closed and is why the return type is three-valued. VR-12 warns on
+    `False` alone.
+
+    One query for the whole set, with the destination's timezone joined in:
+    resolving a zone per item is the N+1 this signature exists to prevent.
+    """
+    if not when:
+        return {}
+    rows = {
+        row.id: row
+        for row in Attraction.objects.filter(pk__in={i for i, _ in when}).select_related(
+            "destination"
+        )
+    }
+    out: dict[int, bool | None] = {}
+    for attraction_id, instant in when:
+        row = rows.get(attraction_id)
+        if row is None or not row.opening_hours:
+            out[attraction_id] = None
+            continue
+        try:
+            hours = opening_hours.parse_opening_hours(row.opening_hours)
+            out[attraction_id] = opening_hours.is_open_at(
+                hours, instant, tz=ZoneInfo(row.destination.timezone)
+            )
+        except (opening_hours.OpeningHoursError, ValueError):
+            # Unparseable hours are "not published" rather than "closed". A
+            # malformed row is an administrator's problem, and warning the
+            # tourist that an attraction may be shut would be reporting our
+            # data error as their planning error.
+            out[attraction_id] = None
+    return out
