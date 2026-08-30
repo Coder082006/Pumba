@@ -73,6 +73,24 @@ SETTINGS_REGISTER: dict[str, Setting] = {
             "buffer.airport_departure_minutes", 180, "Required arrival before departure flight"
         ),
         Setting("buffer.activity_minutes", 15, "Slack before an activity start"),
+        # -- Degraded-mode routing (§12.6, ADR 0019) --
+        # §12.6 calls both of these "configurable" and gives their defaults,
+        # but Appendix B never names them, so the keys are coined here. They
+        # are the two numbers a reader is most likely to challenge, and NFR-M07
+        # is emphatic that a business constant may not live in code: Zanzibar's
+        # road network is not uniform, a single factor will be wrong in both
+        # directions in different places, and correcting it against the first
+        # real routed leg must not need a deployment.
+        Setting(
+            "routing.road_factor",
+            _d("1.35"),
+            "Haversine-to-road multiplier for an APPROXIMATE leg (§12.6)",
+        ),
+        Setting(
+            "routing.average_speed_kmh",
+            45,
+            "Speed model for an APPROXIMATE leg (§12.6)",
+        ),
         # -- Quote and payment windows --
         Setting("quote.ttl_minutes", 20, "Quote and hold validity"),
         Setting("payment.window_minutes", 30, "Extended hold during payment"),

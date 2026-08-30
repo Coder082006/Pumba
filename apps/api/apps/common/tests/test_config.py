@@ -99,6 +99,15 @@ class TestRegister:
                         `tests/test_public_config.py` enforces that by
                         requiring every default here to be a bool, so a
                         threshold cannot hide under it.
+            routing.    Phase 4, ADR 0019 / §12.6. The road factor and speed
+                        model behind an APPROXIMATE travel estimate. §12.6
+                        calls both "configurable" and gives their defaults but
+                        Appendix B never names the keys, so they are coined
+                        here. They are the most challengeable numbers in the
+                        planner — Zanzibar's roads are not uniform and a single
+                        factor is wrong in both directions in different places —
+                        and correcting one against the first real routed leg
+                        must not need a deployment.
             map.        Phase 3, ADR 0016 / Appendix D9. The tile URL and its
                         attribution string. Held as settings so changing map
                         provider is an administrator action rather than a
@@ -125,6 +134,7 @@ class TestRegister:
                     "client.",
                     "currency.",
                     "feature.",
+                    "routing.",
                 )
             )
         }
@@ -140,6 +150,8 @@ class TestRegister:
             ("dispatch.lead_hours", 72),
             ("geofence.pickup_m", 300),
             ("trip.max_days", 30),
+            ("routing.road_factor", Decimal("1.35")),
+            ("routing.average_speed_kmh", 45),
             ("location.retention_days", 30),
         ],
     )
