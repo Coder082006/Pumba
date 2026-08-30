@@ -23,6 +23,16 @@ Audits with no weight are skipped. Lighthouse carries a large number of them
 as informational or manual entries, and they never move a score — listing them
 would bury the one line that matters.
 
+**Everything is emitted as exactly two annotations, not one per finding.**
+GitHub surfaces at most **ten annotations per level per step**, and silently
+drops the rest. Emitting one `::error::` per failing audit hit that ceiling on
+the very first run that mattered: four lines of assert output plus five audit
+lines plus the header came to ten, and the SEO audits — the only ones anybody
+was looking for — fell off the end. A truncated diagnostic that gives no sign
+of being truncated is worse than none, because it reads as a complete answer.
+So the findings are joined with `%0A`, GitHub's newline escape, into a single
+multi-line annotation per level.
+
 **A null score is reported when, and only when, the audit errored.** Lighthouse
 uses `score: null` for two opposite situations, distinguished only by
 `scoreDisplayMode`: `notApplicable` means the audit did not apply and is
@@ -42,6 +52,16 @@ import sys
 #: Lighthouse rounds a displayed category score to two places, so an audit can
 #: score fractionally below 1 without being a failure anybody should chase.
 _PASS = 1.0
+
+
+def _join(lines: list[str]) -> str:
+    """One annotation carrying many lines.
+
+    `%0A` is GitHub's escape for a newline inside a workflow command. Without
+    it each line would need its own annotation, and the ten-per-level ceiling
+    would throw most of them away.
+    """
+    return "%0A".join(lines)
 
 
 def failing_audits(report: dict) -> list[str]:
@@ -87,7 +107,7 @@ def failing_audits(report: dict) -> list[str]:
                     f"{audit.get('errorMessage') or detail}"
                 )
             lines.append(
-                f"::error::{url} — {category.get('title', '?')}: "
+                f"{url} — {category.get('title', '?')}: "
                 f"audit '{ref['id']}' scored {audit_score} (weight {weight}). "
                 f"{detail}".strip()
             )
@@ -109,7 +129,7 @@ def summary(report: dict, path: str) -> str:
         for key, category in sorted(report.get("categories", {}).items())
     )
     url = report.get("finalDisplayedUrl") or report.get("requestedUrl") or "?"
-    return f"::notice::{os.path.basename(path)} {url} {scores}"
+    return f"{os.path.basename(path)} {url} {scores}"
 
 
 def main(directory: str) -> int:
@@ -118,13 +138,17 @@ def main(directory: str) -> int:
         print(f"::warning::No Lighthouse reports found in {directory}.")
         return 0
 
-    print(f"::notice::{len(paths)} Lighthouse report(s) in {directory}.")
+    summaries: list[str] = [f"{len(paths)} Lighthouse report(s) in {directory}."]
+    failures: list[str] = []
     for path in paths:
         with open(path, encoding="utf-8") as handle:
             report = json.load(handle)
-        print(summary(report, path))
-        for line in failing_audits(report):
-            print(line)
+        summaries.append(summary(report, path))
+        failures.extend(failing_audits(report))
+
+    print(f"::notice::{_join(summaries)}")
+    if failures:
+        print(f"::error::{_join(failures)}")
     return 0
 
 

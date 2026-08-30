@@ -386,10 +386,13 @@ jobs:
           if pnpm dlx @lhci/cli@0.14.x assert 2>&1 | tee lhci-assert.log; then
             exit 0
           fi
-          echo "::error::Lighthouse did not meet the NFR-P01 thresholds; the failing assertions follow."
-          grep -E "failure for|expected:|found:" lhci-assert.log | head -40 | while IFS= read -r line; do
-            echo "::error::${line}"
-          done
+          # One annotation, not one per line. GitHub surfaces at most ten
+          # annotations per level per step and silently drops the rest — which
+          # is exactly how the first run of this diagnostic filled its quota
+          # with assert output and lost the audit lines it existed to show.
+          # `%0A` is GitHub's newline escape inside a workflow command.
+          summary=$(grep -E "failure for|expected:|found:" lhci-assert.log | head -40 | sed -e 's/\x1b\[[0-9;]*m//g' | awk '{printf "%s%%0A", $0}')
+          echo "::error::Lighthouse did not meet the NFR-P01 thresholds.%0A${summary}"
           # A category score names a category, not a defect. This names the
           # individual audits that lost the points, which is the difference
           # between "SEO 0.92" and something a person can go and fix.
