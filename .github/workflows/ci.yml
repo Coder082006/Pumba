@@ -367,27 +367,46 @@ jobs:
             exit 1
           fi
 
-      # `collect` and `assert` are separate steps rather than one `autorun`,
-      # and the reason is evidence rather than tidiness. `autorun` runs
-      # collect, assert, then upload — and the upload phase is what writes
-      # `.lighthouseci`. So a failed assertion aborts before the reports are
-      # written, the artifact upload finds nothing, and the run says only
-      # "exit code 1" without naming the threshold that was missed. Three of
-      # today's five runs failed that way and could not be diagnosed.
-      #
-      # Split, `collect` always writes the reports, so the artifact exists
-      # whether the gate passes or fails and the next failure names itself.
+      # `collect` and `assert` are separate steps rather than one `autorun`.
+      # `autorun` stops at the first failing phase, so a missed threshold
+      # aborted the run before anything downstream could report on it. Split,
+      # the two phases fail independently and the run says which one went.
       - name: Lighthouse CI — collect
         run: pnpm dlx @lhci/cli@0.14.x collect
 
+      # The assert output is echoed back as GitHub annotations, not merely
+      # printed. Job logs need repository-admin auth to read; annotations do
+      # not. On a public repository the annotation is therefore the only
+      # channel through which a contributor can diagnose a failure without
+      # credentials — and a gate whose failures nobody can read is a gate that
+      # eventually gets deleted rather than fixed.
       - name: Lighthouse CI — assert the NFR-P01 thresholds
-        run: pnpm dlx @lhci/cli@0.14.x assert
+        run: |
+          set -o pipefail
+          if pnpm dlx @lhci/cli@0.14.x assert 2>&1 | tee lhci-assert.log; then
+            exit 0
+          fi
+          echo "::error::Lighthouse did not meet the NFR-P01 thresholds; the failing assertions follow."
+          grep -E "failure for|expected:|found:" lhci-assert.log | head -40 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          exit 1
 
+      # `include-hidden-files` is required, and its absence is why every failed
+      # run so far uploaded nothing. Since upload-artifact v4.4 a dot-prefixed
+      # path is excluded by default, and `.lighthouseci` is dot-prefixed — so
+      # the step reported "No files were found with the provided path" for a
+      # directory that was there the whole time. `backend-coverage` above never
+      # hit this because its path is not hidden, which is exactly what made the
+      # symptom look like a Lighthouse problem rather than an upload one.
       - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: lighthouse-report
-          path: .lighthouseci
+          path: |
+            .lighthouseci
+            lhci-assert.log
+          include-hidden-files: true
 
   # ---------------------------------------------------------------------------
   ci-passed:
