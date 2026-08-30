@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Pumba">
+  <!--
+    The tab icon. Next's App Router serves this from `app/icon.svg` and emits
+    the `<link rel="icon">` that stops a browser asking for `/favicon.ico`.
+
+    That request is why `errors-in-console` scored 0 on every measured page of
+    every Lighthouse run since the gate landed: a 404 for a file that had never
+    existed, on every page load, holding Best Practices at 0.96.
+
+    Colours are the tokens from `packages/ui/src/globals.css` rather than loose
+    hex — Indian-Ocean teal `--primary: 187 85% 26%` and spice amber
+    `--accent: 25 88% 52%` — resolved here because an SVG file cannot read CSS
+    custom properties. If the palette moves, this moves with it.
+
+    An SVG rather than an .ico so it is a text file a reviewer can read in the
+    diff, and so it stays sharp at any size.
+  -->
+  <rect width="32" height="32" rx="7" fill="hsl(187 85% 26%)" />
+  <!-- A horizon over water: the arc is the sun, the bands are the ocean. -->
+  <circle cx="16" cy="13" r="5" fill="hsl(25 88% 52%)" />
+  <path
+    d="M4 20h24M6.5 24h19M10 28h12"
+    stroke="hsl(0 0% 100%)"
+    stroke-width="2"
+    stroke-linecap="round"
+    opacity="0.9"
+  />
+</svg>
