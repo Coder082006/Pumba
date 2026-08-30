@@ -94,15 +94,35 @@ def failing_audits(report: dict) -> list[str]:
     return lines
 
 
+def summary(report: dict, path: str) -> str:
+    """One line per report: every category and what it scored.
+
+    Printed unconditionally, including for reports with nothing wrong. Twice
+    now the per-audit breakdown has come back silent about the category the
+    assertion actually failed on, and there was no way to tell whether the
+    category had passed in that particular run, been skipped, or been missed
+    by this script. A run-by-run score line answers that in one glance, and
+    six extra annotations is a cheap price for never having to guess again.
+    """
+    scores = " ".join(
+        f"{key}={category.get('score')}"
+        for key, category in sorted(report.get("categories", {}).items())
+    )
+    url = report.get("finalDisplayedUrl") or report.get("requestedUrl") or "?"
+    return f"::notice::{os.path.basename(path)} {url} {scores}"
+
+
 def main(directory: str) -> int:
     paths = sorted(glob.glob(os.path.join(directory, "lhr-*.json")))
     if not paths:
         print(f"::warning::No Lighthouse reports found in {directory}.")
         return 0
 
+    print(f"::notice::{len(paths)} Lighthouse report(s) in {directory}.")
     for path in paths:
         with open(path, encoding="utf-8") as handle:
             report = json.load(handle)
+        print(summary(report, path))
         for line in failing_audits(report):
             print(line)
     return 0
