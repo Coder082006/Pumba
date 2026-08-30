@@ -367,8 +367,21 @@ jobs:
             exit 1
           fi
 
-      - name: Lighthouse CI
-        run: pnpm dlx @lhci/cli@0.14.x autorun
+      # `collect` and `assert` are separate steps rather than one `autorun`,
+      # and the reason is evidence rather than tidiness. `autorun` runs
+      # collect, assert, then upload — and the upload phase is what writes
+      # `.lighthouseci`. So a failed assertion aborts before the reports are
+      # written, the artifact upload finds nothing, and the run says only
+      # "exit code 1" without naming the threshold that was missed. Three of
+      # today's five runs failed that way and could not be diagnosed.
+      #
+      # Split, `collect` always writes the reports, so the artifact exists
+      # whether the gate passes or fails and the next failure names itself.
+      - name: Lighthouse CI — collect
+        run: pnpm dlx @lhci/cli@0.14.x collect
+
+      - name: Lighthouse CI — assert the NFR-P01 thresholds
+        run: pnpm dlx @lhci/cli@0.14.x assert
 
       - uses: actions/upload-artifact@v5
         if: always()
