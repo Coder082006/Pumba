@@ -41,6 +41,7 @@ __all__ = [
     "CancellationPolicyDTO",
     "CountryDTO",
     "MarketRefDTO",
+    "ListingRefDTO",
     "MarketDTO",
     "RegionDTO",
     "DestinationDTO",
@@ -146,6 +147,26 @@ class MarketRefDTO:
     public_id: UUID
     name: str
     slug: str
+
+
+@dataclass(frozen=True, slots=True)
+class ListingRefDTO:
+    """A catalogue row named, for a module that holds its id — ADR 0012.
+
+    ADR 0012 has another module store a reference as a plain integer and read
+    the row back through "a service call returning a DTO". This is that DTO,
+    and `services.resolve_refs` is that call.
+
+    Deliberately the smallest useful shape. `trip` needs to render "Stone Town"
+    and link to `/destinations/stone-town`; it does not need opening hours, a
+    price or a gallery, and handing it those would couple an itinerary's
+    rendering to fields catalogue is free to change. `MarketRefDTO` makes the
+    same argument one tier up and keeps the same three fields.
+    """
+
+    public_id: UUID
+    slug: str
+    name: str
 
 
 @dataclass(frozen=True, slots=True)

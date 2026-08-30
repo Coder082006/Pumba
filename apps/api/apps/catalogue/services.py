@@ -49,6 +49,7 @@ from django.contrib.gis.geos import Point
 from django.db import transaction
 
 from apps.catalogue import repositories as repo
+from apps.catalogue.dto import ListingRefDTO
 from apps.catalogue.models import (
     Accommodation,
     Activity,
@@ -72,6 +73,8 @@ __all__ = [
     "CatalogueEntity",
     "ENTITIES",
     "entity_for",
+    "REFERENCEABLE",
+    "resolve_refs",
     "resolve_references",
     "to_orm_fields",
     "SEED_FILES",
@@ -727,3 +730,75 @@ def _resolve_natural_references(entity: CatalogueEntity, row: Mapping[str, Any])
             )
         fields[name] = parent.public_id
     return fields
+
+
+# ---------------------------------------------------------------------------
+# The read seam ADR 0012 promised — resolving another module's stored ids.
+# ---------------------------------------------------------------------------
+
+#: The tables another module may hold an id for, by the name it uses in its
+#: own columns. `trip.itinerary_item` stores `accommodation_id`, `activity_id`,
+#: `attraction_id` and two `*_destination_id`s; every one of them resolves
+#: through here.
+#:
+#: Stated as an explicit map rather than derived from `ENTITIES`: those are the
+#: tables an administrator may *write*, which is a different question, and
+#: letting one set answer for the other would silently widen this the next time
+#: a curated table is added.
+REFERENCEABLE: Mapping[str, type[SoftDeleteModel]] = MappingProxyType(
+    {
+        "destination": Destination,
+        "attraction": Attraction,
+        "activity": Activity,
+        "accommodation": Accommodation,
+    }
+)
+
+
+def resolve_refs(kind: str, ids: Sequence[int]) -> dict[int, ListingRefDTO]:
+    """Name the catalogue rows another module is holding ids for — ADR 0012.
+
+    ADR 0012 has a cross-module reference stored as a plain integer, because a
+    `ForeignKey` would install a traversable attribute and take the §6.4
+    boundary with it. It then says the row is read back through "a service call
+    returning a DTO". Nothing implemented that call, so `catalogue.services`
+    had no read interface at all and `trip` had no supported way to turn
+    `destination_id` into "Stone Town".
+
+    **The id is an input, never an output.** §7.2 forbids returning sequential
+    integers to *clients*; this is a module boundary, and the caller already
+    holds the integer because it is in its own column. What comes back is a
+    DTO whose identity is a `public_id`, so the integer stops here.
+
+    **One query, whatever the list.** The caller passes every id it needs at
+    once. An itinerary has a reference on most of its rows, and a per-row
+    lookup would make rendering a fortnight's trip an N+1 against four tables.
+
+    **Visibility is deliberately not applied.** A trip may legitimately hold an
+    item whose listing has since been withdrawn — that is precisely what VR-09
+    exists to report. Filtering here would leave the item nameless instead, and
+    a finding that cannot say *which* listing is unavailable is not actionable.
+    Soft-deleted rows are excluded, because `deleted_at` means the row is gone
+    rather than hidden, and `all_objects` is the administrative path.
+
+    A missing id is simply absent from the result. The caller knows what it
+    asked for and is the only layer that can decide what a dangling reference
+    means.
+    """
+    try:
+        model = REFERENCEABLE[kind]
+    except KeyError as exc:
+        raise ValidationError(
+            f"{kind!r} is not a referenceable catalogue table; "
+            f"expected one of {sorted(REFERENCEABLE)}."
+        ) from exc
+
+    wanted = {int(value) for value in ids if value is not None}
+    if not wanted:
+        return {}
+
+    rows = model.objects.filter(pk__in=wanted).values_list("pk", "public_id", "slug", "name")
+    return {
+        pk: ListingRefDTO(public_id=public_id, slug=slug, name=name)
+        for pk, public_id, slug, name in rows
+    }
