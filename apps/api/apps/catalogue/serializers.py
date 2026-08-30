@@ -39,7 +39,6 @@ from typing import Any
 
 from rest_framework import serializers
 
-from apps.catalogue.domain.geo import COORDINATE_PRECISION
 from apps.catalogue.domain.ranking import SortOption
 from apps.catalogue.domain.search import SearchKind
 from apps.catalogue.models import (
@@ -47,6 +46,7 @@ from apps.catalogue.models import (
     GatewayTypeChoices,
     PropertyType,
 )
+from apps.common.geo import COORDINATE_PRECISION
 from apps.common.serializers import StrictSerializer
 
 __all__ = [

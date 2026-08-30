@@ -63,7 +63,6 @@ from django.db.models import (
 )
 from django.db.models.functions import Cast
 
-from apps.catalogue.domain.geo import Coordinates
 from apps.catalogue.domain.media import MediaItem, order_media
 from apps.catalogue.domain.ranking import (
     OrderTerm,
@@ -105,6 +104,7 @@ from apps.catalogue.models import (
     Tag,
 )
 from apps.common.config import get_setting
+from apps.common.geo import Coordinates
 from apps.common.pagination import Page, decode_cursor, encode_cursor
 
 __all__ = [

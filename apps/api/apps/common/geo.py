@@ -1,5 +1,12 @@
 """Coordinates and straight-line distance — SRS §13.1, §12.6.
 
+Pure. No Django, no ORM, no I/O. It lives in the shared kernel rather than in a
+business module because two modules need it and §6.4 gives them no other way to
+share: `catalogue` stores coordinates, `trip` sequences journeys between them,
+and `trip -> catalogue` is a permitted edge while `trip -> location` — where
+§13 nominally belongs — is not. Every module may import `common`, which is the
+same argument that put `money` here.
+
 §13.1 fixes the coordinate model: WGS 84 (SRID 4326), *"exchanged over the API
 as decimal degrees with a maximum of seven decimal places"*, and — importantly —
 *"Distance computations use ST_Distance on the geography type (metres,
@@ -25,8 +32,16 @@ money: a haversine fallback is *not* permitted for a priced corridor, which
 returns `502 ROUTING_UNAVAILABLE` rather than commit the platform to a guess.
 
 `road_factor` and `speed_kmh` are parameters, never constants. They are
-`route.road_factor` and `route.speed_kmh` in `system_setting` (rule 5), and a
-different market has different roads.
+`routing.road_factor` and `routing.average_speed_kmh` in `system_setting`
+(NFR-M07), and a different market has different roads.
+
+**Both of those keys were named here before they existed.** Until Phase 4 this
+module had no production caller at all — it was documented, tested to the last
+branch, and reachable from nothing, with its settings keys spelled in a
+namespace the register did not contain. That is the shape of defect this
+project keeps producing, and it is worth naming where it happened rather than
+quietly correcting the spelling: a mechanism nobody calls cannot tell you its
+configuration is missing.
 """
 
 from __future__ import annotations

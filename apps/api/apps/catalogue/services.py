@@ -49,7 +49,6 @@ from django.contrib.gis.geos import Point
 from django.db import transaction
 
 from apps.catalogue import repositories as repo
-from apps.catalogue.domain.geo import Coordinates
 from apps.catalogue.models import (
     Accommodation,
     Activity,
@@ -66,6 +65,7 @@ from apps.catalogue.models import (
 from apps.common.audit import AuditAction, record_audit
 from apps.common.authz import Permission, Principal, Resource, Role
 from apps.common.errors import NotFoundError, ValidationError
+from apps.common.geo import Coordinates
 from apps.common.models import SoftDeleteModel
 
 __all__ = [

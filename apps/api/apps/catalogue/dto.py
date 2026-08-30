@@ -33,7 +33,7 @@ from datetime import date, time
 from decimal import Decimal
 from uuid import UUID
 
-from apps.catalogue.domain.geo import Coordinates
+from apps.common.geo import Coordinates
 
 __all__ = [
     "MediaDTO",

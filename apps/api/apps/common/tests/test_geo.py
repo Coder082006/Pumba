@@ -11,7 +11,7 @@ from decimal import Decimal
 
 import pytest
 
-from apps.catalogue.domain.geo import (
+from apps.common.geo import (
     COORDINATE_PRECISION,
     BoundingBox,
     Coordinates,

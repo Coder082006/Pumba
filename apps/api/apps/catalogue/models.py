@@ -40,7 +40,6 @@ from django.contrib.postgres.search import SearchVector, SearchVectorField
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from apps.catalogue.domain.geo import COORDINATE_PRECISION, BoundingBox
 from apps.catalogue.domain.hierarchy import GatewayType
 from apps.catalogue.domain.requirements import RequirementsError, parse_requirements
 from apps.catalogue.validators import (
@@ -50,6 +49,7 @@ from apps.catalogue.validators import (
     validate_iso_country_code,
     validate_iso_currency_code,
 )
+from apps.common.geo import COORDINATE_PRECISION, BoundingBox
 from apps.common.models import SoftDeleteModel, TimestampedModel
 
 __all__ = [

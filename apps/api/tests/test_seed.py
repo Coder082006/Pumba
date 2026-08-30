@@ -41,7 +41,7 @@ from django.core.management import call_command
 
 from apps.administration.management.commands.seed import DEFAULT_ROOT, find_seed_root
 from apps.administration.models import AuditLog
-from apps.catalogue.domain.geo import BoundingBox, Coordinates
+from apps.common.geo import BoundingBox, Coordinates
 from apps.catalogue.models import (
     Accommodation,
     Attraction,

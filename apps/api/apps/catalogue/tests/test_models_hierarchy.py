@@ -25,9 +25,9 @@ from django.db import IntegrityError, models, transaction
 from django.db.models.deletion import ProtectedError
 from django.utils import timezone
 
-from apps.catalogue.domain.geo import Coordinates
 from apps.catalogue.models import Country, Destination, GatewayTypeChoices, Region
 from apps.catalogue.tests.factories import make_country, make_region
+from apps.common.geo import Coordinates
 
 # A zone deliberately unlike the seed market's, so anything that hard-codes
 # East Africa fails here rather than in Phase 12.
