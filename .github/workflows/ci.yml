@@ -360,45 +360,30 @@ jobs:
       # broken seed produces an empty Explore page, which scores *well* — fast,
       # accessible, and measuring nothing. A green gate over an empty page is
       # the failure mode this whole job exists to avoid.
-      # Asserts both halves of what Lighthouse is about to measure, and prints
-      # what it found either way.
+      # Asserts both halves of what Lighthouse is about to measure, and
+      # prints what it found either way.
       #
       # The content check came first: without it a broken seed produces an
       # empty Explore page, which scores *well* — fast, accessible, and
       # measuring nothing. A green gate over an empty page is the failure this
       # job exists to avoid.
       #
-      # The head check was added after `meta-description` scored 0 on
-      # /destinations/stone-town in CI while the same page, built the same way,
-      # carried its description locally. Three explanations fitted that
-      # equally well and there was no way to choose between them from a
-      # Lighthouse score. Printing the title and description the server
-      # actually returns turns the next occurrence into an observation rather
-      # than a fourth hypothesis — and asserting them here fails in the step
-      # that names the cause, rather than as a category score two steps later.
+      # The head check is `scripts/check_head_metadata.py`, and it checks
+      # *inside* `<head>` rather than anywhere in the document. Its first
+      # version grepped the whole page and passed on every run while Lighthouse
+      # scored meta-description 0 on the same page — both were right, because
+      # Next was streaming the tag into the body. A guard that cannot fail for
+      # the reason the gate fails is not a guard.
       - name: Refuse to measure a page missing its content or its SEO surface
+        env:
+          EXPLORE_URL: http://127.0.0.1:3000/explore
+          DESTINATION_URL: http://127.0.0.1:3000/destinations/stone-town
         run: |
-          fail=0
-          for path in /explore /destinations/stone-town; do
-            code=$(curl -s -o /tmp/page.html -w "%{http_code}" "http://127.0.0.1:3000${path}")
-            title=$(grep -o "<title>[^<]*</title>" /tmp/page.html | head -1)
-            desc=$(grep -o "<meta name=\"description\"[^>]*>" /tmp/page.html | head -1)
-            bytes=$(wc -c < /tmp/page.html)
-            echo "::notice::${path} status=${code} bytes=${bytes} title=${title:-NONE} description=${desc:-NONE}"
-            if [ "$code" != "200" ]; then
-              echo "::error::${path} returned ${code}."
-              fail=1
-            fi
-            if [ -z "$desc" ]; then
-              echo "::error::${path} rendered with no meta description (SRS §24.8)."
-              fail=1
-            fi
-          done
-          if ! grep -q "Stone Town" /tmp/page.html && ! curl -fsS http://127.0.0.1:3000/explore | grep -q "Stone Town"; then
+          python3 scripts/check_head_metadata.py "$EXPLORE_URL" "$DESTINATION_URL"
+          if ! curl -fsS http://127.0.0.1:3000/explore | grep -q "Stone Town"; then
             echo "::error::Explore rendered without seeded content. Lighthouse would measure an empty page."
-            fail=1
+            exit 1
           fi
-          exit $fail
 
       # `collect` and `assert` are separate steps rather than one `autorun`.
       # `autorun` stops at the first failing phase, so a missed threshold
