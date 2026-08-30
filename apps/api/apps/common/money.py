@@ -27,7 +27,13 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
 
-__all__ = ["Money", "CurrencyMismatchError", "minor_unit_exponent"]
+__all__ = [
+    "Money",
+    "CurrencyMismatchError",
+    "InvalidCurrencyError",
+    "minor_unit_exponent",
+    "validate_currency_code",
+]
 
 
 # ISO 4217 minor-unit exponents. The default is 2; only the exceptions are
@@ -78,6 +84,27 @@ class CurrencyMismatchError(ValueError):
         super().__init__(f"Cannot combine {left} and {right} without an explicit FX conversion")
         self.left = left
         self.right = right
+
+
+class InvalidCurrencyError(ValueError):
+    """A currency code that is not ISO 4217 alpha-3 in shape."""
+
+
+def validate_currency_code(code: str) -> str:
+    """ISO 4217 alpha-3, upper-cased, or raise.
+
+    Structural rather than a membership test against a fixed list: ISO 4217
+    gains and loses codes, and a hard-coded set would reject a currency the
+    platform had legitimately been configured to present. §7.2 pairs this with
+    every money column, so it lives here — in the module that already owns what
+    a currency *means* — rather than being restated by each module that stores
+    one. `catalogue` and `trip` both call it; a second copy is how two
+    definitions of the same rule start to drift.
+    """
+    normalised = code.strip().upper()
+    if len(normalised) != 3 or not normalised.isascii() or not normalised.isalpha():
+        raise InvalidCurrencyError(f"currency code must be three ASCII letters, got {code!r}")
+    return normalised
 
 
 def minor_unit_exponent(currency: str) -> int:

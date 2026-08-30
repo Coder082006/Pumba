@@ -33,6 +33,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from apps.common import money
+
 __all__ = [
     "GatewayType",
     "HierarchyError",
@@ -70,11 +72,18 @@ def validate_country_code(code: str) -> str:
 
 
 def validate_currency_code(code: str) -> str:
-    """ISO 4217 alpha-3, upper-cased. Same reasoning as the country code."""
-    normalised = code.strip().upper()
-    if len(normalised) != 3 or not normalised.isascii() or not normalised.isalpha():
-        raise HierarchyError(f"currency code must be three ASCII letters, got {code!r}")
-    return normalised
+    """ISO 4217 alpha-3, upper-cased. Same reasoning as the country code.
+
+    Delegates to `common.money`, which owns what a currency is. `trip` needs
+    the identical rule for `trip.currency` and may not import catalogue's
+    internals, so the definition moved to the shared kernel rather than being
+    written twice. The `HierarchyError` translation stays here because every
+    caller in this module catches that type.
+    """
+    try:
+        return money.validate_currency_code(code)
+    except money.InvalidCurrencyError as exc:
+        raise HierarchyError(str(exc)) from exc
 
 
 def validate_timezone(name: str) -> str:

@@ -11,7 +11,13 @@ from decimal import Decimal
 
 import pytest
 
-from apps.common.money import CurrencyMismatchError, Money, minor_unit_exponent
+from apps.common.money import (
+    CurrencyMismatchError,
+    InvalidCurrencyError,
+    Money,
+    minor_unit_exponent,
+    validate_currency_code,
+)
 
 
 class TestConstruction:
@@ -186,3 +192,33 @@ class TestPredicates:
 
     def test_equality_includes_currency(self) -> None:
         assert Money(Decimal("1.00"), "USD") != Money(Decimal("1.00"), "TZS")
+
+
+class TestCurrencyCode:
+    """The structural ISO 4217 rule, now shared.
+
+    It lived in `catalogue.domain.hierarchy` until `trip` needed the identical
+    check for `trip.currency` and could not import catalogue's internals. The
+    catalogue tests still exercise it through the delegating wrapper, so both
+    call sites stay covered and there is only one definition to be wrong.
+    """
+
+    def test_normalises_to_upper_case(self) -> None:
+        assert validate_currency_code("tzs") == "TZS"
+        assert validate_currency_code("  usd  ") == "USD"
+
+    @pytest.mark.parametrize("code", ["US", "USDD", "US1", "US$", "", "   ", "ÜSD"])
+    def test_rejects_anything_that_is_not_three_ascii_letters(self, code: str) -> None:
+        with pytest.raises(InvalidCurrencyError):
+            validate_currency_code(code)
+
+    def test_accepts_a_code_not_in_the_exponent_table(self) -> None:
+        """Structural, not a membership test.
+
+        `_EXPONENT_OVERRIDES` lists only the exceptions, so a currency absent
+        from it is ordinary rather than unknown. Validating against a fixed
+        list would reject a currency the platform had been configured to
+        present — the failure ISO 4217's churn guarantees eventually.
+        """
+        assert validate_currency_code("gbp") == "GBP"
+        assert minor_unit_exponent("GBP") == 2
