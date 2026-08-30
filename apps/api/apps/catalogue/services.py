@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 from types import MappingProxyType
 from typing import Any
@@ -63,6 +64,7 @@ from apps.catalogue.models import (
     Region,
     Tag,
 )
+from apps.catalogue.selectors import reference_q, visible
 from apps.common.audit import AuditAction, record_audit
 from apps.common.authz import Permission, Principal, Resource, Role
 from apps.common.errors import NotFoundError, ValidationError
@@ -75,6 +77,8 @@ __all__ = [
     "entity_for",
     "REFERENCEABLE",
     "resolve_refs",
+    "PlanningRef",
+    "resolve_planning_ref",
     "resolve_references",
     "to_orm_fields",
     "SEED_FILES",
@@ -802,3 +806,61 @@ def resolve_refs(kind: str, ids: Sequence[int]) -> dict[int, ListingRefDTO]:
         pk: ListingRefDTO(public_id=public_id, slug=slug, name=name)
         for pk, public_id, slug, name in rows
     }
+
+
+@dataclass(frozen=True, slots=True)
+class PlanningRef:
+    """A destination, as the module that plans against it needs to store it.
+
+    The mirror of `resolve_refs`: that turns a stored id into a name, this
+    turns a name a tourist typed into something storable.
+
+    **`storage_id` is deliberately not called `id`.** ADR 0012 has `trip`
+    keep `destination_id` as a plain integer, so the integer legitimately
+    crosses this boundary — §7.2 forbids returning sequential integers *to
+    clients*, and a module is not a client. Naming it for its one purpose
+    keeps that legitimacy narrow, and it ends in `_id`, so the DTO leak guard
+    in `trip/tests/test_selectors.py` fails the build if it ever reaches a
+    response.
+
+    `default_currency` is here because §7.5.10 makes `trip.currency` NOT NULL
+    and §7.2 pairs a currency with every money column: a trip has to be opened
+    with one, and the destination is where §4.2 says it comes from.
+    """
+
+    storage_id: int
+    public_id: UUID
+    slug: str
+    name: str
+    default_currency: str
+
+
+def resolve_planning_ref(reference: str | UUID, *, today: date) -> PlanningRef | None:
+    """Resolve a destination slug or UUID for a module that plans against it.
+
+    **Visibility applies here, unlike in `resolve_refs`.** The two ask
+    different questions. `resolve_refs` names a row a trip already references,
+    and must still name one that has been withdrawn so VR-09 can say which
+    listing became unavailable. This is a tourist choosing a destination to
+    open a trip against, which is a public read: a destination that is not
+    visible today — inactive, or in a market whose `launch_date` has not
+    arrived — must be indistinguishable from one that does not exist (§30.3).
+
+    Returns `None` rather than raising, so the caller decides between 404 and
+    a field-level validation error.
+    """
+    row = (
+        visible(Destination.objects.all(), today=today)
+        .filter(reference_q(reference))
+        .only("id", "public_id", "slug", "name", "default_currency")
+        .first()
+    )
+    if row is None:
+        return None
+    return PlanningRef(
+        storage_id=int(row.id),
+        public_id=row.public_id,
+        slug=row.slug,
+        name=row.name,
+        default_currency=row.default_currency,
+    )

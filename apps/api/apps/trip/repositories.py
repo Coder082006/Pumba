@@ -35,7 +35,7 @@ has already proved it may write.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, TypeVar
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -275,7 +275,7 @@ def delete_item(item: ItineraryItem) -> None:
 
 
 @transaction.atomic
-def replace_flights(trip: Trip, flights: list[Mapping[str, Any]]) -> list[TripFlight]:
+def replace_flights(trip: Trip, flights: Sequence[Mapping[str, Any]]) -> list[TripFlight]:
     """§9.4.2's `PUT /trips/{id}/flights` — the whole set, or none of it.
 
     A `PUT` replaces, so this deletes what is there and writes what was given,
