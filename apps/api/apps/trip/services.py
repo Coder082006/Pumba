@@ -39,6 +39,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from types import MappingProxyType
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -182,6 +183,26 @@ def _item_of(trip: Trip, item_public_id: UUID) -> ItineraryItem:
     if item is None:
         raise NotFoundError(f"no item {item_public_id}")
     return item
+
+
+def _destination_date(trip: Trip) -> date:
+    """Today, where the trip is.
+
+    Visibility turns on `launch_date` and `_check_dates` on "is this in the
+    past", and both are questions about the destination rather than about the
+    server: a date in Zanzibar is a date in UTC's tomorrow for three hours
+    every night, so a server-side `date.today()` answers inconsistently
+    depending on the hour somebody happened to press the button.
+
+    Falls back to the server's date only if the destination has gone, which
+    `resolve_refs` reports as an absent key rather than an error — a trip whose
+    destination was deleted is a data fault for VR-09 to name, not a reason for
+    an unrelated call to raise.
+    """
+    ref = catalogue.resolve_refs("destination", [trip.destination_id]).get(trip.destination_id)
+    if ref is None:  # pragma: no cover - only if the destination row was deleted
+        return timezone.localdate()
+    return timezone.localtime(timezone.now(), ZoneInfo(ref.timezone)).date()
 
 
 def _dto(trip: Trip) -> TripDTO:
@@ -338,13 +359,49 @@ def update_trip(
     return _dto(repo.update_trip_row(trip, **fields))
 
 
+#: The listing a given item type refers to, as the request names it and as the
+#: row stores it. §7.5.11 gives `itinerary_item` one nullable reference column
+#: per kind and the five CHECK constraints on the model make exactly one of
+#: them mandatory for its type, so this map is the same fact in the shape the
+#: request arrives in.
+#:
+#: FREE_TIME is absent because it refers to nothing: §10.4 line 18 inserts it
+#: to describe a gap, and there is no catalogue row for an afternoon off.
+ITEM_LISTING: Mapping[ItemType, tuple[str, str]] = MappingProxyType(
+    {
+        ItemType.STAY: ("accommodation", "accommodation_id"),
+        ItemType.ACTIVITY: ("activity", "activity_id"),
+        ItemType.ATTRACTION: ("attraction", "attraction_id"),
+    }
+)
+
+
 @transaction.atomic
-def add_item(public_id: UUID, *, tourist_id: int, **fields: Any) -> TripDTO:
+def add_item(
+    public_id: UUID, *, tourist_id: int, today: date | None = None, **fields: Any
+) -> TripDTO:
     """§10.2: `POST /trips/{id}/items`.
 
     The item is placed where the caller says. Sequencing is `generate`'s job
     (§10.4), and doing it here would time an item against an itinerary that is
     about to be rewritten anyway.
+
+    **The listing arrives named and leaves numbered.** The request carries a
+    slug or UUID — the thing a client actually holds, since §7.2 keeps
+    sequential integers inside the database — and `catalogue.resolve_listing_ref`
+    turns it into the `*_id` column ADR 0012 stores. Visibility applies there,
+    so adding a withdrawn listing is a 404 and not a trip that silently
+    contains something nobody can sell.
+
+    **The title comes from the listing, not the request.** A client-supplied
+    one would let two tourists' plans disagree about what the same activity is
+    called, and would let one of them write anything at all into a document the
+    platform later emails as a confirmation. A caller may still title a
+    FREE_TIME block, which names no listing.
+
+    **`today` is the trip's destination's date.** The same reason `create_trip`
+    resolves it that way: a listing's visibility turns on `launch_date`, and
+    the server's date is the wrong one for three hours every night.
     """
     item_type = fields.get("item_type")
     if item_type not in ADDABLE_ITEM_TYPES:
@@ -354,6 +411,28 @@ def add_item(public_id: UUID, *, tourist_id: int, **fields: Any) -> TripDTO:
         )
 
     trip = _editable(_owned(public_id, tourist_id))
+
+    kind, column = ITEM_LISTING.get(ItemType(item_type), ("", ""))
+    named = fields.pop(kind, None) if kind else None
+    # Every field this map knows about is consumed here, whichever type it is,
+    # so naming an accommodation on an ACTIVITY does not leave a stray keyword
+    # for the repository to reject with a message about the ORM.
+    for other, _ in ITEM_LISTING.values():
+        fields.pop(other, None)
+
+    if kind:
+        if named is None:
+            raise ValidationError(f"a {item_type} item must name an {kind}")
+        listing = catalogue.resolve_listing_ref(
+            kind, named, today=today or _destination_date(trip)
+        )
+        if listing is None:
+            raise NotFoundError(f"no {kind} {named!r}")
+        fields[column] = listing.storage_id
+        fields["title"] = listing.name
+    elif not fields.get("title"):
+        raise ValidationError(f"a {item_type} item must carry a title")
+
     itinerary = getattr(trip, "itinerary", None)
     if itinerary is None:
         itinerary = repo.create_itinerary(trip)

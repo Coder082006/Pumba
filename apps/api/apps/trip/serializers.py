@@ -221,18 +221,32 @@ class AddItemSerializer(serializers.Serializer[Any]):
     `item_type` is not constrained to `ADDABLE_ITEM_TYPES` here. The service
     owns that rule — TRANSFER is excluded because §10.4 inserts transfers — and
     duplicating the set would give two places to add a type to.
+
+    **The listing is named, not numbered.** These three fields took the
+    catalogue row's integer primary key when the endpoint was first written,
+    which made it uncallable: §7.2 forbids returning sequential integers to
+    clients, so the catalogue API exposes `public_id` and `slug` and the
+    integer a caller would have had to send does not exist outside the
+    database. A slug or UUID is what a client actually holds — it is in the
+    address bar of the page the tourist is adding from — and it is resolved by
+    `catalogue.resolve_listing_ref` exactly as a flight's gateway is.
+
+    **`title` is optional and normally omitted.** The service titles the item
+    from the resolved listing's own name, so two tourists adding the same
+    activity get the same words. It is accepted for FREE_TIME, which names
+    nothing and so has no name to borrow.
     """
 
     item_type = serializers.CharField()
     day_number = serializers.IntegerField(min_value=1)
     sequence_no = serializers.IntegerField(min_value=1)
-    title = serializers.CharField(max_length=160)
+    title = serializers.CharField(max_length=160, required=False)
     starts_at = serializers.DateTimeField()
     ends_at = serializers.DateTimeField()
 
-    accommodation_id = serializers.IntegerField(required=False, allow_null=True)
-    activity_id = serializers.IntegerField(required=False, allow_null=True)
-    attraction_id = serializers.IntegerField(required=False, allow_null=True)
+    accommodation = serializers.CharField(required=False, allow_null=True)
+    activity = serializers.CharField(required=False, allow_null=True)
+    attraction = serializers.CharField(required=False, allow_null=True)
 
 
 class UpdateItemSerializer(serializers.Serializer[Any]):

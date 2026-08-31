@@ -227,7 +227,7 @@ class TestTheRoundTrip:
         """
         trip = create_trip(tourist, destination.slug)
         trip_id = trip["public_id"]
-        accommodation_id = make_accommodation(destination=destination).id
+        accommodation = make_accommodation(destination=destination)
         activity = make_activity(destination=destination)
 
         tourist.post(
@@ -236,10 +236,9 @@ class TestTheRoundTrip:
                 "item_type": "STAY",
                 "day_number": 1,
                 "sequence_no": 1,
-                "title": "Harbourside Lodge",
                 "starts_at": at(1, 14),
                 "ends_at": at(4, 10),
-                "accommodation_id": accommodation_id,
+                "accommodation": accommodation.slug,
             },
             format="json",
         )
@@ -253,10 +252,9 @@ class TestTheRoundTrip:
                 # and no transfer is inserted to reach it.
                 "day_number": 1,
                 "sequence_no": 2,
-                "title": "Harbour Kayak Tour",
                 "starts_at": at(1, 16),
                 "ends_at": at(1, 19),
-                "activity_id": activity.id,
+                "activity": activity.slug,
             },
             format="json",
         )
@@ -282,10 +280,9 @@ class TestTheRoundTrip:
                 "item_type": "ACTIVITY",
                 "day_number": 1,
                 "sequence_no": 1,
-                "title": "Kayak",
                 "starts_at": at(1, 10),
                 "ends_at": at(1, 13),
-                "activity_id": activity.id,
+                "activity": activity.slug,
             },
             format="json",
         )

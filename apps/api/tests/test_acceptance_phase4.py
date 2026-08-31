@@ -152,10 +152,9 @@ class TestTC040GenerateInsertsTransfers:
             item_type="STAY",
             day_number=1,
             sequence_no=1,
-            title="Harbourside Lodge",
             starts_at=at(0, 14),
             ends_at=at(3, 10),
-            accommodation_id=make_accommodation(destination=destination).id,
+            accommodation=make_accommodation(destination=destination).slug,
         )
         add_item(
             tourist,
@@ -163,10 +162,9 @@ class TestTC040GenerateInsertsTransfers:
             item_type="ACTIVITY",
             day_number=1,
             sequence_no=2,
-            title="Harbour Kayak Tour",
             starts_at=at(0, 17),
             ends_at=at(0, 19),
-            activity_id=make_activity(destination=destination).id,
+            activity=make_activity(destination=destination).slug,
         )
 
         itinerary = body(tourist.post(f"/api/v1/trips/{trip_id}/itinerary/generate"))["itinerary"]
@@ -213,10 +211,9 @@ class TestTC041ValidationCatchesUnreachableSchedule:
             item_type="ACTIVITY",
             day_number=1,
             sequence_no=1,
-            title="Near",
             starts_at=at(0, 9),
             ends_at=at(0, 10),
-            activity_id=near.id,
+            activity=near.slug,
         )
         add_item(
             tourist,
@@ -224,10 +221,9 @@ class TestTC041ValidationCatchesUnreachableSchedule:
             item_type="ACTIVITY",
             day_number=1,
             sequence_no=2,
-            title="Far",
             starts_at=at(0, 11),
             ends_at=at(0, 12),
-            activity_id=far.id,
+            activity=far.slug,
         )
 
         itinerary = body(tourist.post(f"/api/v1/trips/{trip_id}/itinerary/generate"))["itinerary"]
@@ -260,10 +256,9 @@ class TestTC042ValidationWarnsOnOpeningHours:
             item_type="ATTRACTION",
             day_number=2,
             sequence_no=1,
-            title="Stone Store",
             starts_at=at(1, 11),
             ends_at=at(1, 12),
-            attraction_id=attraction.id,
+            attraction=attraction.slug,
         )
 
         itinerary = body(tourist.post(f"/api/v1/trips/{trip_id}/itinerary/generate"))["itinerary"]
@@ -295,11 +290,10 @@ class TestTC043DeterministicOrdering:
                 item_type="ACTIVITY",
                 day_number=1,
                 sequence_no=n,
-                title=f"Activity {n}",
                 # Identical start times — the tie §10.4's rank exists for.
                 starts_at=at(0, 10),
                 ends_at=at(0, 11),
-                activity_id=activity.id,
+                activity=activity.slug,
             )
 
         def positions() -> list[tuple[str, int]]:
@@ -334,10 +328,9 @@ class TestTC902Determinism:
             item_type="STAY",
             day_number=1,
             sequence_no=1,
-            title="Lodge",
             starts_at=at(0, 14),
             ends_at=at(3, 10),
-            accommodation_id=make_accommodation(destination=destination).id,
+            accommodation=make_accommodation(destination=destination).slug,
         )
         add_item(
             tourist,
@@ -345,10 +338,9 @@ class TestTC902Determinism:
             item_type="ACTIVITY",
             day_number=1,
             sequence_no=2,
-            title="Kayak",
             starts_at=at(0, 17),
             ends_at=at(0, 19),
-            activity_id=make_activity(destination=destination).id,
+            activity=make_activity(destination=destination).slug,
         )
 
         def shape() -> Any:
@@ -417,10 +409,9 @@ class TestNFRP02:
                 item_type="ACTIVITY",
                 day_number=(n % 4) + 1,
                 sequence_no=n + 1,
-                title=f"Activity {n}",
                 starts_at=at(n % 4, 8 + (n // 4)),
                 ends_at=at(n % 4, 9 + (n // 4)),
-                activity_id=activity.id,
+                activity=activity.slug,
             )
 
         started = time.perf_counter()

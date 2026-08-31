@@ -81,6 +81,8 @@ __all__ = [
     "resolve_refs",
     "PlanningRef",
     "resolve_planning_ref",
+    "ListingLocator",
+    "resolve_listing_ref",
     "PlaceFacts",
     "ActivityFacts",
     "AttractionFacts",
@@ -819,6 +821,82 @@ def resolve_refs(kind: str, ids: Sequence[int]) -> dict[int, ListingRefDTO]:
         pk: ListingRefDTO(public_id=public_id, slug=slug, name=name, timezone=timezone)
         for pk, public_id, slug, name, timezone in rows
     }
+
+
+@dataclass(frozen=True, slots=True)
+class ListingLocator:
+    """A catalogue listing a tourist named, as the module storing it needs it.
+
+    The counterpart of `resolve_refs` for the three listing tables, and the
+    same shape of thing as `PlanningRef` is for a destination: a name in, a
+    storable id out.
+
+    **Why this exists at all.** ADR 0012 has `trip.itinerary_item` keep
+    `activity_id` as a plain integer, and `AddItemSerializer` originally took
+    that integer straight from the request — which no client can supply. §7.2
+    forbids returning sequential integers to clients, so the catalogue API
+    exposes `public_id` and `slug` and nothing else; the integer a tourist
+    would have had to send does not exist outside the database. The endpoint
+    was therefore uncallable by any real client, which is why every "Add to
+    trip" button in the web app was still disabled.
+
+    `storage_id` carries the deliberate name `PlanningRef` uses for the same
+    reason: the integer legitimately crosses a *module* boundary and must never
+    cross the API one, and the DTO leak guard in `trip/tests/test_selectors.py`
+    fails the build on any field ending `_id` that reaches a response.
+
+    `name` comes back because the caller titles the itinerary item with it. A
+    client-supplied title would let two tourists' plans disagree about what the
+    same listing is called.
+    """
+
+    storage_id: int
+    public_id: UUID
+    slug: str
+    name: str
+
+
+def resolve_listing_ref(
+    kind: str, reference: str | UUID, *, today: date
+) -> ListingLocator | None:
+    """Resolve an activity, attraction or accommodation by slug or UUID.
+
+    **Visibility applies**, for the same reason it does in
+    `resolve_planning_ref` and not in `resolve_refs`: this is a tourist
+    choosing something to add, which is a public read. A listing that is
+    withdrawn, or whose market has not launched, must be indistinguishable
+    from one that never existed (§30.3). A trip that *already* holds a
+    withdrawn listing keeps naming it — that is VR-09's job, and it reads
+    through `resolve_refs`, which deliberately does not filter.
+
+    `destination` is rejected. It resolves through `resolve_planning_ref`,
+    which returns the currency and timezone a trip cannot be opened without,
+    and offering a second door to the same table would let a caller take the
+    one that answers less.
+
+    Returns `None` rather than raising, so the caller chooses between a 404 and
+    a field-level validation error.
+    """
+    if kind == "destination" or kind not in REFERENCEABLE:
+        raise ValidationError(
+            f"{kind!r} is not an addable catalogue listing; "
+            f"expected one of {sorted(set(REFERENCEABLE) - {'destination'})}."
+        )
+
+    row = (
+        visible(REFERENCEABLE[kind].objects.all(), today=today)
+        .filter(reference_q(reference))
+        .only("id", "public_id", "slug", "name")
+        .first()
+    )
+    if row is None:
+        return None
+    return ListingLocator(
+        storage_id=int(row.id),
+        public_id=row.public_id,
+        slug=row.slug,
+        name=row.name,
+    )
 
 
 @dataclass(frozen=True, slots=True)

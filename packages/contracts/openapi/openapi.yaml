@@ -2438,6 +2438,20 @@ components:
         `item_type` is not constrained to `ADDABLE_ITEM_TYPES` here. The service
         owns that rule — TRANSFER is excluded because §10.4 inserts transfers — and
         duplicating the set would give two places to add a type to.
+
+        **The listing is named, not numbered.** These three fields took the
+        catalogue row's integer primary key when the endpoint was first written,
+        which made it uncallable: §7.2 forbids returning sequential integers to
+        clients, so the catalogue API exposes `public_id` and `slug` and the
+        integer a caller would have had to send does not exist outside the
+        database. A slug or UUID is what a client actually holds — it is in the
+        address bar of the page the tourist is adding from — and it is resolved by
+        `catalogue.resolve_listing_ref` exactly as a flight's gateway is.
+
+        **`title` is optional and normally omitted.** The service titles the item
+        from the resolved listing's own name, so two tourists adding the same
+        activity get the same words. It is accepted for FREE_TIME, which names
+        nothing and so has no name to borrow.
       properties:
         item_type:
           type: string
@@ -2458,25 +2472,27 @@ components:
         ends_at:
           type: string
           format: date-time
-        accommodation_id:
+        accommodation:
           type:
-          - integer
+          - string
           - 'null'
-        activity_id:
+          minLength: 1
+        activity:
           type:
-          - integer
+          - string
           - 'null'
-        attraction_id:
+          minLength: 1
+        attraction:
           type:
-          - integer
+          - string
           - 'null'
+          minLength: 1
       required:
       - day_number
       - ends_at
       - item_type
       - sequence_no
       - starts_at
-      - title
     Attraction:
       type: object
       properties:

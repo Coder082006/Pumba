@@ -62,7 +62,7 @@ class Fixture:
             adults=2,
             today=START - timedelta(days=30),
         )
-        self.accommodation_id = external_rows.make_accommodation_id(self.destination)
+        self.accommodation = external_rows.make_accommodation(self.destination)
         self.activity = external_rows.make_activity(self.destination)
 
     def add_stay(self) -> None:
@@ -75,7 +75,7 @@ class Fixture:
             title="Harbourside Lodge",
             starts_at=at(1, 14),
             ends_at=at(4, 10),
-            accommodation_id=self.accommodation_id,
+            accommodation=self.accommodation.slug,
         )
 
     def add_activity(self, *, day: int = 1, hour: int = 16, sequence_no: int = 2) -> None:
@@ -96,7 +96,7 @@ class Fixture:
             title="Harbour Kayak Tour",
             starts_at=at(day, hour),
             ends_at=at(day, hour + 3),
-            activity_id=self.activity.id,
+            activity=self.activity.slug,
         )
 
     def generate(self) -> object:
@@ -223,7 +223,7 @@ class TestVersioningAndTheArchive:
         planned.generate()
         stay = ItineraryItemArchive.objects.filter(item_type=ItemType.STAY).first()
         assert stay is not None
-        assert stay.accommodation_id == planned.accommodation_id
+        assert stay.accommodation_id == planned.accommodation.id
 
 
 class TestLockedItems:

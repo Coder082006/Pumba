@@ -276,6 +276,134 @@ class TestItems:
             )
 
 
+class TestNamingTheListing:
+    """`add_item` takes a slug or UUID, never the catalogue row's integer.
+
+    The endpoint originally took `activity_id` — the primary key — which meant
+    no client could call it: §7.2 keeps sequential integers inside the database
+    and the catalogue API exposes `public_id` and `slug` and nothing else. That
+    is why every "Add to trip" button in the web app was still disabled.
+    """
+
+    def _add(self, trip: object, destination: object, **overrides: object) -> object:
+        fields: dict[str, object] = {
+            "item_type": ItemType.ACTIVITY,
+            "day_number": 1,
+            "sequence_no": 1,
+            "starts_at": AT,
+            "ends_at": AT,
+        }
+        fields.update(overrides)
+        return services.add_item(
+            trip.public_id,  # type: ignore[attr-defined]
+            tourist_id=owner_of(trip),
+            today=START - timedelta(days=30),
+            **fields,
+        )
+
+    def test_a_slug_names_the_activity(self) -> None:
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        activity = external_rows.make_activity(destination)
+
+        added = self._add(trip, destination, activity=activity.slug)
+        stored = ItineraryItem.objects.get(public_id=added.itinerary.items[0].public_id)
+        assert stored.activity_id == activity.id
+
+    def test_a_uuid_names_the_same_activity(self) -> None:
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        activity = external_rows.make_activity(destination)
+
+        added = self._add(trip, destination, activity=activity.public_id)
+        stored = ItineraryItem.objects.get(public_id=added.itinerary.items[0].public_id)
+        assert stored.activity_id == activity.id
+
+    def test_the_title_comes_from_the_listing(self) -> None:
+        """Not from the request. A client-supplied title would let two
+        tourists' plans disagree about what the same activity is called, and
+        would let one of them write anything at all into a document the
+        platform later emails as a confirmation."""
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        activity = external_rows.make_activity(destination)
+
+        added = self._add(trip, destination, activity=activity.slug, title="whatever I like")
+        assert added.itinerary.items[0].title == activity.name
+
+    def test_a_stay_names_an_accommodation(self) -> None:
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        accommodation = external_rows.make_accommodation(destination)
+
+        added = self._add(
+            trip, destination, item_type=ItemType.STAY, accommodation=accommodation.slug
+        )
+        stored = ItineraryItem.objects.get(public_id=added.itinerary.items[0].public_id)
+        assert stored.accommodation_id == accommodation.id
+
+    def test_an_attraction_names_an_attraction(self) -> None:
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        attraction = external_rows.make_attraction(destination)
+
+        added = self._add(
+            trip, destination, item_type=ItemType.ATTRACTION, attraction=attraction.slug
+        )
+        stored = ItineraryItem.objects.get(public_id=added.itinerary.items[0].public_id)
+        assert stored.attraction_id == attraction.id
+
+    def test_an_unknown_listing_is_not_found(self) -> None:
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        with pytest.raises(NotFoundError, match="no activity"):
+            self._add(trip, destination, activity="no-such-tour")
+
+    def test_a_withdrawn_listing_is_not_found(self) -> None:
+        """§30.3: the same answer as for one that never existed. Adding a
+        listing nobody can sell would produce a trip that quotes it."""
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        activity = external_rows.make_activity(destination)
+        type(activity).objects.filter(pk=activity.pk).update(is_active=False)
+
+        with pytest.raises(NotFoundError, match="no activity"):
+            self._add(trip, destination, activity=activity.slug)
+
+    def test_an_activity_with_no_listing_named_is_refused(self) -> None:
+        """The five CHECK constraints on `itinerary_item` make the reference
+        mandatory for its type; catching it here names the field instead of
+        surfacing a database error."""
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        with pytest.raises(ValidationError, match="must name an activity"):
+            self._add(trip, destination)
+
+    def test_the_wrong_listing_field_is_ignored_rather_than_stored(self) -> None:
+        """Naming an accommodation on an ACTIVITY must not reach the ORM as a
+        stray keyword — the tourist would get a message about a model field.
+        It is dropped, and the missing activity is what they are told about."""
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        accommodation = external_rows.make_accommodation(destination)
+        with pytest.raises(ValidationError, match="must name an activity"):
+            self._add(trip, destination, accommodation=accommodation.slug)
+
+    def test_free_time_names_nothing_and_carries_its_own_title(self) -> None:
+        """§10.4 line 18 inserts FREE_TIME to describe a gap. There is no
+        catalogue row for an afternoon off, so the caller titles it."""
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        added = self._add(trip, destination, item_type=ItemType.FREE_TIME, title="Beach")
+        assert added.itinerary.items[0].title == "Beach"
+
+    def test_free_time_with_no_title_is_refused(self) -> None:
+        destination = a_destination()
+        trip = open_trip(destination_row=destination)
+        with pytest.raises(ValidationError, match="must carry a title"):
+            self._add(trip, destination, item_type=ItemType.FREE_TIME)
+
+
 class TestFlights:
     def _flight(self, gateway: str, direction: str = "INBOUND") -> dict[str, object]:
         return {

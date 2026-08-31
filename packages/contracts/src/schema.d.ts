@@ -1488,19 +1488,33 @@ export interface components {
          *
          *     `item_type` is not constrained to `ADDABLE_ITEM_TYPES` here. The service
          *     owns that rule — TRANSFER is excluded because §10.4 inserts transfers — and
-         *     duplicating the set would give two places to add a type to. */
+         *     duplicating the set would give two places to add a type to.
+         *
+         *     **The listing is named, not numbered.** These three fields took the
+         *     catalogue row's integer primary key when the endpoint was first written,
+         *     which made it uncallable: §7.2 forbids returning sequential integers to
+         *     clients, so the catalogue API exposes `public_id` and `slug` and the
+         *     integer a caller would have had to send does not exist outside the
+         *     database. A slug or UUID is what a client actually holds — it is in the
+         *     address bar of the page the tourist is adding from — and it is resolved by
+         *     `catalogue.resolve_listing_ref` exactly as a flight's gateway is.
+         *
+         *     **`title` is optional and normally omitted.** The service titles the item
+         *     from the resolved listing's own name, so two tourists adding the same
+         *     activity get the same words. It is accepted for FREE_TIME, which names
+         *     nothing and so has no name to borrow. */
         AddItemRequest: {
             item_type: string;
             day_number: number;
             sequence_no: number;
-            title: string;
+            title?: string;
             /** Format: date-time */
             starts_at: string;
             /** Format: date-time */
             ends_at: string;
-            accommodation_id?: number | null;
-            activity_id?: number | null;
-            attraction_id?: number | null;
+            accommodation?: string | null;
+            activity?: string | null;
+            attraction?: string | null;
         };
         Attraction: {
             /** Format: uuid */

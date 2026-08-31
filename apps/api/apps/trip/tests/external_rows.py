@@ -29,7 +29,9 @@ __all__ = [
     "ZONE",
     "make_tourist_id",
     "make_destination",
+    "make_accommodation",
     "make_accommodation_id",
+    "make_attraction",
     "make_attraction_id",
     "make_activity",
     "make_activity_departure_id",
@@ -114,33 +116,40 @@ def make_destination(*, is_gateway: bool = False, longitude: float = 174.05) -> 
     )
 
 
-def make_accommodation_id(destination: Any | None = None) -> int:
-    return int(
-        _catalogue("Accommodation")
-        .objects.create(
-            destination=destination or make_destination(),
-            name="Harbourside Lodge",
-            slug=_unique("harbourside-lodge"),
-            property_type="HOTEL",
-            coordinates=Point(174.06, -35.27, srid=4326),
-            address_line="1 Marsden Road",
-        )
-        .id
+def make_accommodation(destination: Any | None = None) -> Any:
+    return _catalogue("Accommodation").objects.create(
+        destination=destination or make_destination(),
+        name="Harbourside Lodge",
+        slug=_unique("harbourside-lodge"),
+        property_type="HOTEL",
+        coordinates=Point(174.06, -35.27, srid=4326),
+        address_line="1 Marsden Road",
     )
+
+
+def make_attraction(destination: Any | None = None) -> Any:
+    return _catalogue("Attraction").objects.create(
+        destination=destination or make_destination(),
+        name="Stone Store",
+        slug=_unique("stone-store"),
+        coordinates=Point(173.98, -35.22, srid=4326),
+        visit_minutes=60,
+    )
+
+
+#: The row's integer id, for a test that writes `itinerary_item` directly.
+#:
+#: Legitimate there and only there: ADR 0012 stores the reference as a plain
+#: integer, so a model-level test has to supply one. Anything going through
+#: `services.add_item` names the row instead — the integer never leaves the
+#: database (§7.2), so a service that accepted one could not be called by a
+#: client.
+def make_accommodation_id(destination: Any | None = None) -> int:
+    return int(make_accommodation(destination).id)
 
 
 def make_attraction_id(destination: Any | None = None) -> int:
-    return int(
-        _catalogue("Attraction")
-        .objects.create(
-            destination=destination or make_destination(),
-            name="Stone Store",
-            slug=_unique("stone-store"),
-            coordinates=Point(173.98, -35.22, srid=4326),
-            visit_minutes=60,
-        )
-        .id
-    )
+    return int(make_attraction(destination).id)
 
 
 def make_activity(destination: Any | None = None) -> Any:

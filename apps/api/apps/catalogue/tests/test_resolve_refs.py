@@ -13,6 +13,8 @@ ids, a withdrawn listing is still named, and a soft-deleted one is not.
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from apps.catalogue import services
@@ -27,6 +29,10 @@ from apps.catalogue.tests.factories import (
 from apps.common.errors import ValidationError
 
 pytestmark = pytest.mark.django_db
+
+#: Any date the fixtures are open on. `launch_date` is null by default, so
+#: only the test that sets one cares which day this is.
+TODAY = date(2027, 6, 1)
 
 
 class TestTheReferenceableSet:
@@ -146,3 +152,75 @@ class TestVisibility:
         destination = make_destination()
         destination.delete()
         assert services.resolve_refs("destination", [destination.id]) == {}
+
+
+class TestResolveListingRef:
+    """The mirror of `resolve_refs` for the three addable listings.
+
+    `resolve_refs` turns a stored integer into a name; this turns a name a
+    tourist chose into something storable. It exists because the first version
+    of `POST /trips/{id}/items` took the catalogue row's integer primary key,
+    which no client can hold — §7.2 keeps sequential integers inside the
+    database — so the endpoint could not be called by the web app at all.
+    """
+
+    @pytest.mark.parametrize(
+        ("kind", "factory"),
+        [
+            ("attraction", make_attraction),
+            ("activity", make_activity),
+            ("accommodation", make_accommodation),
+        ],
+    )
+    def test_a_slug_resolves_to_the_row(self, kind: str, factory: object) -> None:
+        destination = make_destination()
+        row = factory(destination=destination)  # type: ignore[operator]
+        found = services.resolve_listing_ref(kind, row.slug, today=TODAY)
+        assert found is not None
+        assert found.storage_id == row.id
+        assert found.public_id == row.public_id
+        assert found.name == row.name
+
+    def test_a_uuid_resolves_to_the_same_row(self) -> None:
+        """§24.8 serves the catalogue from slugs and §7.2 identifies rows by
+        UUID; a client may hold either, and both are on the page."""
+        row = make_activity()
+        by_slug = services.resolve_listing_ref("activity", row.slug, today=TODAY)
+        by_uuid = services.resolve_listing_ref("activity", row.public_id, today=TODAY)
+        assert by_slug == by_uuid
+
+    def test_an_unknown_name_is_none_rather_than_an_error(self) -> None:
+        """The caller decides between a 404 and a field-level validation
+        error; a raise here would take that choice away from it."""
+        make_activity()
+        assert services.resolve_listing_ref("activity", "no-such-thing", today=TODAY) is None
+
+    def test_a_withdrawn_listing_cannot_be_added(self) -> None:
+        """The opposite of `resolve_refs`, and deliberately so. This is a
+        tourist choosing something, which is a public read: §30.3 makes a
+        withdrawn listing indistinguishable from one that never existed. A
+        trip that *already* holds one keeps naming it — that is VR-09's job,
+        and it reads through `resolve_refs`."""
+        row = make_activity(is_active=False)
+        assert services.resolve_listing_ref("activity", row.slug, today=TODAY) is None
+
+    def test_a_listing_in_an_unlaunched_market_cannot_be_added(self) -> None:
+        """§4.1's `launch_date` reaches all the way down. A market announced
+        for next year must not be plannable against today."""
+        region = make_region()
+        region.market.launch_date = date(2099, 1, 1)
+        region.market.save(update_fields=["launch_date"])
+        row = make_activity(destination=make_destination(region))
+        assert services.resolve_listing_ref("activity", row.slug, today=TODAY) is None
+
+    def test_a_destination_is_refused(self) -> None:
+        """It resolves through `resolve_planning_ref`, which also returns the
+        currency and timezone a trip cannot be opened without. A second door
+        to the same table would let a caller take the one that answers less."""
+        destination = make_destination()
+        with pytest.raises(ValidationError, match="addable"):
+            services.resolve_listing_ref("destination", destination.slug, today=TODAY)
+
+    def test_an_unknown_kind_is_refused(self) -> None:
+        with pytest.raises(ValidationError, match="addable"):
+            services.resolve_listing_ref("provider", "anything", today=TODAY)
