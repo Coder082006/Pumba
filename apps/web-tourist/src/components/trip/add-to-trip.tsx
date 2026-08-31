@@ -222,7 +222,15 @@ export function AddToTrip({ item, timing, label = 'Add to trip' }: AddToTripProp
   }, [status, tripId, day, start, item, timing]);
 
   if (status.kind === 'loading') {
-    return <div aria-hidden className="h-10 rounded-md bg-muted" />;
+    // Roughly the height of what replaces it. §29 measures CLS, and a
+    // one-line placeholder that becomes a three-field form shifts everything
+    // under it the moment the trip list arrives.
+    return (
+      <div
+        aria-hidden
+        className={`rounded-md bg-muted ${timing.kind === 'on-day' ? 'h-52' : 'h-32'}`}
+      />
+    );
   }
 
   if (status.kind === 'signed-out') {

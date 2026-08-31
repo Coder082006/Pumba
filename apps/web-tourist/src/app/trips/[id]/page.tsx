@@ -6,6 +6,7 @@ import { Money } from '@pumba/ui';
 
 import { DayTimeline } from '@/components/trip/day-timeline';
 import { FindingList, ValidationBanner } from '@/components/trip/findings';
+import { TripSettings } from '@/components/trip/trip-settings';
 import { ApiRequestError } from '@/lib/api';
 import {
   generateItinerary,
@@ -42,6 +43,11 @@ import {
  * dragged order would survive until the next plan and no longer; adding items
  * belongs to the catalogue screens, which already know what an activity is.
  * Both are recorded here rather than half-built.
+ *
+ * Also absent: cancelling a trip. `POST /trips/{id}/cancel` exists and works,
+ * but §20.5's cancellation is entangled with refunds once anything is booked,
+ * and putting the button here before that path is built would offer an action
+ * whose consequences the screen cannot yet state.
  */
 
 type State =
@@ -172,6 +178,9 @@ export default function TripPlannerPage({ params }: { params: Promise<{ id: stri
             Summary
           </Link>
         </nav>
+        <div className="pt-2">
+          <TripSettings trip={trip} disabled={busy} onSaved={(action) => void mutate(action)} />
+        </div>
       </header>
 
       <ValidationBanner
@@ -205,11 +214,24 @@ export default function TripPlannerPage({ params }: { params: Promise<{ id: stri
         >
           {busy ? 'Planning…' : 'Plan the days'}
         </button>
+        {/*
+          Into *this trip's* destination, not the generic explore page. What a
+          tourist standing on an empty day wants is the things they could add
+          in the place they are going, and §41.3's flow reads add-then-generate
+          — so the way back out of the planner is the catalogue for the one
+          destination the trip is about.
+        */}
         <Link
-          href="/explore"
+          href={`/destinations/${trip.destination.slug}`}
           className="rounded-md border border-border px-6 py-3 text-sm font-semibold transition-colors duration-fast ease-out hover:bg-muted"
         >
           Add something to do
+        </Link>
+        <Link
+          href={`/stays?destination=${trip.destination.slug}`}
+          className="rounded-md border border-border px-6 py-3 text-sm font-semibold transition-colors duration-fast ease-out hover:bg-muted"
+        >
+          Add a stay
         </Link>
       </div>
 

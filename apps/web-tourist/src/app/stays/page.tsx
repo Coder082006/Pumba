@@ -11,12 +11,13 @@ import type { Accommodation } from '@pumba/contracts';
  * Where are you staying — SRS §24.11 as amended (ADR 0013).
  *
  * **Route.** The plan puts this at `/trip/[id]/stay`, and that is where it
- * belongs: it is a step inside a trip. There is no trip — `apps/api/apps/trip`
- * is still a Phase 1 skeleton — so a `[id]` segment here would be a parameter
- * with nothing behind it, and inventing an id to satisfy the URL is the same
- * species of fabrication as inventing a coordinate. Scoped by destination
- * instead until the trip module lands, when the screen moves and this path
- * redirects.
+ * belongs: it is a step inside a trip. It stayed at `/stays?destination=` while
+ * `apps/api/apps/trip` was a skeleton, because a `[id]` segment would have been
+ * a parameter with nothing behind it. The trip module has landed and the picker
+ * now saves, so the screen asks which of the tourist's DRAFT trips to add to
+ * rather than taking the trip from the URL. Moving the route is a redirect and
+ * a link sweep that belongs on its own, not folded into the change that made
+ * the button work.
  *
  * **Not indexed.** `robots: index: false`, and permanently rather than
  * pending: this is a planning tool operating on a tourist's own trip, not the
