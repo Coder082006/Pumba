@@ -1794,6 +1794,295 @@ paths:
                 items:
                   $ref: '#/components/schemas/Tag'
           description: ''
+  /api/v1/trips:
+    get:
+      operationId: trips_list
+      description: §24.20's My Trips — summaries, not full trips.
+      tags:
+      - trips
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TripSummary'
+          description: ''
+    post:
+      operationId: trips_create
+      description: Authenticated, and a tourist. Ownership is the service's, not ours.
+      tags:
+      - trips
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTripRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreateTripRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateTripRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+          description: ''
+  /api/v1/trips/{public_id}:
+    get:
+      operationId: trips_retrieve
+      description: |-
+        A trip that is not this tourist's is absent, not forbidden (§30.3).
+
+        `services.get_trip` returns `None` for both a foreign trip and one that
+        never existed, and this raises the same error for both — so the two are
+        indistinguishable from outside, which is the point.
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trips
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+          description: ''
+    patch:
+      operationId: trips_partial_update
+      description: Authenticated, and a tourist. Ownership is the service's, not ours.
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trips
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateTripRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateTripRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateTripRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+          description: ''
+  /api/v1/trips/{public_id}/cancel:
+    post:
+      operationId: trips_cancel_create
+      description: |-
+        §20.5. A completed trip is a 409, raised by the state machine —
+        a journey that has happened cannot be made not to have happened.
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trips
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+          description: ''
+  /api/v1/trips/{public_id}/flights:
+    put:
+      operationId: trips_flights_update
+      description: '§9.4.2 is a PUT: the whole set replaces what is there.'
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trips
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetFlightsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SetFlightsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SetFlightsRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+          description: ''
+  /api/v1/trips/{public_id}/items:
+    post:
+      operationId: trips_items_create
+      description: Authenticated, and a tourist. Ownership is the service's, not ours.
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trips
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AddItemRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AddItemRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+          description: ''
+  /api/v1/trips/{public_id}/items/{item_id}:
+    patch:
+      operationId: trips_items_partial_update
+      description: Authenticated, and a tourist. Ownership is the service's, not ours.
+      parameters:
+      - in: path
+        name: item_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trips
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateItemRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateItemRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+          description: ''
+    delete:
+      operationId: trips_items_destroy
+      description: |-
+        Returns the trip rather than 204.
+
+        §24.14 re-renders the timeline after a removal — sequence numbers and
+        the running total both change — so a 204 would be immediately followed
+        by a GET. A locked item is a 409 (§10.8), raised by the service.
+      parameters:
+      - in: path
+        name: item_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trips
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+          description: ''
+  /api/v1/trips/{public_id}/itinerary/generate:
+    post:
+      operationId: trips_itinerary_generate_create
+      description: |-
+        §10.2's generate. The findings come back on the itinerary, not as
+        an error: §10.6 returns them from a run that worked.
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trips
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+          description: ''
 components:
   schemas:
     Accommodation:
@@ -2141,6 +2430,53 @@ components:
       - name
       - price_per_person
       - slug
+    AddItemRequest:
+      type: object
+      description: |-
+        `POST /trips/{id}/items`.
+
+        `item_type` is not constrained to `ADDABLE_ITEM_TYPES` here. The service
+        owns that rule — TRANSFER is excluded because §10.4 inserts transfers — and
+        duplicating the set would give two places to add a type to.
+      properties:
+        item_type:
+          type: string
+          minLength: 1
+        day_number:
+          type: integer
+          minimum: 1
+        sequence_no:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        accommodation_id:
+          type:
+          - integer
+          - 'null'
+        activity_id:
+          type:
+          - integer
+          - 'null'
+        attraction_id:
+          type:
+          - integer
+          - 'null'
+      required:
+      - day_number
+      - ends_at
+      - item_type
+      - sequence_no
+      - starts_at
+      - title
     Attraction:
       type: object
       properties:
@@ -2496,6 +2832,47 @@ components:
       - min_latitude
       - min_longitude
       - name
+    CreateTripRequest:
+      type: object
+      description: |-
+        §10.2's `POST /trips`.
+
+        `destination` is a slug or a UUID and is resolved by
+        `catalogue.services.resolve_planning_ref`, which applies visibility — so an
+        unopened market's destination is indistinguishable from one that does not
+        exist (§30.3). Deciding that here would be a second place to get it wrong.
+      properties:
+        destination:
+          type: string
+          minLength: 1
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        adults:
+          type: integer
+          minimum: 1
+          default: 1
+        children:
+          type: integer
+          minimum: 0
+          default: 0
+        infants:
+          type: integer
+          minimum: 0
+          default: 0
+        title:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 140
+      required:
+      - destination
+      - end_date
+      - start_date
     Destination:
       type: object
       description: |-
@@ -2697,6 +3074,101 @@ components:
       required:
       - platform
       - push_token
+    DirectionEnum:
+      enum:
+      - INBOUND
+      - OUTBOUND
+      type: string
+      description: |-
+        * `INBOUND` - INBOUND
+        * `OUTBOUND` - OUTBOUND
+    Finding:
+      type: object
+      description: |-
+        §10.6's `{code, severity, message, item_ids[], suggested_action}`.
+
+        Part of a successful response, not an error channel: §10.2 returns
+        findings from a generate that worked, and §24.14 renders them inline
+        against the items they name.
+      properties:
+        code:
+          type: string
+          readOnly: true
+        severity:
+          type: string
+          readOnly: true
+        message:
+          type: string
+          readOnly: true
+        item_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          readOnly: true
+        suggested_action:
+          type: string
+          readOnly: true
+        details:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+      required:
+      - code
+      - details
+      - item_ids
+      - message
+      - severity
+      - suggested_action
+    FlightInputRequest:
+      type: object
+      description: |-
+        §11.2's `trip_flight`, as a request.
+
+        `gateway` is a slug or UUID, resolved the same way a destination is. §7.5.6's
+        `is_gateway` flag is deliberately not required — see `services.set_flights`.
+      properties:
+        gateway:
+          type: string
+          minLength: 1
+        direction:
+          $ref: '#/components/schemas/DirectionEnum'
+        flight_number:
+          type: string
+          minLength: 1
+          maxLength: 10
+        airline_iata:
+          type: string
+          minLength: 1
+          maxLength: 3
+        scheduled_at:
+          type: string
+          format: date-time
+        actual_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        terminal:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 20
+        pax_count:
+          type: integer
+          minimum: 1
+        luggage_count:
+          type: integer
+          minimum: 0
+          default: 0
+      required:
+      - airline_iata
+      - direction
+      - flight_number
+      - gateway
+      - pax_count
+      - scheduled_at
     ForgotPasswordRequest:
       type: object
       description: |-
@@ -2756,6 +3228,194 @@ components:
       - checks
       - status
       - version
+    Itinerary:
+      type: object
+      properties:
+        version:
+          type: integer
+          readOnly: true
+        validation_state:
+          type: string
+          readOnly: true
+        generated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        total_distance_m:
+          type:
+          - integer
+          - 'null'
+          readOnly: true
+        total_travel_seconds:
+          type:
+          - integer
+          - 'null'
+          readOnly: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItineraryItem'
+          readOnly: true
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Finding'
+          readOnly: true
+        has_errors:
+          type: boolean
+          readOnly: true
+      required:
+      - findings
+      - generated_at
+      - has_errors
+      - items
+      - total_distance_m
+      - total_travel_seconds
+      - validation_state
+      - version
+    ItineraryItem:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        day_number:
+          type: integer
+          readOnly: true
+        sequence_no:
+          type: integer
+          readOnly: true
+        item_type:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          readOnly: true
+        starts_at:
+          type: string
+          format: date-time
+          readOnly: true
+        ends_at:
+          type: string
+          format: date-time
+          readOnly: true
+        accommodation:
+          oneOf:
+          - $ref: '#/components/schemas/ListingRef'
+          - type: 'null'
+          readOnly: true
+        activity:
+          oneOf:
+          - $ref: '#/components/schemas/ListingRef'
+          - type: 'null'
+          readOnly: true
+        attraction:
+          oneOf:
+          - $ref: '#/components/schemas/ListingRef'
+          - type: 'null'
+          readOnly: true
+        origin_destination:
+          oneOf:
+          - $ref: '#/components/schemas/ListingRef'
+          - type: 'null'
+          readOnly: true
+        target_destination:
+          oneOf:
+          - $ref: '#/components/schemas/ListingRef'
+          - type: 'null'
+          readOnly: true
+        distance_m:
+          type:
+          - integer
+          - 'null'
+          readOnly: true
+        travel_seconds:
+          type:
+          - integer
+          - 'null'
+          readOnly: true
+        estimate_quality:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        is_approximate:
+          type: boolean
+          readOnly: true
+        quantity:
+          type: integer
+          readOnly: true
+        pax_count:
+          type:
+          - integer
+          - 'null'
+          readOnly: true
+        unit_price:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        line_total:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        currency:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        is_locked:
+          type: boolean
+          readOnly: true
+      required:
+      - accommodation
+      - activity
+      - attraction
+      - currency
+      - day_number
+      - distance_m
+      - ends_at
+      - estimate_quality
+      - is_approximate
+      - is_locked
+      - item_type
+      - line_total
+      - origin_destination
+      - pax_count
+      - public_id
+      - quantity
+      - sequence_no
+      - starts_at
+      - target_destination
+      - title
+      - travel_seconds
+      - unit_price
+    ListingRef:
+      type: object
+      description: '`catalogue.dto.ListingRefDTO` — a row named, never numbered.'
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        slug:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+      required:
+      - name
+      - public_id
+      - slug
     LoginRequest:
       type: object
       description: 'SRS §9.4.2: `{ "email", "password", "mfa_code"? }`.'
@@ -3371,6 +4031,53 @@ components:
           type: integer
         is_active:
           type: boolean
+    PatchedUpdateItemRequest:
+      type: object
+      description: '`PATCH /trips/{id}/items/{item_id}` — "modify an unlocked item".'
+      properties:
+        day_number:
+          type: integer
+          minimum: 1
+        sequence_no:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+    PatchedUpdateTripRequest:
+      type: object
+      description: |-
+        `PATCH /trips/{id}`. Every field optional — a PATCH that required them
+        all would be a PUT wearing the wrong verb.
+      properties:
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        adults:
+          type: integer
+          minimum: 1
+        children:
+          type: integer
+          minimum: 0
+        infants:
+          type: integer
+          minimum: 0
+        title:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 140
     PlatformEnum:
       enum:
       - IOS
@@ -3568,6 +4275,20 @@ components:
       - public_id
       - rank
       - slug
+    SetFlightsRequest:
+      type: object
+      description: |-
+        `PUT /trips/{id}/flights` — the whole set.
+
+        An empty list is meaningful and therefore allowed: it is how a tourist
+        says they have no flights recorded, and R19's `0..2` includes zero.
+      properties:
+        flights:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlightInputRequest'
+      required:
+      - flights
     Tag:
       type: object
       properties:
@@ -3660,6 +4381,237 @@ components:
       - nationality
       - preferred_currency
       - public_id
+    Trip:
+      type: object
+      description: §24.20's My Trips. Deliberately narrower than `TripSerializer`.
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        title:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        destination:
+          allOf:
+          - $ref: '#/components/schemas/ListingRef'
+          readOnly: true
+        start_date:
+          type: string
+          format: date
+          readOnly: true
+        end_date:
+          type: string
+          format: date
+          readOnly: true
+        adults:
+          type: integer
+          readOnly: true
+        children:
+          type: integer
+          readOnly: true
+        infants:
+          type: integer
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        subtotal_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        fee_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        tax_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        priced_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        quote_expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        confirmed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        version:
+          type: integer
+          readOnly: true
+        itinerary:
+          oneOf:
+          - $ref: '#/components/schemas/Itinerary'
+          - type: 'null'
+          readOnly: true
+        flights:
+          type: array
+          items:
+            $ref: '#/components/schemas/TripFlight'
+          readOnly: true
+      required:
+      - adults
+      - cancelled_at
+      - children
+      - confirmed_at
+      - currency
+      - destination
+      - end_date
+      - fee_amount
+      - flights
+      - infants
+      - itinerary
+      - priced_at
+      - public_id
+      - quote_expires_at
+      - reference
+      - start_date
+      - status
+      - subtotal_amount
+      - tax_amount
+      - title
+      - total_amount
+      - version
+    TripFlight:
+      type: object
+      properties:
+        direction:
+          type: string
+          readOnly: true
+        flight_number:
+          type: string
+          readOnly: true
+        airline_iata:
+          type: string
+          readOnly: true
+        gateway:
+          allOf:
+          - $ref: '#/components/schemas/ListingRef'
+          readOnly: true
+        scheduled_at:
+          type: string
+          format: date-time
+          readOnly: true
+        actual_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        terminal:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        pax_count:
+          type: integer
+          readOnly: true
+        luggage_count:
+          type: integer
+          readOnly: true
+      required:
+      - actual_at
+      - airline_iata
+      - direction
+      - flight_number
+      - gateway
+      - luggage_count
+      - pax_count
+      - scheduled_at
+      - terminal
+    TripSummary:
+      type: object
+      description: §24.20's My Trips. Deliberately narrower than `TripSerializer`.
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        title:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        destination:
+          allOf:
+          - $ref: '#/components/schemas/ListingRef'
+          readOnly: true
+        start_date:
+          type: string
+          format: date
+          readOnly: true
+        end_date:
+          type: string
+          format: date
+          readOnly: true
+        adults:
+          type: integer
+          readOnly: true
+        children:
+          type: integer
+          readOnly: true
+        infants:
+          type: integer
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+      required:
+      - adults
+      - children
+      - currency
+      - destination
+      - end_date
+      - infants
+      - public_id
+      - reference
+      - start_date
+      - status
+      - title
+      - total_amount
     User:
       type: object
       description: '§9.1: `public_id` only. Never `id`, never a credential.'

@@ -78,7 +78,15 @@ class Fixture:
             accommodation_id=self.accommodation_id,
         )
 
-    def add_activity(self, *, day: int = 2, hour: int = 10, sequence_no: int = 2) -> None:
+    def add_activity(self, *, day: int = 1, hour: int = 16, sequence_no: int = 2) -> None:
+        """Day 1 by default, after the 14:00 check-in.
+
+        §10.4 sequences within a day and a stay only appears on the days it
+        begins and ends, so an activity on a middle day has nothing to be
+        adjacent to and gets no transfer. Putting it on the check-in day is
+        what makes the pair the algorithm actually works on — and it is the
+        ordinary case anyway: arrive, drop bags, go out.
+        """
         services.add_item(
             self.trip.public_id,
             tourist_id=self.tourist,

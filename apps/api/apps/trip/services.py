@@ -37,10 +37,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from django.contrib.gis.geos import Point
 from django.db import transaction
@@ -427,7 +428,21 @@ def cancel_trip(public_id: UUID, *, tourist_id: int) -> TripDTO:
 # ---------------------------------------------------------------------------
 
 
-def _stay_anchors(item: ItineraryItem, trip: Trip) -> list[tuple[Kind, date]]:
+def _local_date(instant: datetime, zone: ZoneInfo) -> date:
+    """The calendar date an instant falls on **where the trip is**.
+
+    Not `timezone.localtime`, which reads the server's zone. The server runs
+    UTC and Zanzibar is UTC+3, so an activity at 01:00 local is 22:00 the
+    previous day in UTC — and a day number derived from that is off by one for
+    every evening item in the catalogue's real market. It first showed up as a
+    `day_number` of 0 failing the one-based CHECK, which is the constraint
+    doing its job; without it the item would simply have been filed under the
+    wrong day.
+    """
+    return instant.astimezone(zone).date()
+
+
+def _stay_anchors(item: ItineraryItem, trip: Trip, zone: ZoneInfo) -> list[tuple[Kind, date]]:
     """The one or two days a STAY appears on — §10.4's tie-break rank.
 
     A stay spanning three nights is a `STAY_CHECK_IN` on the day it begins and
@@ -439,8 +454,8 @@ def _stay_anchors(item: ItineraryItem, trip: Trip) -> list[tuple[Kind, date]]:
 
     A stay that starts and ends on the same day yields both.
     """
-    start = timezone.localtime(item.starts_at).date()
-    end = timezone.localtime(item.ends_at).date()
+    start = _local_date(item.starts_at, zone)
+    end = _local_date(item.ends_at, zone)
     anchors = [(Kind.STAY_CHECK_IN, start)]
     if end != start:
         anchors.append((Kind.STAY_CHECK_OUT, end))
@@ -525,7 +540,9 @@ def _location_of(item: ItineraryItem) -> str | None:
     return None
 
 
-def _planned(items: Sequence[ItineraryItem], trip: Trip, facts: _Facts) -> list[PlannedItem]:
+def _planned(
+    items: Sequence[ItineraryItem], trip: Trip, facts: _Facts, zone: ZoneInfo
+) -> list[PlannedItem]:
     """Rows into the sequencer's own shape, with stays expanded."""
     planned: list[PlannedItem] = []
     for item in items:
@@ -534,10 +551,10 @@ def _planned(items: Sequence[ItineraryItem], trip: Trip, facts: _Facts) -> list[
             # needs to see them — a transfer has to be planned *around* one.
             pass
         location = _location_of(item)
-        day = (timezone.localtime(item.starts_at).date() - trip.start_date).days + 1
+        day = (_local_date(item.starts_at, zone) - trip.start_date).days + 1
 
         if item.item_type == ItemType.STAY:
-            for kind, when in _stay_anchors(item, trip):
+            for kind, when in _stay_anchors(item, trip, zone):
                 anchor_day = (when - trip.start_date).days + 1
                 at_local = item.starts_at if kind is Kind.STAY_CHECK_IN else item.ends_at
                 planned.append(
@@ -581,7 +598,10 @@ def _planned(items: Sequence[ItineraryItem], trip: Trip, facts: _Facts) -> list[
 
 
 def _item_facts(
-    items: Sequence[ItineraryItem], planned: Sequence[PlannedItem], facts: _Facts
+    items: Sequence[ItineraryItem],
+    planned: Sequence[PlannedItem],
+    facts: _Facts,
+    zone: ZoneInfo,
 ) -> list[ItemFacts]:
     """§10.6's inputs, resolved from the catalogue rather than guessed."""
     by_id = {i.pk: i for i in items}
@@ -592,8 +612,8 @@ def _item_facts(
 
         nights: tuple[date, ...] = ()
         if row is not None and row.item_type == ItemType.STAY:
-            start = timezone.localtime(row.starts_at).date()
-            end = timezone.localtime(row.ends_at).date()
+            start = _local_date(row.starts_at, zone)
+            end = _local_date(row.ends_at, zone)
             # The nights a stay covers are its dates minus the last: a stay
             # from the 1st to the 4th covers three nights, not four. VR-04 and
             # VR-16 both count nights, and an off-by-one here would report a
@@ -883,6 +903,21 @@ def generate_itinerary(public_id: UUID, *, tourist_id: int) -> TripDTO:
     sequencer, because a transfer has to be planned around it — §10.3's own
     example is adding day 4 to a confirmed trip without disturbing days 1 to 3
     — and the refusal fires only if sequencing would actually move it.
+
+    **A known limitation, stated because it surprises people.** §10.4 sequences
+    *within a day* and line 4 lists the fixed items as "ACTIVITY with
+    departure, flight anchors, check-in/out". A stay therefore appears on the
+    day it begins and the day it ends, and on no day between. So a middle day
+    holding a single activity has nothing to be adjacent to, and no transfer is
+    inserted to reach it — even though the tourist plainly starts that morning
+    at their hotel.
+
+    That is §10.4 as specified, and inventing a per-day hotel anchor here would
+    be adding planning behaviour the specification does not describe, in the
+    one module whose §10.1 promise is that two implementations agree. It is
+    recorded rather than quietly fixed; if the intended behaviour is a stay
+    anchoring every night it spans, that is a change to §10.4 and belongs in
+    the specification first.
     """
     trip = _editable(_owned(public_id, tourist_id))
     itinerary = getattr(trip, "itinerary", None)
@@ -891,7 +926,14 @@ def generate_itinerary(public_id: UUID, *, tourist_id: int) -> TripDTO:
 
     items = list(itinerary.items.all())
     facts = _gather(items, trip)
-    planned = _planned(items, trip, facts)
+
+    # Every calendar question below — which day an item falls on, which nights
+    # a stay covers, where the trip's window begins — is asked where the trip
+    # is, not where the server is.
+    destination = facts.destinations.get(trip.destination_id)
+    zone = ZoneInfo(destination.timezone if destination else "UTC")
+
+    planned = _planned(items, trip, facts, zone)
 
     buffers = Buffers(
         activity_minutes=int(get_setting("buffer.activity_minutes")),
@@ -908,16 +950,15 @@ def generate_itinerary(public_id: UUID, *, tourist_id: int) -> TripDTO:
     )
     _refuse_if_a_locked_item_moved(planned, result.items)
 
-    destination = facts.destinations.get(trip.destination_id)
     findings = validate(
-        _item_facts(items, result.items, facts),
+        _item_facts(items, result.items, facts, zone),
         trip=TripFacts(
             start_date=trip.start_date,
             end_date=trip.end_date,
             # The destination's zone, not the server's: §10.6's VR-01 turns
             # dates into an instant range and §15.2 reads opening hours
-            # locally, so UTC here would move every boundary by half a day.
-            timezone=destination.timezone if destination else "UTC",
+            # locally, so UTC here would move every boundary by hours.
+            timezone=str(zone),
             currency=trip.currency,
             party=PartyFacts(adults=trip.adults, children=trip.children, infants=trip.infants),
         ),

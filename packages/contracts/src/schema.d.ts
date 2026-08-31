@@ -1219,6 +1219,138 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description §24.20's My Trips — summaries, not full trips. */
+        get: operations["trips_list"];
+        put?: never;
+        /** @description Authenticated, and a tourist. Ownership is the service's, not ours. */
+        post: operations["trips_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trips/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description A trip that is not this tourist's is absent, not forbidden (§30.3).
+         *
+         *     `services.get_trip` returns `None` for both a foreign trip and one that
+         *     never existed, and this raises the same error for both — so the two are
+         *     indistinguishable from outside, which is the point. */
+        get: operations["trips_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Authenticated, and a tourist. Ownership is the service's, not ours. */
+        patch: operations["trips_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/trips/{public_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description §20.5. A completed trip is a 409, raised by the state machine —
+         *     a journey that has happened cannot be made not to have happened. */
+        post: operations["trips_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trips/{public_id}/flights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description §9.4.2 is a PUT: the whole set replaces what is there. */
+        put: operations["trips_flights_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trips/{public_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Authenticated, and a tourist. Ownership is the service's, not ours. */
+        post: operations["trips_items_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trips/{public_id}/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Returns the trip rather than 204.
+         *
+         *     §24.14 re-renders the timeline after a removal — sequence numbers and
+         *     the running total both change — so a 204 would be immediately followed
+         *     by a GET. A locked item is a 409 (§10.8), raised by the service. */
+        delete: operations["trips_items_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Authenticated, and a tourist. Ownership is the service's, not ours. */
+        patch: operations["trips_items_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/trips/{public_id}/itinerary/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description §10.2's generate. The findings come back on the itinerary, not as
+         *     an error: §10.6 returns them from a run that worked. */
+        post: operations["trips_itinerary_generate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1351,6 +1483,24 @@ export interface components {
             tags?: string[];
             feature_rank?: number;
             is_active?: boolean;
+        };
+        /** @description `POST /trips/{id}/items`.
+         *
+         *     `item_type` is not constrained to `ADDABLE_ITEM_TYPES` here. The service
+         *     owns that rule — TRANSFER is excluded because §10.4 inserts transfers — and
+         *     duplicating the set would give two places to add a type to. */
+        AddItemRequest: {
+            item_type: string;
+            day_number: number;
+            sequence_no: number;
+            title: string;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            accommodation_id?: number | null;
+            activity_id?: number | null;
+            attraction_id?: number | null;
         };
         Attraction: {
             /** Format: uuid */
@@ -1490,6 +1640,26 @@ export interface components {
             /** Format: decimal */
             max_longitude: string;
         };
+        /** @description §10.2's `POST /trips`.
+         *
+         *     `destination` is a slug or a UUID and is resolved by
+         *     `catalogue.services.resolve_planning_ref`, which applies visibility — so an
+         *     unopened market's destination is indistinguishable from one that does not
+         *     exist (§30.3). Deciding that here would be a second place to get it wrong. */
+        CreateTripRequest: {
+            destination: string;
+            /** Format: date */
+            start_date: string;
+            /** Format: date */
+            end_date: string;
+            /** @default 1 */
+            adults: number;
+            /** @default 0 */
+            children: number;
+            /** @default 0 */
+            infants: number;
+            title?: string | null;
+        };
         /** @description §7.5.6.
          *
          *     `timezone` is here because §7.2 renders timestamps in the destination's
@@ -1569,6 +1739,45 @@ export interface components {
             /** @default  */
             app_version: string;
         };
+        /**
+         * @description * `INBOUND` - INBOUND
+         *     * `OUTBOUND` - OUTBOUND
+         * @enum {string}
+         */
+        DirectionEnum: "INBOUND" | "OUTBOUND";
+        /** @description §10.6's `{code, severity, message, item_ids[], suggested_action}`.
+         *
+         *     Part of a successful response, not an error channel: §10.2 returns
+         *     findings from a generate that worked, and §24.14 renders them inline
+         *     against the items they name. */
+        Finding: {
+            readonly code: string;
+            readonly severity: string;
+            readonly message: string;
+            readonly item_ids: string[];
+            readonly suggested_action: string;
+            readonly details: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description §11.2's `trip_flight`, as a request.
+         *
+         *     `gateway` is a slug or UUID, resolved the same way a destination is. §7.5.6's
+         *     `is_gateway` flag is deliberately not required — see `services.set_flights`. */
+        FlightInputRequest: {
+            gateway: string;
+            direction: components["schemas"]["DirectionEnum"];
+            flight_number: string;
+            airline_iata: string;
+            /** Format: date-time */
+            scheduled_at: string;
+            /** Format: date-time */
+            actual_at?: string | null;
+            terminal?: string | null;
+            pax_count: number;
+            /** @default 0 */
+            luggage_count: number;
+        };
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
@@ -1603,6 +1812,53 @@ export interface components {
             checks: {
                 [key: string]: unknown;
             };
+        };
+        Itinerary: {
+            readonly version: number;
+            readonly validation_state: string;
+            /** Format: date-time */
+            readonly generated_at: string | null;
+            readonly total_distance_m: number | null;
+            readonly total_travel_seconds: number | null;
+            readonly items: components["schemas"]["ItineraryItem"][];
+            readonly findings: components["schemas"]["Finding"][];
+            readonly has_errors: boolean;
+        };
+        ItineraryItem: {
+            /** Format: uuid */
+            readonly public_id: string;
+            readonly day_number: number;
+            readonly sequence_no: number;
+            readonly item_type: string;
+            readonly title: string;
+            /** Format: date-time */
+            readonly starts_at: string;
+            /** Format: date-time */
+            readonly ends_at: string;
+            readonly accommodation: components["schemas"]["ListingRef"] | null;
+            readonly activity: components["schemas"]["ListingRef"] | null;
+            readonly attraction: components["schemas"]["ListingRef"] | null;
+            readonly origin_destination: components["schemas"]["ListingRef"] | null;
+            readonly target_destination: components["schemas"]["ListingRef"] | null;
+            readonly distance_m: number | null;
+            readonly travel_seconds: number | null;
+            readonly estimate_quality: string | null;
+            readonly is_approximate: boolean;
+            readonly quantity: number;
+            readonly pax_count: number | null;
+            /** Format: decimal */
+            readonly unit_price: string | null;
+            /** Format: decimal */
+            readonly line_total: string | null;
+            readonly currency: string | null;
+            readonly is_locked: boolean;
+        };
+        /** @description `catalogue.dto.ListingRefDTO` — a row named, never numbered. */
+        ListingRef: {
+            /** Format: uuid */
+            readonly public_id: string;
+            readonly slug: string;
+            readonly name: string;
         };
         /** @description SRS §9.4.2: `{ "email", "password", "mfa_code"? }`. */
         LoginRequest: {
@@ -1874,6 +2130,28 @@ export interface components {
             sort_order?: number;
             is_active?: boolean;
         };
+        /** @description `PATCH /trips/{id}/items/{item_id}` — "modify an unlocked item". */
+        PatchedUpdateItemRequest: {
+            day_number?: number;
+            sequence_no?: number;
+            title?: string;
+            /** Format: date-time */
+            starts_at?: string;
+            /** Format: date-time */
+            ends_at?: string;
+        };
+        /** @description `PATCH /trips/{id}`. Every field optional — a PATCH that required them
+         *     all would be a PUT wearing the wrong verb. */
+        PatchedUpdateTripRequest: {
+            /** Format: date */
+            start_date?: string;
+            /** Format: date */
+            end_date?: string;
+            adults?: number;
+            children?: number;
+            infants?: number;
+            title?: string | null;
+        };
         /**
          * @description * `IOS` - IOS
          *     * `ANDROID` - ANDROID
@@ -1972,6 +2250,13 @@ export interface components {
             /** Format: decimal */
             rank: string;
         };
+        /** @description `PUT /trips/{id}/flights` — the whole set.
+         *
+         *     An empty list is meaningful and therefore allowed: it is how a tourist
+         *     says they have no flights recorded, and R19's `0..2` includes zero. */
+        SetFlightsRequest: {
+            flights: components["schemas"]["FlightInputRequest"][];
+        };
         Tag: {
             /** Format: uuid */
             public_id: string;
@@ -2001,6 +2286,74 @@ export interface components {
             readonly locale: string;
             readonly preferred_currency: string;
             readonly marketing_opt_in: boolean;
+        };
+        /** @description §24.20's My Trips. Deliberately narrower than `TripSerializer`. */
+        Trip: {
+            /** Format: uuid */
+            readonly public_id: string;
+            readonly reference: string;
+            readonly title: string | null;
+            readonly status: string;
+            readonly destination: components["schemas"]["ListingRef"];
+            /** Format: date */
+            readonly start_date: string;
+            /** Format: date */
+            readonly end_date: string;
+            readonly adults: number;
+            readonly children: number;
+            readonly infants: number;
+            readonly currency: string;
+            /** Format: decimal */
+            readonly total_amount: string;
+            /** Format: decimal */
+            readonly subtotal_amount: string;
+            /** Format: decimal */
+            readonly fee_amount: string;
+            /** Format: decimal */
+            readonly tax_amount: string;
+            /** Format: date-time */
+            readonly priced_at: string | null;
+            /** Format: date-time */
+            readonly quote_expires_at: string | null;
+            /** Format: date-time */
+            readonly confirmed_at: string | null;
+            /** Format: date-time */
+            readonly cancelled_at: string | null;
+            readonly version: number;
+            readonly itinerary: components["schemas"]["Itinerary"] | null;
+            readonly flights: components["schemas"]["TripFlight"][];
+        };
+        TripFlight: {
+            readonly direction: string;
+            readonly flight_number: string;
+            readonly airline_iata: string;
+            readonly gateway: components["schemas"]["ListingRef"];
+            /** Format: date-time */
+            readonly scheduled_at: string;
+            /** Format: date-time */
+            readonly actual_at: string | null;
+            readonly terminal: string | null;
+            readonly pax_count: number;
+            readonly luggage_count: number;
+        };
+        /** @description §24.20's My Trips. Deliberately narrower than `TripSerializer`. */
+        TripSummary: {
+            /** Format: uuid */
+            readonly public_id: string;
+            readonly reference: string;
+            readonly title: string | null;
+            readonly status: string;
+            readonly destination: components["schemas"]["ListingRef"];
+            /** Format: date */
+            readonly start_date: string;
+            /** Format: date */
+            readonly end_date: string;
+            readonly adults: number;
+            readonly children: number;
+            readonly infants: number;
+            readonly currency: string;
+            /** Format: decimal */
+            readonly total_amount: string;
         };
         /** @description §9.1: `public_id` only. Never `id`, never a credential. */
         User: {
@@ -3474,6 +3827,244 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Tag"][];
+                };
+            };
+        };
+    };
+    trips_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripSummary"][];
+                };
+            };
+        };
+    };
+    trips_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTripRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CreateTripRequest"];
+                "multipart/form-data": components["schemas"]["CreateTripRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+        };
+    };
+    trips_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+        };
+    };
+    trips_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedUpdateTripRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedUpdateTripRequest"];
+                "multipart/form-data": components["schemas"]["PatchedUpdateTripRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+        };
+    };
+    trips_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+        };
+    };
+    trips_flights_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetFlightsRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SetFlightsRequest"];
+                "multipart/form-data": components["schemas"]["SetFlightsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+        };
+    };
+    trips_items_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddItemRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AddItemRequest"];
+                "multipart/form-data": components["schemas"]["AddItemRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+        };
+    };
+    trips_items_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+        };
+    };
+    trips_items_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedUpdateItemRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedUpdateItemRequest"];
+                "multipart/form-data": components["schemas"]["PatchedUpdateItemRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+        };
+    };
+    trips_itinerary_generate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
                 };
             };
         };

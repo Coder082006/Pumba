@@ -141,6 +141,11 @@ NO_ROWS_EXPOSED = {
     "v1:catalogue:admin-attraction-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-activity-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-accommodation-create": "Creates a row; looks none up.",
+    # §9.4.2's trip collection. GET lists by principal and POST creates, so
+    # neither resolves a caller-supplied identifier — there is no id in the
+    # path for an ownership predicate to be wrong about. The same shape as
+    # `identity:device-list`.
+    "v1:trip:trip-list": "Lists by principal and creates; there is no id to supply.",
 }
 
 #: Views that *do* resolve a caller-supplied identifier, but filter by
@@ -157,6 +162,36 @@ SCOPED_BY_A_SELECTOR = {
     "v1:identity:device-detail": (
         "`services.remove_device` resolves it through `selectors.devices_visible_to`, "
         "which applies the principal filter before the row is fetched."
+    ),
+    # Every trip route that names a trip. `trip.services._owned` is the only
+    # way any of them loads one, and it composes from
+    # `trip.selectors.trips_of(tourist_id)` — so `tourist_id` is in the WHERE
+    # clause and a foreign row is never fetched, let alone compared against.
+    #
+    # Deliberately not a permission class: one would have to load the trip to
+    # compare owners and would then answer 403, which tells the caller the trip
+    # exists. §30.3 wants 404, and `tests/test_trip_api.py` asserts that a
+    # stranger and a nonexistent trip get the same status *and* the same body.
+    "v1:trip:trip-detail": (
+        "`services._owned` fetches through `selectors.trips_of(tourist_id)`, "
+        "so the owner is part of the query rather than a check after it."
+    ),
+    "v1:trip:trip-items": (
+        "Adds an item to a trip loaded through the `trip.selectors.trips_of` "
+        "selector, which puts `tourist_id` in the WHERE clause."
+    ),
+    "v1:trip:trip-item-detail": (
+        "Resolves the item within a trip already scoped by the `trip.selectors.trips_of` selector; "
+        "an item id from another trip is not found."
+    ),
+    "v1:trip:trip-flights": (
+        "Replaces the flights of a trip loaded through the `trip.selectors.trips_of` selector."
+    ),
+    "v1:trip:trip-generate": (
+        "Regenerates the itinerary of a trip loaded through the `trip.selectors.trips_of` selector."
+    ),
+    "v1:trip:trip-cancel": (
+        "Transitions a trip loaded through the `trip.selectors.trips_of` selector."
     ),
 }
 

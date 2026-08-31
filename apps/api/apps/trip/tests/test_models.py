@@ -23,7 +23,7 @@ from decimal import Decimal
 import pytest
 from django.contrib.gis.geos import Point
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 
 from apps.trip.models import (
     EstimateQuality,
@@ -151,10 +151,31 @@ class TestItinerary:
 
 class TestItemPositions:
     def test_a_position_is_unique_within_an_itinerary(self) -> None:
+        """Still unique — checked at commit rather than at the insert.
+
+        `0003` made this constraint DEFERRABLE INITIALLY DEFERRED, because
+        §10.4 line 20 renumbers a day from 1 and doing that row by row passes
+        through states where two items briefly share a position. The rule did
+        not change: a *committed* itinerary may still never contain two items
+        at the same position.
+
+        A test cannot reach a real COMMIT — pytest-django rolls each one back —
+        so `SET CONSTRAINTS ALL IMMEDIATE` forces the deferred check to run
+        now. Without that this test would pass whether or not the constraint
+        existed at all, which is the failure mode that makes a deferred
+        constraint quietly worthless.
+        """
         itinerary = make_itinerary()
         make_item(itinerary, day_number=1, sequence_no=1)
+
+        # Both the duplicate and the forced check go inside the savepoint, so
+        # rolling it back removes the offending row *and* the IMMEDIATE mode.
+        # Leaving either behind poisons the surrounding transaction and the
+        # failure surfaces in teardown, blaming the wrong test.
         with pytest.raises(IntegrityError), refuses():
             make_item(itinerary, day_number=1, sequence_no=1)
+            with connection.cursor() as cursor:
+                cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
 
     def test_the_same_position_in_another_itinerary_is_fine(self) -> None:
         make_item(make_itinerary(), day_number=1, sequence_no=1)

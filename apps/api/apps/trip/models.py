@@ -361,6 +361,20 @@ class ItineraryItem(BaseModel):
             models.UniqueConstraint(
                 fields=["itinerary", "day_number", "sequence_no"],
                 name="itinerary_item_position_unique",
+                # Deferred to commit, and that is not a relaxation.
+                #
+                # §10.4 line 20 renumbers every item in a day from 1. Applied
+                # row by row, the intermediate states collide — moving item B
+                # into position 2 while item A still holds it — so an
+                # immediately-checked constraint rejects a renumbering whose
+                # *result* is perfectly valid. Deferring it checks the state
+                # that actually exists at commit, which is the state anybody
+                # reads.
+                #
+                # The rule is unchanged: two items may never share a position
+                # in a committed itinerary, and a regeneration that produced
+                # one still fails, at COMMIT rather than at the INSERT.
+                deferrable=models.Deferrable.DEFERRED,
             ),
             models.CheckConstraint(
                 condition=models.Q(ends_at__gte=models.F("starts_at")),
