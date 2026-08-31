@@ -63,16 +63,29 @@ export function updateTrip(publicId: string, changes: Partial<CreateTripInput>):
   return authed<Trip>(`/trips/${publicId}`, { method: 'PATCH', body: changes });
 }
 
+/**
+ * `POST /trips/{id}/items`.
+ *
+ * The listing is **named**, by the slug or UUID that is already in the address
+ * bar of the page the tourist is adding from. It took the catalogue row's
+ * integer primary key until Phase 4's last mile, which made the endpoint
+ * uncallable from here: §7.2 keeps sequential integers inside the database, so
+ * nothing this client can see would have satisfied it.
+ *
+ * `title` is deliberately absent. The server titles the item from the listing's
+ * own name, so two tourists adding the same activity get the same words — and a
+ * title this client invented would end up in an emailed confirmation. FREE_TIME
+ * is the exception and the API takes a title for it; nothing here adds one yet.
+ */
 export interface AddItemInput {
-  item_type: 'STAY' | 'ACTIVITY' | 'ATTRACTION' | 'FREE_TIME';
+  item_type: 'STAY' | 'ACTIVITY' | 'ATTRACTION';
   day_number: number;
   sequence_no: number;
-  title: string;
   starts_at: string;
   ends_at: string;
-  accommodation_id?: number;
-  activity_id?: number;
-  attraction_id?: number;
+  accommodation?: string;
+  activity?: string;
+  attraction?: string;
 }
 
 export function addItem(publicId: string, item: AddItemInput): Promise<Trip> {

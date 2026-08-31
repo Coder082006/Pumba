@@ -2,26 +2,24 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 
+import { AddToTrip } from '@/components/trip/add-to-trip';
 import { checkStay, describeNights, type StayCheck } from '@/lib/stay';
 import type { Accommodation } from '@pumba/contracts';
 
 /**
  * "Where are you staying" — SRS §24.11 as amended (ADR 0013).
  *
- * ## What this screen can and cannot do in Phase 3
+ * ## The curated path saves; the free-entry path still does not
  *
- * §24.11 ends at `POST /trips/{id}/items` with `item_type` `STAY`. There is no
- * such route: `apps/api/apps/trip/` is still the Phase 1 skeleton — seven
- * lines of docstring, no `trip`, no `itinerary`, no `itinerary_item` — so
- * **nothing on this screen can be saved yet, by either path**. That is not a
- * property of the free-entry path; the curated path cannot save either.
+ * §24.11 ends at `POST /trips/{id}/items` with `item_type` `STAY`, and that
+ * route exists as of Phase 4. Picking a property and dates adds the stay to a
+ * DRAFT trip.
  *
- * So this is the *selection* surface, and the submit is disabled with its
- * reason stated — the same treatment the Activity page gives "Add to trip",
- * for the same missing module. Everything §24.11 specifies short of the POST
- * is real and is here: the curated list with exact seeded coordinates, the
- * search over it, the map, the dates with BR-101 enforced, and the
- * "I haven't booked yet" branch.
+ * The two halves of this screen are no longer disabled for the same reason.
+ * They were, in Phase 3, because `apps/api/apps/trip/` was a skeleton and
+ * nothing could be saved by either path. Now only the free-entry path is
+ * blocked, by the geocoder below — which was always its own reason, and is now
+ * the only one.
  *
  * ## Free entry captures text, and no coordinate
  *
@@ -238,32 +236,68 @@ export function StayPicker({ properties, destinationName, maxNights, map }: Stay
           </span>
         </label>
 
-        <Summary selection={selection} stay={stay} />
+        <Summary selection={selection} stay={stay} checkIn={checkIn} checkOut={checkOut} />
       </div>
     </div>
   );
 }
 
-function Summary({ selection, stay }: { selection: Selection; stay: StayCheck }) {
-  const ready = stay.ok && selection.kind !== 'none';
-
+function Summary({
+  selection,
+  stay,
+  checkIn,
+  checkOut,
+}: {
+  selection: Selection;
+  stay: StayCheck;
+  checkIn: string;
+  checkOut: string;
+}) {
   return (
-    <div className="space-y-2 border-t border-border pt-4">
+    <div className="space-y-3 border-t border-border pt-4">
       <p className="text-sm" aria-live="polite">
         {describeSelection(selection, stay)}
       </p>
-      <button
-        type="button"
-        disabled
-        className="w-full cursor-not-allowed rounded-md border border-border bg-muted px-4 py-2 text-sm text-muted-foreground"
-      >
-        {ready ? 'Add to trip — coming soon' : 'Add to trip'}
-      </button>
-      {/* The honest version of a disabled button. Without this it reads as a
-          bug, or as the form having silently rejected what was entered. */}
-      <p className="text-xs text-muted-foreground">
-        Saving a stay arrives with the trip planner. Nothing on this page is stored yet.
-      </p>
+
+      {/*
+        Only the curated path can be saved, and the reason is unchanged. §13.2
+        forbids persisting a geocode nobody confirmed, `apps/api/apps/location/`
+        has no geocoder — not even a fake one — and Appendix D2 is the decision
+        that unblocks it. A free-entry stay has a name and no coordinate, so
+        there is nothing for §10.4 to route to and nothing to store as a STAY.
+        VR-16 reports the nights it leaves uncovered.
+      */}
+      {selection.kind === 'curated' && stay.ok ? (
+        <AddToTrip
+          item={{ item_type: 'STAY', accommodation: selection.property.slug }}
+          timing={{
+            kind: 'dates',
+            startDate: checkIn,
+            endDate: checkOut,
+            // The property's own times where it publishes them. §10.4 anchors
+            // a check-in late in its day and a check-out early in its own, so
+            // these decide which side of a day the stay sits on.
+            startTime: (selection.property.check_in_time ?? '14:00:00').slice(0, 5),
+            endTime: (selection.property.check_out_time ?? '10:00:00').slice(0, 5),
+          }}
+          label="Add this stay"
+        />
+      ) : (
+        <>
+          <button
+            type="button"
+            disabled
+            className="w-full cursor-not-allowed rounded-md border border-border bg-muted px-4 py-2 text-sm text-muted-foreground"
+          >
+            Add to trip
+          </button>
+          <p className="text-xs text-muted-foreground">
+            {selection.kind === 'free' || selection.kind === 'not-booked'
+              ? 'A stay we cannot place on the map cannot have transfers planned around it, so there is nothing to save. Pick a property from the list, or leave it — we will flag the nights.'
+              : 'Pick a property and choose your dates.'}
+          </p>
+        </>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@
  * the data does not exist:
  *
  *   - free entry must not acquire a coordinate or a pin (§13.2);
- *   - no path may enable submit while `apps/trip` is a skeleton;
+ *   - free entry must not become saveable while there is no geocoder;
  *   - the BR-101 bound must come from `GET /config`, never from a literal.
  *
  * Each of those is a one-line change away from being wrong and none of them
@@ -14,10 +14,19 @@
  */
 
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { StayPicker } from '@/components/catalogue/stay-picker';
+import type * as TripsModule from '@/lib/trips';
 import type { Accommodation, Destination } from '@pumba/contracts';
+
+// `AddToTrip` asks for the tourist's trips as soon as it mounts. There is no
+// server here, so the call is answered rather than left to time out: this suite
+// is about what the picker hands over, not about the network.
+vi.mock('@/lib/trips', async (importOriginal) => ({
+  ...(await importOriginal<typeof TripsModule>()),
+  listTrips: async () => [],
+}));
 
 const DESTINATION: Destination = {
   public_id: '11111111-1111-4111-8111-111111111111',
@@ -202,20 +211,36 @@ describe('when GET /config is unreachable', () => {
   });
 });
 
-describe('nothing can be saved yet', () => {
-  it('keeps the submit disabled even with a complete, valid selection', () => {
-    // `apps/api/apps/trip` is a Phase 1 skeleton: there is no
-    // POST /trips/{id}/items behind any path here, curated included. An
-    // enabled button would be a promise the platform cannot keep.
+describe('what can be saved', () => {
+  it('offers the curated path once a property and valid dates are chosen', async () => {
+    // The `trip` module is no longer a skeleton, so `POST /trips/{id}/items`
+    // exists and a curated stay has a coordinate to route from. `AddToTrip`
+    // loads the tourist's trips on mount and finds none here, so what it
+    // renders is the invitation to plan one — which is the proof it mounted
+    // rather than the disabled placeholder.
     renderPicker();
     pickDates('2027-08-12', '2027-08-16');
     fireEvent.click(screen.getByRole('button', { name: /Kilindi Zanzibar/ }));
-    expect(screen.getByRole('button', { name: /Add to trip/ })).toHaveProperty('disabled', true);
+    expect(await screen.findByRole('link', { name: /Plan a trip first/ })).toBeDefined();
   });
 
-  it('states the reason next to the button', () => {
+  it('keeps the free-entry path disabled, and says the reason is the map', () => {
+    // Unchanged, and now the *only* reason. §13.2 forbids persisting a
+    // coordinate nobody confirmed and there is no geocoder, so a stay entered
+    // as text has nowhere for §10.4 to route to.
     renderPicker();
-    expect(screen.getByText(/Saving a stay arrives with the trip planner/)).toBeDefined();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'somewhere else' } });
+    fireEvent.change(screen.getByLabelText('Hotel name or address'), {
+      target: { value: 'A friend’s house' },
+    });
+    expect(screen.getByRole('button', { name: /Add to trip/ })).toHaveProperty('disabled', true);
+    expect(screen.getByText(/cannot have transfers planned around it/)).toBeDefined();
+  });
+
+  it('does not offer to save before a property is chosen', () => {
+    renderPicker();
+    pickDates('2027-08-12', '2027-08-16');
+    expect(screen.getByRole('button', { name: /Add to trip/ })).toHaveProperty('disabled', true);
   });
 });
 

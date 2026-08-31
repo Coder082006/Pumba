@@ -4,6 +4,7 @@ import { Gallery, Money } from '@pumba/ui';
 
 import { mediaSrc } from '@/components/catalogue/cards';
 import { MapPanel } from '@/components/catalogue/map-panel';
+import { AddToTrip } from '@/components/trip/add-to-trip';
 import { ApiRequestError, apiFetch } from '@/lib/api';
 import { fallbackDescription } from '@/lib/metadata';
 import type { Activity } from '@pumba/contracts';
@@ -148,13 +149,21 @@ export default async function ActivityPage({ params }: Params) {
 
           <DeparturesUnavailable />
 
-          <button
-            type="button"
-            disabled
-            className="w-full cursor-not-allowed rounded-md border border-border bg-muted px-4 py-2 text-sm text-muted-foreground"
-          >
-            Add to trip — coming soon
-          </button>
+          {/*
+            §24.10's last step. The start time is the tourist's rather than the
+            provider's, because the provider's is a departure and departures
+            live in `inventory` (Phase 5) — see `DeparturesUnavailable`. The
+            duration is the activity's own, and §10.4 re-times the whole day on
+            the next generate in any case.
+          */}
+          <AddToTrip
+            item={{ item_type: 'ACTIVITY', activity: activity.slug }}
+            timing={{
+              kind: 'on-day',
+              durationMinutes: activity.duration_minutes,
+              defaultStart: '09:00',
+            }}
+          />
         </section>
       </div>
 

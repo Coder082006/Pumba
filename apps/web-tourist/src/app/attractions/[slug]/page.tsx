@@ -4,6 +4,7 @@ import { Gallery } from '@pumba/ui';
 
 import { mediaSrc } from '@/components/catalogue/cards';
 import { MapPanel } from '@/components/catalogue/map-panel';
+import { AddToTrip } from '@/components/trip/add-to-trip';
 import { ApiRequestError, apiFetch } from '@/lib/api';
 import { weekTable, type WeekRow } from '@/lib/opening-hours';
 import { fallbackDescription } from '@/lib/metadata';
@@ -96,11 +97,31 @@ export default async function AttractionPage({ params }: Params) {
           />
         </section>
 
-        <section aria-labelledby="hours">
-          <h2 id="hours" className="font-display text-xl font-bold tracking-tight">
-            Opening hours
-          </h2>
-          {rows ? <OpeningHoursTable rows={rows} timeZone={timeZone} /> : <NoPublishedHours />}
+        <section aria-labelledby="hours" className="space-y-6">
+          <div>
+            <h2 id="hours" className="font-display text-xl font-bold tracking-tight">
+              Opening hours
+            </h2>
+            {rows ? <OpeningHoursTable rows={rows} timeZone={timeZone} /> : <NoPublishedHours />}
+          </div>
+
+          {/*
+            §24.9's last step, and this page had no add control at all rather
+            than a disabled one. The length is the attraction's own
+            `visit_minutes` where it publishes one; an hour where it does not,
+            because an item of zero length would collapse against the next and
+            §10.4 would have nothing to sequence. VR-15 checks the visit against
+            the published hours when the itinerary is generated, so a time
+            outside them is reported rather than refused here.
+          */}
+          <AddToTrip
+            item={{ item_type: 'ATTRACTION', attraction: attraction.slug }}
+            timing={{
+              kind: 'on-day',
+              durationMinutes: attraction.visit_minutes ?? 60,
+              defaultStart: '10:00',
+            }}
+          />
         </section>
       </div>
 
