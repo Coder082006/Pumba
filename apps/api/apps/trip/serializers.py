@@ -57,6 +57,12 @@ class ListingRefSerializer(serializers.Serializer[Any]):
     slug = serializers.CharField(read_only=True)
     name = serializers.CharField(read_only=True)
 
+    #: The IANA zone every instant on this trip is rendered in. Emitted rather
+    #: than left to the client to infer: §15.2 evaluates opening hours locally
+    #: and §10.4 resolves day boundaries locally, so a browser that formatted
+    #: in its own zone would disagree with the plan it was given.
+    timezone = serializers.CharField(read_only=True)
+
 
 class FindingSerializer(serializers.Serializer[Any]):
     """§10.6's `{code, severity, message, item_ids[], suggested_action}`.

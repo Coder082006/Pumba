@@ -162,11 +162,20 @@ class ListingRefDTO:
     price or a gallery, and handing it those would couple an itinerary's
     rendering to fields catalogue is free to change. `MarketRefDTO` makes the
     same argument one tier up and keeps the same three fields.
+
+    `timezone` is the fourth, and it earns its place because **every instant
+    rendered against this row has to be rendered in its zone** (§13.1, §15.2).
+    An itinerary is a list of times; a client that formatted them in the
+    browser's zone would undo, at the last step, the work the server does to
+    resolve every day boundary in the destination's. Identity and the zone
+    travel together because a name without one cannot be used to display
+    anything.
     """
 
     public_id: UUID
     slug: str
     name: str
+    timezone: str
 
 
 @dataclass(frozen=True, slots=True)

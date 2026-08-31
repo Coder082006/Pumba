@@ -3412,10 +3412,14 @@ components:
         name:
           type: string
           readOnly: true
+        timezone:
+          type: string
+          readOnly: true
       required:
       - name
       - public_id
       - slug
+      - timezone
     LoginRequest:
       type: object
       description: 'SRS §9.4.2: `{ "email", "password", "mfa_code"? }`.'

@@ -22,6 +22,7 @@ from __future__ import annotations
 import time
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from rest_framework.test import APIClient
@@ -124,12 +125,17 @@ class TestTC031CreateTripInThePast:
         comparison uses the *destination's* date, since a trip starting today
         in Zanzibar is still yesterday in UTC for three hours every night.
         """
-        today = _today()
+        # "Today" *where the destination is*, which is the whole point of the
+        # rule. The fixture destinations sit in Auckland (UTC+12), so for
+        # twelve hours a day the UTC date is already behind the local one —
+        # and a test that used `datetime.now(UTC).date()` here would fail for
+        # half of every day while the code was correct.
+        local_today = datetime.now(ZoneInfo(destination.timezone)).date()
         response = create_trip(
             tourist,
             destination.slug,
-            start_date=today.isoformat(),
-            end_date=(today + timedelta(days=1)).isoformat(),
+            start_date=local_today.isoformat(),
+            end_date=(local_today + timedelta(days=1)).isoformat(),
         )
         assert response.status_code == 201
 

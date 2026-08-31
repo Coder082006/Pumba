@@ -1859,6 +1859,7 @@ export interface components {
             readonly public_id: string;
             readonly slug: string;
             readonly name: string;
+            readonly timezone: string;
         };
         /** @description SRS §9.4.2: `{ "email", "password", "mfa_code"? }`. */
         LoginRequest: {

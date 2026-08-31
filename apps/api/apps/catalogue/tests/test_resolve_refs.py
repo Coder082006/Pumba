@@ -53,7 +53,12 @@ class TestResolution:
         destination = make_destination(name="Stone Town", slug="stone-town")
         refs = services.resolve_refs("destination", [destination.id])
         assert refs[destination.id] == ListingRefDTO(
-            public_id=destination.public_id, slug="stone-town", name="Stone Town"
+            public_id=destination.public_id,
+            slug="stone-town",
+            name="Stone Town",
+            # Carried with the identity: every instant rendered against this
+            # row has to be shown in its zone (§13.1, §15.2).
+            timezone=destination.timezone,
         )
 
     def test_the_integer_never_comes_back(self) -> None:
@@ -74,9 +79,13 @@ class TestResolution:
         ],
     )
     def test_every_referenceable_kind_resolves(self, kind: str, factory: object) -> None:
-        row = factory(destination=make_destination())  # type: ignore[operator]
+        destination = make_destination()
+        row = factory(destination=destination)  # type: ignore[operator]
         refs = services.resolve_refs(kind, [row.id])
         assert refs[row.id].name == row.name
+        # A row beneath a destination inherits its zone; only a destination
+        # carries one of its own.
+        assert refs[row.id].timezone == destination.timezone
 
     def test_an_empty_request_makes_no_query(self, django_assert_num_queries: object) -> None:
         """An itinerary of stays and free time references nothing. Asking the

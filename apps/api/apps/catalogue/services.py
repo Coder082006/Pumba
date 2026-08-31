@@ -810,10 +810,14 @@ def resolve_refs(kind: str, ids: Sequence[int]) -> dict[int, ListingRefDTO]:
     if not wanted:
         return {}
 
-    rows = model.objects.filter(pk__in=wanted).values_list("pk", "public_id", "slug", "name")
+    # A destination has its own `timezone`; everything beneath one inherits
+    # its destination's, which is why this reaches through rather than
+    # selecting a column that is not there.
+    zone = "timezone" if model is Destination else "destination__timezone"
+    rows = model.objects.filter(pk__in=wanted).values_list("pk", "public_id", "slug", "name", zone)
     return {
-        pk: ListingRefDTO(public_id=public_id, slug=slug, name=name)
-        for pk, public_id, slug, name in rows
+        pk: ListingRefDTO(public_id=public_id, slug=slug, name=name, timezone=timezone)
+        for pk, public_id, slug, name, timezone in rows
     }
 
 
