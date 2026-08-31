@@ -222,15 +222,27 @@ ADDABLE_ITEM_TYPES = frozenset(
 )
 
 
-def _check_dates(start: date, end: date) -> None:
-    """The database has `end >= start`; this adds §41's ceiling.
+def _check_dates(start: date, end: date, *, today: date | None = None) -> None:
+    """The database has `end >= start`; this adds the other two date rules.
 
     `trip.max_days` is a `system_setting` because a market that sells
     month-long safaris and one that sells weekend breaks disagree about it, and
     §4.1 will not have that need a deployment.
+
+    **`today` is the destination's date, not the server's** (§37.4, TC-031).
+    A trip starting today in Zanzibar is still yesterday in UTC for three hours
+    every night, so a server-side `date.today()` would refuse an ordinary
+    evening booking — and would do it inconsistently, depending on the hour
+    somebody happened to press the button. It is passed in rather than read
+    here so this function stays free of both the clock and the catalogue.
+
+    A start date *of* today is allowed. §37.4's case is "start_date yesterday",
+    and somebody booking a day trip for this afternoon is not making a mistake.
     """
     if end < start:
         raise ValidationError("a trip cannot end before it starts")
+    if today is not None and start < today:
+        raise ValidationError(f"a trip cannot start in the past; {start} is before {today}")
     span = (end - start).days + 1
     limit = int(get_setting("trip.max_days"))
     if span > limit:
@@ -261,11 +273,17 @@ def create_trip(
     visibility: choosing a destination is a public read, so one that is not
     open today is indistinguishable from one that does not exist (§30.3).
     """
-    _check_dates(start_date, end_date)
-
+    # The destination is resolved first because the date rules need its
+    # timezone: "is this in the past" is a question about where the trip is.
     ref = catalogue.resolve_planning_ref(destination, today=today or timezone.localdate())
     if ref is None:
         raise NotFoundError(f"no destination {destination!r}")
+
+    _check_dates(
+        start_date,
+        end_date,
+        today=today or timezone.localtime(timezone.now(), ZoneInfo(ref.timezone)).date(),
+    )
 
     trip = repo.create_trip_row(
         tourist_id=tourist_id,
@@ -311,6 +329,10 @@ def update_trip(
     start = fields.get("start_date", trip.start_date)
     end = fields.get("end_date", trip.end_date)
     if "start_date" in fields or "end_date" in fields:
+        # No `today` here, deliberately. TC-031 is about *opening* a trip in
+        # the past; a trip already under way legitimately has a start date
+        # behind it, and refusing to let its owner extend the end date would
+        # be the rule firing on the wrong thing.
         _check_dates(start, end)
 
     return _dto(repo.update_trip_row(trip, **fields))
@@ -751,6 +773,7 @@ def _persist(
     trip: Trip,
     itinerary: Itinerary,
     items: Sequence[ItineraryItem],
+    superseded: Sequence[ItineraryItem],
     result: SequenceResult,
     cost: TripCost,
     worst: str,
@@ -761,7 +784,9 @@ def _persist(
     The previous version's rows are archived before anything is rewritten, so
     a failure part-way leaves the transaction with either both or neither —
     which is the whole point of an archive that exists for dispute
-    investigation.
+    investigation. `superseded` is archived too: those legs were part of the
+    version being replaced, and a dispute about what a tourist was shown needs
+    them most of all.
     """
     ItineraryItemArchive.objects.bulk_create(
         [
@@ -794,9 +819,13 @@ def _persist(
                 booking_id=row.booking_id,
                 is_locked=row.is_locked,
             )
-            for row in items
+            for row in [*items, *superseded]
         ]
     )
+
+    # Archived, then removed. §10.4 will have re-inserted whatever legs the
+    # new plan needs.
+    ItineraryItem.objects.filter(pk__in=[row.pk for row in superseded]).delete()
 
     by_id = {i.pk: i for i in items}
     line_totals = dict(cost.lines)
@@ -924,7 +953,20 @@ def generate_itinerary(public_id: UUID, *, tourist_id: int) -> TripDTO:
     if itinerary is None:
         itinerary = repo.create_itinerary(trip)
 
-    items = list(itinerary.items.all())
+    stored = list(itinerary.items.all())
+
+    # §10.8: a regeneration "rewrites unlocked items". A TRANSFER the planner
+    # inserted is derived data — it exists only because §10.4 put it between
+    # two things — so re-planning starts from what the tourist actually chose
+    # and the old legs are dropped.
+    #
+    # Without this each generate appended another leg to the previous set: the
+    # count grew on every call, and because a stored transfer resolves to no
+    # location key it could not even be recognised as the leg it duplicated.
+    # A locked transfer is kept, because a confirmed booking is behind it.
+    items = [row for row in stored if row.item_type != ItemType.TRANSFER or row.is_locked]
+    superseded = [row for row in stored if row not in items]
+
     facts = _gather(items, trip)
 
     # Every calendar question below — which day an item falls on, which nights
@@ -983,7 +1025,7 @@ def generate_itinerary(public_id: UUID, *, tourist_id: int) -> TripDTO:
         Severity.ERROR: ValidationState.ERRORS,
     }[severity]
 
-    _persist(trip, itinerary, items, result, cost, state.value, facts.places)
+    _persist(trip, itinerary, items, superseded, result, cost, state.value, facts.places)
 
     all_findings = (*findings, *result.findings)
     publish(

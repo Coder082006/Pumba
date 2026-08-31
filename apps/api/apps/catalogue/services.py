@@ -835,6 +835,12 @@ class PlanningRef:
     `default_currency` is here because §7.5.10 makes `trip.currency` NOT NULL
     and §7.2 pairs a currency with every money column: a trip has to be opened
     with one, and the destination is where §4.2 says it comes from.
+
+    `timezone` is here because "is this date in the past" has no answer without
+    it. A trip starting today in Zanzibar is still yesterday in UTC for three
+    hours every night, so a server-side `date.today()` would refuse a
+    perfectly ordinary booking made late in the evening — and would do it
+    inconsistently, depending on the hour.
     """
 
     storage_id: int
@@ -842,6 +848,7 @@ class PlanningRef:
     slug: str
     name: str
     default_currency: str
+    timezone: str
 
 
 def resolve_planning_ref(reference: str | UUID, *, today: date) -> PlanningRef | None:
@@ -861,7 +868,7 @@ def resolve_planning_ref(reference: str | UUID, *, today: date) -> PlanningRef |
     row = (
         visible(Destination.objects.all(), today=today)
         .filter(reference_q(reference))
-        .only("id", "public_id", "slug", "name", "default_currency")
+        .only("id", "public_id", "slug", "name", "default_currency", "timezone")
         .first()
     )
     if row is None:
@@ -872,6 +879,7 @@ def resolve_planning_ref(reference: str | UUID, *, today: date) -> PlanningRef |
         slug=row.slug,
         name=row.name,
         default_currency=row.default_currency,
+        timezone=row.timezone,
     )
 
 
