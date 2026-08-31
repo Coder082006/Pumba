@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from django.contrib.gis.db import models as gis_models
 from django.db import models
+from django.utils import timezone
 
 from apps.common.models import BaseModel, TimestampedModel, VersionedModel
 from apps.trip.validators import validate_iso_currency_code
@@ -55,6 +56,7 @@ __all__ = [
     "Itinerary",
     "ItineraryItem",
     "TripFlight",
+    "ItineraryItemArchive",
 ]
 
 
@@ -545,3 +547,92 @@ class TripFlight(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.airline_iata}{self.flight_number} {self.direction}"
+
+
+class ItineraryItemArchive(TimestampedModel):
+    """A superseded itinerary item — SRS §10.8.
+
+    §10.8: "The previous version's items are retained for 30 days in
+    `itinerary_item_archive` to support 'undo' and dispute investigation."
+    §7.5 does not specify its columns, so they are `itinerary_item`'s, under
+    ADR 0007's rule for tables the SRS names but does not lay out.
+
+    **No `public_id`.** An archived row is never addressed by a client, and
+    giving it an external identifier is how an endpoint that serves it gets
+    written. Undo reads the set for a version; a dispute reads the same set.
+    Neither needs to name one row.
+
+    **None of `itinerary_item`'s per-type CHECK constraints are repeated
+    here, deliberately.** Those enforce what a *valid, current* item looks
+    like, and this table holds what an item *was*. If a shape rule changes —
+    as ADR 0013 already changed STAY once — re-asserting today's rules over
+    yesterday's rows would make archiving fail for history that was correct
+    when it was written, which is precisely when a dispute needs it.
+
+    The retention period is not enforced by the schema. §10.8's thirty days is
+    a sweep, and it belongs with the other scheduled jobs rather than in a
+    constraint that would delete evidence on read.
+    """
+
+    itinerary = models.ForeignKey(
+        Itinerary, on_delete=models.CASCADE, related_name="archived_items"
+    )
+
+    #: The version these rows belonged to — `itinerary.version` *before* the
+    #: regeneration that displaced them, not after.
+    version = models.IntegerField()
+    archived_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    day_number = models.PositiveSmallIntegerField()
+    sequence_no = models.PositiveSmallIntegerField()
+    item_type = models.CharField(max_length=20, choices=ItemType.choices)
+    title = models.CharField(max_length=160)
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+
+    accommodation_id = models.BigIntegerField(null=True, blank=True, default=None)
+    activity_id = models.BigIntegerField(null=True, blank=True, default=None)
+    activity_departure_id = models.BigIntegerField(null=True, blank=True, default=None)
+    attraction_id = models.BigIntegerField(null=True, blank=True, default=None)
+    origin_destination_id = models.BigIntegerField(null=True, blank=True, default=None)
+    target_destination_id = models.BigIntegerField(null=True, blank=True, default=None)
+
+    location_point = gis_models.PointField(
+        geography=True, srid=4326, null=True, blank=True, default=None
+    )
+    origin_point = gis_models.PointField(
+        geography=True, srid=4326, null=True, blank=True, default=None
+    )
+    target_point = gis_models.PointField(
+        geography=True, srid=4326, null=True, blank=True, default=None
+    )
+
+    distance_m = models.IntegerField(null=True, blank=True, default=None)
+    travel_seconds = models.IntegerField(null=True, blank=True, default=None)
+    estimate_quality = models.CharField(
+        max_length=20, choices=EstimateQuality.choices, null=True, blank=True, default=None
+    )
+
+    quantity = models.PositiveSmallIntegerField(default=1)
+    pax_count = models.PositiveSmallIntegerField(null=True, blank=True, default=None)
+    unit_price = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True, default=None
+    )
+    line_total = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True, default=None
+    )
+    currency = models.CharField(max_length=3, null=True, blank=True, default=None)
+    booking_id = models.BigIntegerField(null=True, blank=True, default=None)
+    is_locked = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "itinerary_item_archive"
+        ordering = ["-version", "day_number", "sequence_no"]
+        indexes = [
+            models.Index(fields=["itinerary", "version"], name="itinerary_archive_version_idx"),
+            # §10.8's thirty-day sweep scans by age across every itinerary.
+            models.Index(fields=["archived_at"], name="itinerary_archive_age_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"v{self.version} day {self.day_number} #{self.sequence_no}"

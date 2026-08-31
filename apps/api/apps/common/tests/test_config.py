@@ -99,6 +99,13 @@ class TestRegister:
                         `tests/test_public_config.py` enforces that by
                         requiring every default here to be a bool, so a
                         threshold cannot hide under it.
+            buffer.     Appendix B tabulates two of the three buffers §10.4
+                        names. `buffer.check_in_minutes` is the third, with
+                        the default §10.4 gives it, added in Phase 4 because
+                        the sequencer reads all three. The prefix is not new —
+                        the other two are Appendix B's — but the key is, and
+                        it is listed here so that fact is visible rather than
+                        inferred from the prefix already being familiar.
             routing.    Phase 4, ADR 0019 / §12.6. The road factor and speed
                         model behind an APPROXIMATE travel estimate. §12.6
                         calls both "configurable" and gives their defaults but
@@ -135,6 +142,7 @@ class TestRegister:
                     "currency.",
                     "feature.",
                     "routing.",
+                    "buffer.",
                 )
             )
         }
@@ -150,6 +158,7 @@ class TestRegister:
             ("dispatch.lead_hours", 72),
             ("geofence.pickup_m", 300),
             ("trip.max_days", 30),
+            ("buffer.check_in_minutes", 0),
             ("routing.road_factor", Decimal("1.35")),
             ("routing.average_speed_kmh", 45),
             ("location.retention_days", 30),

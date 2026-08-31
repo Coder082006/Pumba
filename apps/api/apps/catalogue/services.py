@@ -893,13 +893,22 @@ def resolve_planning_ref(reference: str | UUID, *, today: date) -> PlanningRef |
 
 @dataclass(frozen=True, slots=True)
 class PlaceFacts:
-    """Where a listing is, and whether it is still on sale."""
+    """Where a listing is, whether it is still on sale, and in which zone.
+
+    `timezone` is the destination's IANA zone — its own for a destination, its
+    parent's for everything beneath one. §10.6's VR-01 turns a trip's *dates*
+    into an instant range and §15.2 evaluates opening hours locally, so a
+    planner that assumed UTC would move every boundary by up to half a day.
+    It is carried here rather than fetched separately because the row is
+    already being read.
+    """
 
     storage_id: int
     slug: str
     name: str
     coordinates: Coordinates
     is_active: bool
+    timezone: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -931,7 +940,10 @@ class AttractionFacts:
 
 
 def _place(row: Any) -> PlaceFacts:
-    point = row.coordinates if hasattr(row, "coordinates") else row.centroid
+    # A destination carries `centroid` and its own zone; everything beneath one
+    # carries `coordinates` and inherits its destination's.
+    point = getattr(row, "coordinates", None) or row.centroid
+    zone = getattr(row, "timezone", None) or row.destination.timezone
     return PlaceFacts(
         storage_id=int(row.id),
         slug=row.slug,
@@ -941,7 +953,21 @@ def _place(row: Any) -> PlaceFacts:
             lon=Decimal(str(round(point.x, COORDINATE_PRECISION))),
         ),
         is_active=row.is_active,
+        timezone=zone,
     )
+
+
+def _rows(model: Any, ids: set[int]) -> Any:
+    """`select_related` only where a zone has to be reached for.
+
+    `destination` has its own `timezone`; the three tables beneath it reach
+    through to their destination for one, and without this that is a query per
+    row on the exact path `place_facts` exists to keep flat.
+    """
+    queryset = model.objects.filter(pk__in=ids)
+    if model is Destination:
+        return queryset
+    return queryset.select_related("destination")
 
 
 def place_facts(kind: str, ids: Sequence[int]) -> dict[int, PlaceFacts]:
@@ -962,7 +988,7 @@ def place_facts(kind: str, ids: Sequence[int]) -> dict[int, PlaceFacts]:
     wanted = {int(value) for value in ids if value is not None}
     if not wanted:
         return {}
-    return {row.id: _place(row) for row in model.objects.filter(pk__in=wanted)}
+    return {row.id: _place(row) for row in _rows(model, wanted)}
 
 
 def activity_facts(ids: Sequence[int]) -> dict[int, ActivityFacts]:
@@ -983,7 +1009,7 @@ def activity_facts(ids: Sequence[int]) -> dict[int, ActivityFacts]:
             price_per_group=row.price_per_group,
             currency=row.currency,
         )
-        for row in Activity.objects.filter(pk__in=wanted)
+        for row in _rows(Activity, wanted)
     }
 
 
@@ -993,7 +1019,7 @@ def attraction_facts(ids: Sequence[int]) -> dict[int, AttractionFacts]:
         return {}
     return {
         row.id: AttractionFacts(place=_place(row), visit_minutes=row.visit_minutes)
-        for row in Attraction.objects.filter(pk__in=wanted)
+        for row in _rows(Attraction, wanted)
     }
 
 

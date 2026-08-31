@@ -73,6 +73,12 @@ SETTINGS_REGISTER: dict[str, Setting] = {
             "buffer.airport_departure_minutes", 180, "Required arrival before departure flight"
         ),
         Setting("buffer.activity_minutes", 15, "Slack before an activity start"),
+        # §10.4 names three buffers and Appendix B tabulates two. This is the
+        # third, with the default §10.4 gives it. Registered rather than
+        # defaulted in code so the sequencer holds no threshold (NFR-M07):
+        # a property with a 15:00 check-in and one that lets guests in on
+        # arrival disagree, and that is a market's decision, not a release.
+        Setting("buffer.check_in_minutes", 0, "Slack before a stay check-in (§10.4)"),
         # -- Degraded-mode routing (§12.6, ADR 0019) --
         # §12.6 calls both of these "configurable" and gives their defaults,
         # but Appendix B never names them, so the keys are coined here. They
