@@ -388,3 +388,74 @@ class TestRulesThatCannotFireYet:
         fixture.add_activity()
         result = fixture.generate()
         assert "VR-09" not in [f.code for f in result.itinerary.findings]
+
+
+class TestAStayAnchorsEveryDay:
+    """ADR 0020 — §10.4 amended.
+
+    Before the amendment a stay appeared only on the days it began and ended,
+    so a middle day holding one activity had nothing adjacent to it and no
+    transfer was planned to reach it. That is the shape of most days of most
+    trips: the tourist was shown something to do with no way of getting there.
+    """
+
+    def _trip_with_a_middle_day_activity(self) -> Fixture:
+        fixture = Fixture()
+        fixture.add_stay()  # nights 1-4, so days 2 and 3 are middle days
+        # Day 3: nothing else on it, and the hotel is not a check-in or a
+        # check-out that day. This is exactly the case that used to plan
+        # nothing at all.
+        fixture.add_activity(day=3, hour=10, sequence_no=5)
+        return fixture
+
+    def test_a_middle_day_activity_gets_a_transfer(self) -> None:
+        result = self._trip_with_a_middle_day_activity().generate()
+        day_three = [i for i in result.itinerary.items if i.day_number == 3]
+        transfers = [i for i in day_three if i.item_type == ItemType.TRANSFER]
+
+        assert transfers, "day 3 has an activity and no way to reach it"
+        assert transfers[0].travel_seconds and transfers[0].travel_seconds > 0
+
+    def test_the_transfer_arrives_before_the_activity(self) -> None:
+        """§10.4 line 14 times a leg backwards from the item it serves, so the
+        tourist is told when to leave in order to arrive. The anchor's own
+        midnight is only an ordering device and never reaches the screen."""
+        result = self._trip_with_a_middle_day_activity().generate()
+        day_three = [i for i in result.itinerary.items if i.day_number == 3]
+        activity = next(i for i in day_three if i.item_type == ItemType.ACTIVITY)
+        transfer = next(i for i in day_three if i.item_type == ItemType.TRANSFER)
+
+        assert transfer.ends_at <= activity.starts_at
+        assert transfer.starts_at < transfer.ends_at
+
+    def test_no_anchor_row_is_written_for_a_middle_day(self) -> None:
+        """The anchor is an input to sequencing, not an item.
+
+        A stay is one row covering several nights (ADR 0013). Writing a row per
+        night would multiply it on screen and in the archive, and would give
+        §24.14 four "Harbourside Lodge" entries for one booking.
+        """
+        result = self._trip_with_a_middle_day_activity().generate()
+        stays = [i for i in result.itinerary.items if i.item_type == ItemType.STAY]
+        assert len(stays) == 1
+
+    def test_a_day_with_nothing_planned_gets_no_transfer(self) -> None:
+        """The anchor alone is not a reason to travel. Day 2 has the hotel and
+        nothing else, so there is nowhere to go and no leg to plan."""
+        result = self._trip_with_a_middle_day_activity().generate()
+        day_two = [i for i in result.itinerary.items if i.day_number == 2]
+        assert [i for i in day_two if i.item_type == ItemType.TRANSFER] == []
+
+    def test_it_is_still_deterministic(self) -> None:
+        """§10.1, over the amended algorithm. The anchor is derived from the
+        stay's own dates and the destination's zone, both already inputs."""
+        fixture = self._trip_with_a_middle_day_activity()
+
+        def shape() -> list[tuple]:
+            dto = fixture.generate()
+            return [
+                (i.item_type, i.day_number, i.sequence_no, i.starts_at, i.ends_at)
+                for i in dto.itinerary.items
+            ]
+
+        assert shape() == shape()

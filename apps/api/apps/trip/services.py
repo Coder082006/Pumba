@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -464,24 +464,52 @@ def _local_date(instant: datetime, zone: ZoneInfo) -> date:
     return instant.astimezone(zone).date()
 
 
-def _stay_anchors(item: ItineraryItem, trip: Trip, zone: ZoneInfo) -> list[tuple[Kind, date]]:
-    """The one or two days a STAY appears on — §10.4's tie-break rank.
+def _stay_anchors(
+    item: ItineraryItem, trip: Trip, zone: ZoneInfo
+) -> list[tuple[Kind, date, datetime]]:
+    """Every day a STAY is present on — §10.4 as amended by ADR 0020.
 
-    A stay spanning three nights is a `STAY_CHECK_IN` on the day it begins and
-    a `STAY_CHECK_OUT` on the day it ends, and the sequencer sorts those
-    differently: a check-out ranks 1 and sorts early in the morning, a check-in
-    ranks 4 and sorts late in the evening. Treating a stay as one anchor would
-    put the whole thing at one end of one day and route every transfer around
-    the wrong point.
+    §10.4 line 4 lists a stay as "check-in/out", so it appeared on the day it
+    began and the day it ended and on no day between. Line 11 only inserts a
+    transfer between *adjacent* items, so a middle day holding one activity had
+    nothing to be adjacent to and the tourist was shown something to do with no
+    way of getting to it. ADR 0020 amends the line: a stay anchors every day it
+    covers.
 
-    A stay that starts and ends on the same day yields both.
+    Three kinds of anchor, and the rank decides where each sits in the day:
+
+    * **check-in** on the first day, rank 4, sorting late — you arrive, do
+      things, and then check in.
+    * **check-out** on the last day, rank 1, sorting early.
+    * **a departure anchor** on every day between, also rank 1, because
+      "leaving the accommodation" is exactly what rank 1 means. No new rank is
+      introduced; §10.4's tie-break list is untouched.
+
+    **The middle-day anchor sits at local midnight, and that is not a claim
+    about when anybody gets up.** It exists to order the day. The transfer's
+    real times are derived from the item it serves — line 14 times a leg
+    backwards from `B.starts_at` less the buffer — so the tourist is told when
+    to leave in order to arrive, which is computed rather than invented.
+
+    No evening anchor, and therefore no return leg. Nothing knows when a day
+    ends, and an anchor at the end of the local day would plan a journey at
+    23:30 — worse than planning none. ADR 0020 records that.
     """
     start = _local_date(item.starts_at, zone)
     end = _local_date(item.ends_at, zone)
-    anchors = [(Kind.STAY_CHECK_IN, start)]
+
+    anchors: list[tuple[Kind, date, datetime]] = [(Kind.STAY_CHECK_IN, start, item.starts_at)]
     if end != start:
-        anchors.append((Kind.STAY_CHECK_OUT, end))
-    return [(kind, day) for kind, day in anchors if trip.start_date <= day <= trip.end_date]
+        anchors.append((Kind.STAY_CHECK_OUT, end, item.ends_at))
+
+    day = start + timedelta(days=1)
+    while day < end:
+        anchors.append((Kind.STAY_CHECK_OUT, day, datetime.combine(day, time.min, tzinfo=zone)))
+        day += timedelta(days=1)
+
+    return [
+        (kind, when, at) for kind, when, at in anchors if trip.start_date <= when <= trip.end_date
+    ]
 
 
 _KIND_FOR_TYPE = {
@@ -576,9 +604,8 @@ def _planned(
         day = (_local_date(item.starts_at, zone) - trip.start_date).days + 1
 
         if item.item_type == ItemType.STAY:
-            for kind, when in _stay_anchors(item, trip, zone):
+            for kind, when, at_local in _stay_anchors(item, trip, zone):
                 anchor_day = (when - trip.start_date).days + 1
-                at_local = item.starts_at if kind is Kind.STAY_CHECK_IN else item.ends_at
                 planned.append(
                     PlannedItem(
                         item_id=item.pk,
@@ -842,7 +869,20 @@ def _persist(
         seen.add(row.pk)
         row.day_number = entry.day_number
         row.sequence_no = entry.sequence_no
-        if not row.is_locked and entry.starts_at is not None and entry.ends_at is not None:
+
+        # A STAY keeps its own dates. They are the tourist's booking — check-in
+        # on one day, check-out on another — and the anchors the sequencer sees
+        # are a derived view of that row, not a replacement for it. Writing an
+        # anchor's instant back would collapse the stay onto a single moment,
+        # which is exactly what happened: `ends_at` took the check-in time, the
+        # stay covered no nights, and the next regeneration produced none of
+        # the per-day anchors ADR 0020 added.
+        if (
+            not row.is_locked
+            and row.item_type != ItemType.STAY
+            and entry.starts_at is not None
+            and entry.ends_at is not None
+        ):
             row.starts_at = entry.starts_at
             row.ends_at = entry.ends_at
         money = line_totals.get(entry.item_id)
@@ -933,20 +973,13 @@ def generate_itinerary(public_id: UUID, *, tourist_id: int) -> TripDTO:
     example is adding day 4 to a confirmed trip without disturbing days 1 to 3
     — and the refusal fires only if sequencing would actually move it.
 
-    **A known limitation, stated because it surprises people.** §10.4 sequences
-    *within a day* and line 4 lists the fixed items as "ACTIVITY with
-    departure, flight anchors, check-in/out". A stay therefore appears on the
-    day it begins and the day it ends, and on no day between. So a middle day
-    holding a single activity has nothing to be adjacent to, and no transfer is
-    inserted to reach it — even though the tourist plainly starts that morning
-    at their hotel.
-
-    That is §10.4 as specified, and inventing a per-day hotel anchor here would
-    be adding planning behaviour the specification does not describe, in the
-    one module whose §10.1 promise is that two implementations agree. It is
-    recorded rather than quietly fixed; if the intended behaviour is a stay
-    anchoring every night it spans, that is a change to §10.4 and belongs in
-    the specification first.
+    **A stay is present on every day it covers** — §10.4 as amended by ADR
+    0020. It used to appear only on the days it began and ended, which left a
+    middle day holding one activity with nothing to be adjacent to and so no
+    transfer to reach it. That was §10.4 as written; the amendment is recorded
+    in the ADR rather than made silently here, because §10.1's promise that two
+    implementations agree is only meaningful if they implement something
+    written down.
     """
     trip = _editable(_owned(public_id, tourist_id))
     itinerary = getattr(trip, "itinerary", None)
