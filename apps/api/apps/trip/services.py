@@ -423,9 +423,7 @@ def add_item(
     if kind:
         if named is None:
             raise ValidationError(f"a {item_type} item must name an {kind}")
-        listing = catalogue.resolve_listing_ref(
-            kind, named, today=today or _destination_date(trip)
-        )
+        listing = catalogue.resolve_listing_ref(kind, named, today=today or _destination_date(trip))
         if listing is None:
             raise NotFoundError(f"no {kind} {named!r}")
         fields[column] = listing.storage_id

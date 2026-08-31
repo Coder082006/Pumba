@@ -856,9 +856,7 @@ class ListingLocator:
     name: str
 
 
-def resolve_listing_ref(
-    kind: str, reference: str | UUID, *, today: date
-) -> ListingLocator | None:
+def resolve_listing_ref(kind: str, reference: str | UUID, *, today: date) -> ListingLocator | None:
     """Resolve an activity, attraction or accommodation by slug or UUID.
 
     **Visibility applies**, for the same reason it does in
