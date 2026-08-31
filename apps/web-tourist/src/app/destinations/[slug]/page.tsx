@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 
@@ -93,12 +94,25 @@ export default async function DestinationPage({ params }: Params) {
         />
       ) : null}
 
-      <header>
-        <h1 className="font-display text-3xl font-bold leading-tight tracking-tight sm:text-4xl">{destination.name}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {destination.region.name} · {destination.region.country.name} · {destination.timezone} ·
-          prices in {destination.default_currency}
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-3xl font-bold leading-tight tracking-tight sm:text-4xl">{destination.name}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {destination.region.name} · {destination.region.country.name} · {destination.timezone} ·
+            prices in {destination.default_currency}
+          </p>
+        </div>
+        {/*
+          §41.3 begins with "a tourist can create a trip", and this is where
+          somebody decides to. A plain link, so the page stays server-rendered
+          and the LCP measurement §29's NFR-P01 gate takes is untouched.
+        */}
+        <Link
+          href={`/trips/new?destination=${destination.slug}`}
+          className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors duration-fast ease-out hover:bg-primary/90"
+        >
+          Plan a trip here
+        </Link>
       </header>
 
       {destination.description ? (
