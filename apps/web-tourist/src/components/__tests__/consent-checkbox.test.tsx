@@ -15,6 +15,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import RegisterPage from '@/app/(auth)/register/page';
 import { ConsentCheckbox } from '@/components/auth/consent-checkbox';
 
 // The page reads `useRouter` so it can send a verified tourist to the landing
@@ -24,6 +25,39 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => '/register',
+}));
+
+/**
+ * Hoisted, so `RegisterPage` can be imported at file scope below.
+ *
+ * This was `vi.doMock` plus `await import()` *inside a test body*, which put
+ * the transform of the page's whole module graph inside a five-second test
+ * budget. That graph grew when the page gained `VerificationDialog`, and the
+ * test — previously about 1.3 s — began timing out under load. Worse, the
+ * abandoned import resolved *after* Testing Library's cleanup had run, so its
+ * render landed in a `document.body` nobody would clear and the next test
+ * legitimately found two consent checkboxes. One slow import, reported as two
+ * unrelated failures.
+ *
+ * `vi.mock` is hoisted above the imports by the vitest transform, so the cost
+ * is paid once at collection time instead of racing a timeout. It also fixes
+ * something the old shape hid: without `vi.resetModules()`, `vi.doMock` only
+ * ever applied on the first call — the second and third renders got the cached
+ * module and an inert mock.
+ *
+ * `login`, `verifyEmailCode` and `resendVerification` are here because
+ * `VerificationDialog` imports them. Nothing in this file renders the dialog
+ * yet, so omitting them stays silent until something does.
+ */
+vi.mock('@/lib/auth', () => ({
+  register: vi.fn().mockResolvedValue({
+    user: { public_id: 'x', email: 'a@b.co', status: 'PENDING' },
+    verification_required: true,
+  }),
+  fieldErrorsFrom: () => null,
+  login: vi.fn().mockResolvedValue(undefined),
+  verifyEmailCode: vi.fn().mockResolvedValue(undefined),
+  resendVerification: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe('a consent document that exists', () => {
@@ -123,30 +157,17 @@ describe('the registration form still works with the link removed', () => {
    * submit permanently disabled, registration would be broken by the fix, and
    * nothing else in the suite exercises this form.
    */
-  async function renderRegister() {
-    vi.doMock('@/lib/auth', () => ({
-      register: vi.fn().mockResolvedValue({
-        user: { public_id: 'x', email: 'a@b.co', status: 'PENDING' },
-        verification_required: true,
-      }),
-      fieldErrorsFrom: () => null,
-    }));
-    const { default: RegisterPage } = await import('@/app/(auth)/register/page');
-    return render(<RegisterPage />);
-  }
-
   it('starts with the submit disabled, as §24.3 requires', () => {
     // "terms must be accepted" — the gate has to still be a gate.
-    return renderRegister().then(() => {
-      expect(screen.getByRole('button', { name: /Create account/ })).toHaveProperty(
-        'disabled',
-        true,
-      );
-    });
+    render(<RegisterPage />);
+    expect(screen.getByRole('button', { name: /Create account/ })).toHaveProperty(
+      'disabled',
+      true,
+    );
   });
 
-  it('enables the submit once consent is given', async () => {
-    await renderRegister();
+  it('enables the submit once consent is given', () => {
+    render(<RegisterPage />);
     fireEvent.click(screen.getByLabelText(/I accept the terms of use/));
     expect(screen.getByRole('button', { name: /Create account/ })).toHaveProperty(
       'disabled',
@@ -154,8 +175,8 @@ describe('the registration form still works with the link removed', () => {
     );
   });
 
-  it('still tells the user what they are agreeing to', async () => {
-    await renderRegister();
+  it('still tells the user what they are agreeing to', () => {
+    render(<RegisterPage />);
     expect(screen.getByText(/I accept the terms of use\./)).toBeDefined();
   });
 });
