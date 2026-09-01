@@ -115,6 +115,15 @@ class TestRegister:
                         factor is wrong in both directions in different places —
                         and correcting one against the first real routed leg
                         must not need a deployment.
+            web.        Phase 4, §24.3. Where a link in an email points —
+                        `web.tourist_base_url`. Appendix B never names it
+                        because the appendix describes business thresholds and
+                        this is a deployment fact, but it is a setting for the
+                        same reason they are: a wrong value here sends a live
+                        verification credential to the wrong host, and an
+                        operator must be able to correct that without a
+                        release. It is also the one key here that differs per
+                        environment rather than per market.
             map.        Phase 3, ADR 0016 / Appendix D9. The tile URL and its
                         attribution string. Held as settings so changing map
                         provider is an administrator action rather than a
@@ -143,6 +152,7 @@ class TestRegister:
                     "feature.",
                     "routing.",
                     "buffer.",
+                    "web.",
                 )
             )
         }
