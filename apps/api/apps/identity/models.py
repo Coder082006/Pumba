@@ -323,6 +323,16 @@ class Device(BaseModel):
 
 class TokenPurpose(models.TextChoices):
     EMAIL_VERIFICATION = "EMAIL_VERIFICATION", "Email verification"
+    #: The six digits in the same email as the link above — §24.3's
+    #: verification notice, made something a person can act on when they read
+    #: the mail on a different device from the one they registered on.
+    #:
+    #: A separate purpose rather than a second use of EMAIL_VERIFICATION,
+    #: because the two have different threat models and therefore different
+    #: rules: the link is 256 bits and unguessable, the code is one of a
+    #: million and is defended by a short life and a hard attempt limit.
+    #: Sharing a purpose would force one set of rules onto both.
+    EMAIL_VERIFICATION_CODE = "EMAIL_VERIFICATION_CODE", "Email verification code"
     PASSWORD_RESET = "PASSWORD_RESET", "Password reset"
 
 
@@ -340,6 +350,13 @@ class OneTimeToken(TimestampedModel):
     token_hash = models.CharField(max_length=64, unique=True)
     expires_at = models.DateTimeField(db_index=True)
     consumed_at = models.DateTimeField(null=True, blank=True, default=None)
+
+    #: Failed guesses against this row. Meaningless for a link — 256 bits are
+    #: not guessed — and the whole defence for a six-digit code, which has a
+    #: search space of a million and would otherwise fall to a script in
+    #: minutes. The limit is a `system_setting`, so it is checked where the
+    #: count is read rather than constrained here.
+    attempts = models.PositiveSmallIntegerField(default=0)
 
     class Meta:
         db_table = "one_time_token"

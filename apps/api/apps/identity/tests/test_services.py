@@ -196,10 +196,24 @@ class TestEmailVerification:
 def _register_and_capture(capture) -> str:  # type: ignore[no-untyped-def]
     with capture(execute=True):
         register()
-    return _from_body(get_email_port())
+    return _verification_link_token(get_email_port())
+
+
+def _verification_link_token(port) -> str:  # type: ignore[no-untyped-def]
+    """The **link** token out of the verification email.
+
+    Read from the `href`, not from `<code>`. That email now carries two secrets
+    — six typeable digits in the `<code>` element and the 256-bit link beside
+    them — and this feeds `verify_email`, which is the link's endpoint. When
+    the code arrived, a helper scraping `<code>` silently started handing over
+    the wrong one. `test_verification_code.py` covers the digits.
+    """
+    body = port.sent[-1]["html_body"]
+    return body.split("?token=")[1].split('"')[0]
 
 
 def _from_body(port) -> str:  # type: ignore[no-untyped-def]
+    """The token out of a `<code>` element — the password-reset mail's shape."""
     body = port.sent[-1]["html_body"]
     return body.split("<code>")[1].split("</code>")[0]
 

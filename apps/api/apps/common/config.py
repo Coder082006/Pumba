@@ -211,7 +211,25 @@ SETTINGS_REGISTER: dict[str, Setting] = {
         Setting("auth.refresh_token_days", 30, "Refresh token lifetime"),
         Setting("auth.totp_drift_steps", 1, "TOTP steps tolerated either side of now"),
         Setting("auth.email_verification_ttl_hours", 24, "Verification link validity"),
+        # The code in the same email is a different secret with a different
+        # life. 256 bits stay safe for a day; six digits are one of a million
+        # and are only defensible while the window is small and the guesses
+        # are counted. Both are rows rather than literals (NFR-M07) because
+        # the right numbers are an operational judgement — a market with
+        # slow mail delivery may need longer, and that must not need a deploy.
+        Setting("auth.email_verification_code_ttl_minutes", 15, "Verification code validity"),
+        Setting(
+            "auth.email_verification_code_max_attempts",
+            5,
+            "Wrong guesses before a verification code is burned",
+        ),
         Setting("auth.password_reset_ttl_minutes", 60, "Reset link validity"),
+        # Where a link in an email points. A row rather than a Django setting
+        # because §4.2 makes the deployment's own address data like everything
+        # else, and because a wrong value here sends a live credential to the
+        # wrong host — which is a thing an operator must be able to correct
+        # without a release.
+        Setting("web.tourist_base_url", "http://localhost:3000", "Tourist web client origin"),
         # -- Rate limits (§9.6). "N/period/scope", one row per table line. --
         Setting("search.min_length", 2, "SRS 24.7: search requires two characters"),
         Setting("search.max_length", 64, "Longest query accepted before it is refused"),

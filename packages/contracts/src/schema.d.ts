@@ -1006,6 +1006,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/verify-email/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description The six digits, for §24.3's verification popup.
+         *
+         *     A sibling route rather than a second field on `VerifyEmailView`, because
+         *     the two carry different secrets with different rules and a single endpoint
+         *     accepting either would need to explain in its own body which one it got. */
+        post: operations["auth_verify_email_code_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/verify-email/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description §24.4's "offers to resend verification", and the popup's Resend.
+         *
+         *     **Always 202, whatever the address.** The same rule §24.5 states for
+         *     password reset: an answer that depended on whether the account existed
+         *     would let anyone enumerate the register one address at a time. */
+        post: operations["auth_verify_email_resend_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/config": {
         parameters: {
             query?: never;
@@ -2248,6 +2290,20 @@ export interface components {
          *     deliberate: this one gives the administrator a 422 naming the field they
          *     got wrong, and that one holds even for a caller that never passed through
          *     a serializer — the seed loader, a management command, a console shell. */
+        ResendVerificationRequest: {
+            /** Format: email */
+            email: string;
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
         ResetPasswordRequest: {
             token: string;
             new_password: string;
@@ -2383,6 +2439,18 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
             readonly profile: components["schemas"]["TouristProfile"] | null;
+        };
+        /** @description §24.3's popup: the address just registered, and the six digits emailed.
+         *
+         *     The email is carried rather than inferred from a session, because there is
+         *     no session yet — the account is PENDING and cannot sign in until this
+         *     succeeds. Digits only, exactly six: a code that arrived with a space or a
+         *     non-breaking hyphen from a mail client should be cleaned by the client, and
+         *     anything else is not a code this service ever issued. */
+        VerifyEmailCodeRequest: {
+            /** Format: email */
+            email: string;
+            code: string;
         };
         /** @description Rejects unknown fields — SRS §30.6.
          *
@@ -3588,6 +3656,55 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["User"];
                 };
+            };
+        };
+    };
+    auth_verify_email_code_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyEmailCodeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["VerifyEmailCodeRequest"];
+                "multipart/form-data": components["schemas"]["VerifyEmailCodeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    auth_verify_email_resend_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResendVerificationRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ResendVerificationRequest"];
+                "multipart/form-data": components["schemas"]["ResendVerificationRequest"];
+            };
+        };
+        responses: {
+            /** @description No response body */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

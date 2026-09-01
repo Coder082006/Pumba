@@ -33,6 +33,8 @@ from apps.identity.selectors import list_devices_for_principal
 __all__ = [
     "RegisterView",
     "VerifyEmailView",
+    "VerifyEmailCodeView",
+    "ResendVerificationView",
     "LoginView",
     "RefreshView",
     "LogoutView",
@@ -152,6 +154,45 @@ class VerifyEmailView(_PublicView):
         payload.is_valid(raise_exception=True)
         dto = services.verify_email(payload.validated_data["token"], ip=_client_ip(request))
         return Response(success_envelope({"user": _user_payload(dto)}))
+
+
+class VerifyEmailCodeView(_PublicView):
+    """The six digits, for §24.3's verification popup.
+
+    A sibling route rather than a second field on `VerifyEmailView`, because
+    the two carry different secrets with different rules and a single endpoint
+    accepting either would need to explain in its own body which one it got.
+    """
+
+    @extend_schema(request=ser.VerifyEmailCodeSerializer, responses={200: ser.UserSerializer})
+    def post(self, request: Request) -> Response:
+        payload = ser.VerifyEmailCodeSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        dto = services.verify_email_code(
+            payload.validated_data["email"],
+            payload.validated_data["code"],
+            ip=_client_ip(request),
+        )
+        return Response(success_envelope({"user": _user_payload(dto)}))
+
+
+class ResendVerificationView(_PublicView):
+    """§24.4's "offers to resend verification", and the popup's Resend.
+
+    **Always 202, whatever the address.** The same rule §24.5 states for
+    password reset: an answer that depended on whether the account existed
+    would let anyone enumerate the register one address at a time.
+    """
+
+    @extend_schema(request=ser.ResendVerificationSerializer, responses={202: None})
+    def post(self, request: Request) -> Response:
+        payload = ser.ResendVerificationSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        services.resend_verification(payload.validated_data["email"])
+        return Response(
+            success_envelope({"message": "If that address needs verifying, a code is on its way."}),
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class LoginView(_PublicView):

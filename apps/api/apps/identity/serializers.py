@@ -23,6 +23,8 @@ __all__ = [
     "StrictSerializer",
     "RegisterSerializer",
     "VerifyEmailSerializer",
+    "VerifyEmailCodeSerializer",
+    "ResendVerificationSerializer",
     "LoginSerializer",
     "RefreshSerializer",
     "ForgotPasswordSerializer",
@@ -58,6 +60,24 @@ class RegisterSerializer(StrictSerializer):
 
 class VerifyEmailSerializer(StrictSerializer):
     token = serializers.CharField(max_length=128, trim_whitespace=True)
+
+
+class VerifyEmailCodeSerializer(StrictSerializer):
+    """§24.3's popup: the address just registered, and the six digits emailed.
+
+    The email is carried rather than inferred from a session, because there is
+    no session yet — the account is PENDING and cannot sign in until this
+    succeeds. Digits only, exactly six: a code that arrived with a space or a
+    non-breaking hyphen from a mail client should be cleaned by the client, and
+    anything else is not a code this service ever issued.
+    """
+
+    email = serializers.EmailField(max_length=254)
+    code = serializers.RegexField(r"^\d{6}$", trim_whitespace=True)
+
+
+class ResendVerificationSerializer(StrictSerializer):
+    email = serializers.EmailField(max_length=254)
 
 
 class LoginSerializer(StrictSerializer):

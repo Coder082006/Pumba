@@ -20,7 +20,9 @@ from apps.identity.views import (
     MfaEnrolView,
     RefreshView,
     RegisterView,
+    ResendVerificationView,
     ResetPasswordView,
+    VerifyEmailCodeView,
     VerifyEmailView,
 )
 
@@ -29,6 +31,12 @@ app_name = "identity"
 urlpatterns = [
     path("auth/register", RegisterView.as_view(), name="register"),
     path("auth/verify-email", VerifyEmailView.as_view(), name="verify-email"),
+    path("auth/verify-email/code", VerifyEmailCodeView.as_view(), name="verify-email-code"),
+    path(
+        "auth/verify-email/resend",
+        ResendVerificationView.as_view(),
+        name="verify-email-resend",
+    ),
     path("auth/login", LoginView.as_view(), name="login"),
     path("auth/refresh", RefreshView.as_view(), name="refresh"),
     path("auth/logout", LogoutView.as_view(), name="logout"),

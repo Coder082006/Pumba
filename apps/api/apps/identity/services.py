@@ -23,6 +23,7 @@ a sequence of queries.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -51,6 +52,8 @@ from apps.identity.models import TokenPurpose, User, UserStatus
 from apps.identity.selectors import to_device_dto, to_user_dto
 from ports.breach import BreachLookupError, password_prefix, password_suffix
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "AccountLockedError",
     "EmailNotVerifiedError",
@@ -58,6 +61,8 @@ __all__ = [
     "MfaRequiredError",
     "register_tourist",
     "verify_email",
+    "verify_email_code",
+    "resend_verification",
     "authenticate",
     "refresh_tokens",
     "logout",
@@ -282,13 +287,35 @@ def register_tourist(
     return to_user_dto(user)
 
 
-def _send_verification_email(user: User) -> None:
+def _send_verification_email(user: User, *, base_url: str | None = None) -> None:
+    """One email, two secrets, because they answer different situations.
+
+    The **link** is 256 bits and lasts a day: it is for somebody reading the
+    mail on the device they registered on, who taps it and is done. The
+    **code** is six digits and lasts minutes: it is for somebody who
+    registered on a laptop and reads the mail on a phone, and who otherwise has
+    to retype forty characters of base64 or give up.
+
+    They are separate rows with separate rules rather than one secret used two
+    ways, because a million-value code with a link's lifetime and no attempt
+    limit is a lock anyone can pick, and a 256-bit link expiring in fifteen
+    minutes is an inconvenience with no security in return.
+    """
+    now = _now()
     raw = repo.issue_one_time_token(
         user,
         TokenPurpose.EMAIL_VERIFICATION,
         ttl=timedelta(hours=int(get_setting("auth.email_verification_ttl_hours"))),
-        now=_now(),
+        now=now,
     )
+    code = repo.issue_verification_code(
+        user,
+        ttl=timedelta(minutes=int(get_setting("auth.email_verification_code_ttl_minutes"))),
+        now=now,
+    )
+    minutes = int(get_setting("auth.email_verification_code_ttl_minutes"))
+    link = f"{base_url or get_setting('web.tourist_base_url')}/verify-email?token={raw}"
+
     # Sent after the transaction commits: an email is not rollback-able, and
     # a verification link for a user row that never existed is worse than a
     # delayed one.
@@ -296,9 +323,13 @@ def _send_verification_email(user: User) -> None:
         lambda: get_email_port().send(
             to=user.email,
             subject="Verify your email address",
-            html_body=f"<p>Your verification code is <code>{raw}</code>.</p>",
+            html_body=(
+                f"<p>Your verification code is <code>{code}</code>. "
+                f"It expires in {minutes} minutes.</p>"
+                f'<p>Or open <a href="{link}">this link</a>.</p>'
+            ),
             template_id="email_verification",
-            context={"token": raw},
+            context={"code": code, "token": raw, "url": link},
         )
     )
 
@@ -319,6 +350,86 @@ def verify_email(token: str, *, ip: str | None = None) -> UserDTO:
         after={"status": user.status},
     )
     return to_user_dto(user)
+
+
+def verify_email_code(email: str, code: str, *, ip: str | None = None) -> UserDTO:
+    """§24.3's verification notice, as six digits a person can type.
+
+    **Deliberately not `@transaction.atomic`, and this is the whole security
+    of the thing.** It was, and the attempt limit enforced nothing: the
+    counter is incremented on a wrong guess and the wrong guess then raises,
+    so the rollback undid the count. Five failures left `attempts` at zero and
+    the code still live — a million-value secret with unlimited guesses. The
+    increment has to *commit* even though the request fails, which means the
+    failure cannot be inside the transaction that wrote it.
+
+    `consume_verification_code` opens its own transaction for the read, the
+    compare and the count, which is the part that must be atomic. Marking the
+    account verified and writing the audit entry is a second transaction
+    below, because those two must land together or not at all.
+
+    **One message for every failure, and it is deliberate.** Wrong code,
+    expired code, too many attempts, no such account — all of them raise the
+    same `ValidationError`. §30.3 asks that absence and inaccessibility be
+    indistinguishable, and the same reasoning applies here: an error that
+    distinguished "no such account" from "wrong code" would turn this endpoint
+    into a register of who has signed up, and one that distinguished "expired"
+    from "wrong" would tell an attacker whether to keep guessing.
+
+    The repository still separates the outcomes, because the *server* needs
+    them — to decide whether to burn the row, and so an operator can see a
+    brute-force attempt in the logs rather than a wall of identical failures.
+
+    An already-verified account raises too. Nothing is wrong with the caller,
+    but the alternative is answering "fine" to a code that was never checked.
+    """
+    user = repo.find_user_by_email(email)
+    if user is None or user.email_verified_at is not None:
+        # The work of a real check is not done, which is a timing signal. It is
+        # accepted: the rate limit in §9.6 bounds how often this can be asked,
+        # and the alternative — verifying against a dummy row — is a second
+        # code path that must stay in step with the first for ever.
+        raise ValidationError("That code is invalid or has expired.")
+
+    outcome = repo.consume_verification_code(
+        user,
+        code,
+        now=_now(),
+        max_attempts=int(get_setting("auth.email_verification_code_max_attempts")),
+    )
+    if outcome is not repo.CodeOutcome.OK:
+        logger.info(
+            "email_verification_code_rejected",
+            extra={"outcome": outcome.value, "user_id": user.pk},
+        )
+        raise ValidationError("That code is invalid or has expired.")
+
+    with transaction.atomic():
+        repo.mark_email_verified(user, now=_now())
+        record_audit(
+            AuditAction.USER_EMAIL_VERIFIED,
+            entity_type="user",
+            entity_id=str(user.public_id),
+            actor_user_id=user.pk,
+            ip=ip,
+            after={"status": user.status},
+        )
+    return to_user_dto(user)
+
+
+def resend_verification(email: str) -> None:
+    """§24.4's "offers to resend verification", and §24.3's Resend button.
+
+    **Returns nothing, and succeeds for an address that does not exist.** The
+    same rule §24.5 states for password reset: a response that differed would
+    let anyone test whether an address has an account here, one request at a
+    time. An already-verified account is also a silent no-op — telling the
+    caller would answer the same question.
+    """
+    user = repo.find_user_by_email(email)
+    if user is None or user.email_verified_at is not None:
+        return
+    _send_verification_email(user)
 
 
 # ---------------------------------------------------------------------------

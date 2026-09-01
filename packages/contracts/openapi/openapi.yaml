@@ -1515,6 +1515,66 @@ paths:
               schema:
                 $ref: '#/components/schemas/User'
           description: ''
+  /api/v1/auth/verify-email/code:
+    post:
+      operationId: auth_verify_email_code_create
+      description: |-
+        The six digits, for §24.3's verification popup.
+
+        A sibling route rather than a second field on `VerifyEmailView`, because
+        the two carry different secrets with different rules and a single endpoint
+        accepting either would need to explain in its own body which one it got.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailCodeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailCodeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailCodeRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+  /api/v1/auth/verify-email/resend:
+    post:
+      operationId: auth_verify_email_resend_create
+      description: |-
+        §24.4's "offers to resend verification", and the popup's Resend.
+
+        **Always 202, whatever the address.** The same rule §24.5 states for
+        password reset: an answer that depended on whether the account existed
+        would let anyone enumerate the register one address at a time.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '202':
+          description: No response body
   /api/v1/config:
     get:
       operationId: config
@@ -4239,6 +4299,27 @@ components:
       - first_name
       - last_name
       - password
+    ResendVerificationRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+      required:
+      - email
     ResetPasswordRequest:
       type: object
       description: |-
@@ -4676,6 +4757,29 @@ components:
       - public_id
       - roles
       - status
+    VerifyEmailCodeRequest:
+      type: object
+      description: |-
+        §24.3's popup: the address just registered, and the six digits emailed.
+
+        The email is carried rather than inferred from a session, because there is
+        no session yet — the account is PENDING and cannot sign in until this
+        succeeds. Digits only, exactly six: a code that arrived with a space or a
+        non-breaking hyphen from a mail client should be cleaned by the client, and
+        anything else is not a code this service ever issued.
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 254
+        code:
+          type: string
+          minLength: 1
+          pattern: ^\d{6}$
+      required:
+      - code
+      - email
     VerifyEmailRequest:
       type: object
       description: |-

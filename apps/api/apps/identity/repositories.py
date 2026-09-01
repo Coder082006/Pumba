@@ -10,9 +10,11 @@ of queries.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 import uuid
 from datetime import datetime, timedelta
+from enum import StrEnum
 
 from django.db import transaction
 from django.utils import timezone
@@ -68,6 +70,37 @@ def hash_token(raw: str) -> str:
 def new_one_time_token() -> tuple[str, str]:
     raw = secrets.token_urlsafe(_TOKEN_BYTES)
     return raw, hash_token(raw)
+
+
+#: Digits in a verification code. Six is what a person will retype from an
+#: email without resenting it, and it is only defensible because the code dies
+#: in minutes and takes a handful of guesses with it.
+CODE_DIGITS = 6
+
+
+def new_verification_code() -> str:
+    """Six digits, uniformly distributed, from the CSPRNG.
+
+    `secrets.randbelow` rather than `random`: the module that seeds from the
+    clock is the one that makes a code predictable from the moment it was sent.
+    Leading zeros are kept — dropping them would quietly shrink the space and
+    make every code beginning `0` shorter than the others.
+    """
+    return f"{secrets.randbelow(10**CODE_DIGITS):0{CODE_DIGITS}d}"
+
+
+def hash_code(user: User, raw: str) -> str:
+    """A code hash bound to one account.
+
+    Two things go wrong with `hash_token` here, and the user binding fixes
+    both. A bare SHA-256 of six digits is a table of a million entries that
+    anybody can precompute, so a database disclosure would hand over every
+    pending code. And `token_hash` is UNIQUE, so two users holding the same
+    six digits — which happens once in a million issues, not never — would
+    collide on insert and one registration would fail for no reason a user
+    could act on.
+    """
+    return hashlib.sha256(f"{user.public_id}:{raw}".encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +259,91 @@ def consume_one_time_token(raw: str, purpose: TokenPurpose, *, now: datetime) ->
             return None
         token = OneTimeToken.objects.select_related("user").get(token_hash=hash_token(raw))
         return token.user
+
+
+def issue_verification_code(user: User, *, ttl: timedelta, now: datetime) -> str:
+    """A fresh six-digit code, superseding any outstanding one.
+
+    The old row is consumed rather than left alive, for the same reason
+    `issue_one_time_token` does it: a user who asks for a new code because the
+    first did not arrive must not leave the first one usable, and an attacker
+    who provoked a send must not keep a live code after the real user requests
+    theirs.
+    """
+    OneTimeToken.objects.filter(
+        user=user,
+        purpose=TokenPurpose.EMAIL_VERIFICATION_CODE,
+        consumed_at__isnull=True,
+    ).update(consumed_at=now)
+
+    raw = new_verification_code()
+    OneTimeToken.objects.create(
+        user=user,
+        purpose=TokenPurpose.EMAIL_VERIFICATION_CODE,
+        token_hash=hash_code(user, raw),
+        expires_at=now + ttl,
+    )
+    return raw
+
+
+class CodeOutcome(StrEnum):
+    """Why a code check ended, for a caller that must not say so out loud.
+
+    The distinction exists for the *server* — the log, the metric, the decision
+    whether to burn the row — not for the response. §30.3's reasoning applies:
+    telling a caller which of "wrong", "expired" and "too many attempts" they
+    hit narrates the state of somebody else's account.
+    """
+
+    OK = "OK"
+    WRONG = "WRONG"
+    EXPIRED = "EXPIRED"
+    LOCKED = "LOCKED"
+
+
+def consume_verification_code(
+    user: User, raw: str, *, now: datetime, max_attempts: int
+) -> CodeOutcome:
+    """Spend a code, counting the failures.
+
+    **The row is locked for update, and that is the point.** A million-value
+    secret is only safe because the attempt counter bounds the guesses, and a
+    counter incremented outside a lock is one two parallel requests can both
+    read as 4 and both write as 5. The whole defence would then be a matter of
+    how many connections the attacker opens.
+
+    Comparison is `compare_digest`, not `==`. Both sides are hex digests of a
+    fixed length so the timing signal is small, but the habit is the point: the
+    place a constant-time comparison gets forgotten is the place it mattered.
+    """
+    with transaction.atomic():
+        token = (
+            OneTimeToken.objects.select_for_update()
+            .filter(user=user, purpose=TokenPurpose.EMAIL_VERIFICATION_CODE)
+            .order_by("-created_at")
+            .first()
+        )
+        if token is None or token.consumed_at is not None:
+            return CodeOutcome.EXPIRED
+        if now >= token.expires_at:
+            return CodeOutcome.EXPIRED
+        if token.attempts >= max_attempts:
+            return CodeOutcome.LOCKED
+
+        if not hmac.compare_digest(token.token_hash, hash_code(user, raw)):
+            token.attempts += 1
+            # Burned on the last allowed failure rather than left to expire: a
+            # code that has survived the attempt limit is a code an attacker
+            # has already spent their budget on, and leaving it alive until the
+            # TTL gives them the budget again on the next request.
+            if token.attempts >= max_attempts:
+                token.consumed_at = now
+            token.save(update_fields=["attempts", "consumed_at"])
+            return CodeOutcome.LOCKED if token.consumed_at else CodeOutcome.WRONG
+
+        token.consumed_at = now
+        token.save(update_fields=["consumed_at"])
+        return CodeOutcome.OK
 
 
 # ---------------------------------------------------------------------------
