@@ -46,6 +46,12 @@ def _run(*args: str) -> str:
     return out.getvalue().strip()
 
 
+def _code_from(output: str) -> str:
+    """The digits off the `code:` line, ignoring the expiry note beside them."""
+    line = next(row for row in output.splitlines() if row.startswith("code:"))
+    return line.split()[1]
+
+
 class TestInDevelopment:
     """`settings` is pytest-django's fixture; it restores the value after each
     test, which `override_settings` cannot do as a plain-class decorator."""
@@ -64,16 +70,32 @@ class TestInDevelopment:
         dto = services.verify_email(token)
         assert dto.email_verified
 
+    def test_it_prints_a_code_the_dialog_endpoint_accepts(self) -> None:
+        """The other half. §24.3's dialog asks for six digits, and a command
+        that printed only the link would leave that screen untestable — which
+        is the situation this command exists to end."""
+        _register()
+        code = _code_from(_run(EMAIL))
+
+        dto = services.verify_email_code(EMAIL, code)
+        assert dto.email_verified
+
+    def test_the_code_is_six_digits(self) -> None:
+        _register()
+        code = _code_from(_run(EMAIL))
+        assert len(code) == 6
+        assert code.isdigit()
+
     def test_the_link_points_at_the_web_client(self) -> None:
         _register()
-        assert _run(EMAIL).startswith("http://localhost:3000/verify-email?token=")
+        assert "http://localhost:3000/verify-email?token=" in _run(EMAIL)
 
     def test_the_base_url_is_configurable(self) -> None:
         """A different port, or a tunnel, is the ordinary case for testing a
         link on a phone."""
         _register()
-        assert _run(EMAIL, "--base-url", "http://192.168.1.4:3000").startswith(
-            "http://192.168.1.4:3000/verify-email?token="
+        assert "http://192.168.1.4:3000/verify-email?token=" in _run(
+            EMAIL, "--base-url", "http://192.168.1.4:3000"
         )
 
     def test_an_already_verified_account_is_told_so_rather_than_reissued(self) -> None:

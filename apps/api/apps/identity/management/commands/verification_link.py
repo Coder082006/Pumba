@@ -12,9 +12,14 @@ a live single-use credential into the log stream of whichever environment is
 running without a configured adapter, and a misconfigured production is exactly
 the environment where that is worst.
 
-**This issues a real token through the real path** rather than flipping a
+**This issues real secrets through the real path** rather than flipping a
 column. Marking `email_verified` directly would let this command keep working
 while the token path was broken, which is the one thing it must not do.
+
+It prints **both** the six-digit code and the link, because the verification
+email carries both and they are spent on different screens — the code in
+§24.3's dialog, the link at `/verify-email`. Printing one would leave half the
+flow untestable, which is the situation this command exists to end.
 """
 
 from __future__ import annotations
@@ -62,10 +67,17 @@ class Command(BaseCommand):
             self.stdout.write(f"{email} is already verified — sign in normally.")
             return
 
+        now = timezone.now()
         raw = repo.issue_one_time_token(
             user,
             TokenPurpose.EMAIL_VERIFICATION,
             ttl=timedelta(hours=int(get_setting("auth.email_verification_ttl_hours"))),
-            now=timezone.now(),
+            now=now,
         )
-        self.stdout.write(f"{options['base_url']}/verify-email?token={raw}")
+        minutes = int(get_setting("auth.email_verification_code_ttl_minutes"))
+        code = repo.issue_verification_code(user, ttl=timedelta(minutes=minutes), now=now)
+
+        # Both, because the email carries both and they are spent on different
+        # screens: the code in §24.3's dialog, the link at `/verify-email`.
+        self.stdout.write(f"code: {code}   (expires in {minutes} minutes)")
+        self.stdout.write(f"link: {options['base_url']}/verify-email?token={raw}")

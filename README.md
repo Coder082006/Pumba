@@ -74,23 +74,30 @@ on Windows by default.
 
 ### Signing in locally
 
-Registration issues a single-use verification token and hands it to the email
-port. **No email provider is selected yet** — the brief forbids choosing one
-before the adapter work — so that resolves to `ports.fakes.FakeEmail`, which
-records the message in memory and surfaces it nowhere. Without the link, a new
-account can be created and never signed into: `POST /auth/login` answers
-`EMAIL_NOT_VERIFIED`.
+Registration emails two secrets: a **six-digit code** for the dialog that
+appears after signing up, and a **link** for anyone reading the mail on the
+device they registered on. **No email provider is selected yet** — the brief
+forbids choosing one before the adapter work — so both go to
+`ports.fakes.FakeEmail`, which records the message in memory and surfaces it
+nowhere. Without them a new account can be created and never signed into:
+`POST /auth/login` answers `EMAIL_NOT_VERIFIED`.
 
-Print the link instead:
+Print them instead:
 
 ```
 docker compose exec api python manage.py verification_link you@example.com
 ```
 
-It issues a **real** token through the same path registration uses, so the link
-it prints is one `/auth/verify-email` accepts — open it in the browser and sign
-in normally. It refuses to run with `DEBUG` off: issuing a verification token
-to whoever can reach a shell defeats the only thing verification proves.
+```
+code: 418209   (expires in 15 minutes)
+link: http://localhost:3000/verify-email?token=Q-SYUvnx…
+```
+
+Type the code into the dialog, or open the link — either finishes the account.
+Both are issued through the same calls registration makes, so the command
+cannot pass while the flow it exists to exercise is broken. It refuses to run
+with `DEBUG` off: handing a verification secret to whoever can reach a shell
+defeats the only thing verification proves.
 
 ### Which one to run
 
