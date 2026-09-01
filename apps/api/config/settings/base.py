@@ -116,6 +116,26 @@ MIDDLEWARE = [
     "apps.common.middleware.AuditContextMiddleware",
 ]
 
+# ADR 0008 puts the refresh token in an HttpOnly cookie scoped to
+# /api/v1/auth, so every call in `web-tourist/src/lib/auth.ts` is sent with
+# `credentials: 'include'`. A credentialed cross-origin request is one the
+# browser discards unless the response says
+# `Access-Control-Allow-Credentials: true` — it never becomes an HTTP status,
+# so the client sees a bare "Failed to fetch" with no request id and the server
+# log shows a perfectly normal 201.
+#
+# django-cors-headers defaults this to False, which meant registering, signing
+# in, resetting a password and refreshing a token could not work from a browser
+# at all. Every one of them passed its own tests, because a test client is not
+# a browser and does not enforce CORS.
+#
+# Safe only because the origin list is an explicit allowlist in every
+# environment — `CORS_ALLOW_ALL_ORIGINS` is never set, and django-cors-headers
+# refuses to combine it with credentials in any case. `prod.py` reads the list
+# from the environment and defaults to empty, so a missing variable denies
+# every origin rather than allowing one.
+CORS_ALLOW_CREDENTIALS = True
+
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
