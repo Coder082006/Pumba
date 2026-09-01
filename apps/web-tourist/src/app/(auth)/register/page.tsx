@@ -39,7 +39,9 @@ export default function RegisterPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
+  // The address the *server* normalised, not the one that was typed. Every
+  // later call — verify, resend — has to use that form.
+  const [registered, setRegistered] = useState<string | null>(null);
 
   const update = (name: string, value: string) =>
     setFields((previous) => ({ ...previous, [name]: value }));
@@ -50,8 +52,11 @@ export default function RegisterPage() {
     setBanner(null);
     setSubmitting(true);
     try {
-      await register({ ...fields, nationality: fields.nationality || undefined });
-      setDone(true);
+      const accepted = await register({
+        ...fields,
+        nationality: fields.nationality || undefined,
+      });
+      setRegistered(accepted.email);
     } catch (caught) {
       const mapped = fieldErrorsFrom(caught);
       if (mapped) setErrors(mapped);
@@ -61,7 +66,7 @@ export default function RegisterPage() {
     }
   }
 
-  if (done) {
+  if (registered !== null) {
     // §24.3's "Navigation → Email verification notice → Home", as a step the
     // tourist can complete rather than a page telling them to go and look
     // somewhere else. The password is still in this component's state and is
@@ -69,7 +74,7 @@ export default function RegisterPage() {
     // it goes no further than that.
     return (
       <VerificationDialog
-        email={fields.email}
+        email={registered}
         password={fields.password}
         onVerified={() => router.push('/')}
       />

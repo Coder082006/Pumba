@@ -76,3 +76,29 @@ def _reset_event_subscribers():
     clear_subscribers()
     yield
     clear_subscribers()
+
+
+@pytest.fixture(autouse=True)
+def _ports_are_always_fakes(settings) -> None:  # type: ignore[no-untyped-def]
+    """No test may reach a real provider — rule 13, SRS §34.8.
+
+    Rule 13 requires every vendor adapter to have "a fake for tests", and this
+    is what makes that true rather than merely available. `PORT_ADAPTERS` is
+    read from the environment so a deployment can select an adapter without a
+    code change (`config/settings/base.py`), and `docker-compose.yml` passes
+    the variables straight through — so the moment a developer put real SMTP
+    credentials in `.env` to try the verification email, the suite started
+    resolving `SmtpEmailAdapter` and attempting to send. It was caught by
+    fakes-only assertions failing on `.sent`; the next such port might simply
+    have worked, quietly, against somebody's live account.
+
+    Emptying the map sends every port back to its fake in
+    `apps.common.ports_registry`. Cleared on the way in and out because the
+    resolution is `@cache`d per process.
+    """
+    from apps.common.ports_registry import reset_ports
+
+    settings.PORT_ADAPTERS = {}
+    reset_ports()
+    yield
+    reset_ports()

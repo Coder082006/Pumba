@@ -28,6 +28,7 @@ from apps.common.permissions import IsAuthenticatedPrincipal
 from apps.common.throttling import LoginEmailThrottle, LoginIpThrottle, RegistrationThrottle
 from apps.identity import serializers as ser
 from apps.identity import services
+from apps.identity.models import User
 from apps.identity.selectors import list_devices_for_principal
 
 __all__ = [
@@ -134,16 +135,33 @@ class RegisterView(_PublicView):
 
     @extend_schema(
         request=ser.RegisterSerializer,
-        responses={201: ser.UserSerializer},
+        responses={202: ser.RegistrationAcceptedSerializer},
         summary="Register a tourist account",
     )
     def post(self, request: Request) -> Response:
+        """**202, and no user object** — ADR 0021.
+
+        It answered 201 with the created account while §28.2.1's SD-01 inserted
+        a `user` row here. Nothing is created now until the code is verified,
+        so there is no `public_id` to return and no account to describe. 202
+        Accepted says what actually happened: the details are understood and
+        held, and the registration completes elsewhere.
+
+        The address is echoed because the client needs it for the verification
+        dialog and for Resend, and it is the one the *server* normalised —
+        which is what every later call must use.
+        """
         payload = ser.RegisterSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
-        dto = services.register_tourist(**payload.validated_data, ip=_client_ip(request))
+        services.register_tourist(**payload.validated_data, ip=_client_ip(request))
         return Response(
-            success_envelope({"user": _user_payload(dto), "verification_required": True}),
-            status=status.HTTP_201_CREATED,
+            success_envelope(
+                {
+                    "email": User.normalise_email(payload.validated_data["email"]),
+                    "verification_required": True,
+                }
+            ),
+            status=status.HTTP_202_ACCEPTED,
         )
 
 

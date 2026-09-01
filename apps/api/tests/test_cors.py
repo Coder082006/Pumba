@@ -132,7 +132,9 @@ class TestWhatTheBrowserActuallyReceives:
         too, and a configuration that satisfied one and not the other would
         fail after the request had already been made."""
         response = self._register(APIClient(), "ada@example.com")
-        assert response.status_code == 201
+        # 202, not 201 — ADR 0021 creates nothing at registration, so there is
+        # no resource to report as created.
+        assert response.status_code == 202
         assert response.headers["access-control-allow-credentials"] == "true"
 
     def test_an_unknown_origin_is_not_echoed(self) -> None:
@@ -150,19 +152,23 @@ class TestWhatTheBrowserActuallyReceives:
         """The reason credentials are needed at all (ADR 0008). If this stops
         being true the setting above becomes unnecessary rather than wrong, and
         the next reader should find out here."""
+        from django.contrib.auth.hashers import make_password
         from django.utils import timezone
 
         from apps.identity import repositories as identity_repo
         from apps.identity.views import REFRESH_COOKIE
 
         client = APIClient()
-        self._register(client, "grace@example.com")
-
-        # Verified through the repository rather than by updating columns: the
-        # field names are the module's business, and a test that reaches past
-        # its own boundary breaks on a rename that broke nothing.
-        user = identity_repo.find_user_by_email("grace@example.com")
-        assert user is not None
+        # Built through the repository. ADR 0021 means registering writes
+        # nothing until a code is verified, and this test is about a cookie on
+        # a login response — not about the verification flow, which has its own
+        # file.
+        user = identity_repo.create_tourist(
+            email="grace@example.com",
+            password_hash=make_password("Str0ng-Passw0rd!x"),
+            first_name="Grace",
+            last_name="Hopper",
+        )
         identity_repo.mark_email_verified(user, now=timezone.now())
 
         response = client.post(

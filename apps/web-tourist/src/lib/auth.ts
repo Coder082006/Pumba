@@ -33,8 +33,15 @@ interface LoginResponse {
   principal: { public_id: string; roles: string[] };
 }
 
+/**
+ * `POST /auth/register` — 202, and no user object (ADR 0021).
+ *
+ * Nothing is created until the emailed code is verified, so there is no
+ * account to describe. The address comes back as the *server* normalised it,
+ * which is the form every later call has to use.
+ */
 interface RegisterResponse {
-  user: { public_id: string; email: string; status: string };
+  email: string;
   verification_required: boolean;
 }
 

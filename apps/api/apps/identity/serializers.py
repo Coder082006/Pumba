@@ -32,6 +32,7 @@ __all__ = [
     "MfaConfirmSerializer",
     "DeviceRegisterSerializer",
     "UserSerializer",
+    "RegistrationAcceptedSerializer",
     "TokenPairSerializer",
     "PrincipalSerializer",
     "SessionSerializer",
@@ -145,6 +146,17 @@ class UserSerializer(serializers.Serializer[Any]):
     roles: ClassVar[Any] = serializers.ListField(child=serializers.CharField(), read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
     profile = TouristProfileSerializer(read_only=True, allow_null=True)
+
+
+class RegistrationAcceptedSerializer(serializers.Serializer[Any]):
+    """What `POST /auth/register` answers with — ADR 0021.
+
+    No user, because none exists yet. The address comes back normalised by the
+    server, since that is the form every later call has to use.
+    """
+
+    email = serializers.EmailField(read_only=True)
+    verification_required = serializers.BooleanField(read_only=True)
 
 
 class TokenPairSerializer(serializers.Serializer[Any]):

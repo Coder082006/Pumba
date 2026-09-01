@@ -255,7 +255,19 @@ class FakeEmail(_RecordingSender):
         template_id: str | None = None,
         context: dict[str, str] | None = None,
     ) -> DeliveryResult:
-        return self._record(to, subject=subject, html_body=html_body, template_id=template_id)
+        # `context` is recorded, not dropped. The port declares it and a
+        # provider adapter renders from it, so a fake that discarded it could
+        # not tell whether the right values were handed over — and a test would
+        # be reduced to scraping the rendered HTML for a secret, which asserts
+        # on the wording rather than the data.
+        return self._record(
+            to,
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+            template_id=template_id,
+            context=dict(context or {}),
+        )
 
 
 class FakeSms(_RecordingSender):

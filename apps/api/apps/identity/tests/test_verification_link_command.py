@@ -1,18 +1,22 @@
 """The development aid that unblocks registration — no SRS section, by design.
 
-`verification_link` exists because no email provider is selected yet, so
-`get_email_port()` resolves to `FakeEmail` and the token registration issues is
-recorded in memory and surfaced nowhere. Locally that made an account that
-could be created and never signed into.
+`verification_link` exists because no email provider need be configured for a
+developer to finish an account: with `EMAIL_ADAPTER` unset, `get_email_port()`
+resolves to `FakeEmail`, which records the message in memory and surfaces it
+nowhere. Without this, a local registration could be started and never
+completed.
 
-Two properties are worth defending, and one of them is a security boundary:
+Two properties are worth defending, and one is a security boundary:
 
-* it refuses to run with `DEBUG` off, because issuing a verification token to
+* it refuses to run with `DEBUG` off, because handing a verification secret to
   whoever can reach a shell defeats the only thing verification proves;
-* it goes through `issue_one_time_token`, so a token it prints is one
-  `verify_email` accepts. A command that flipped `email_verified_at` directly
-  would keep working while the token path was broken, which is exactly the
-  failure it must not hide.
+* it goes through `resend_verification` — the same call the API makes — so the
+  code and link it prints are ones the endpoints accept. A command that reached
+  into the cache and rebuilt them itself would keep working while the flow it
+  exists to exercise was broken.
+
+Since ADR 0021 it operates on a **registration in progress**, not an account:
+nothing is written to the database until a code is verified.
 """
 
 from __future__ import annotations
@@ -20,11 +24,13 @@ from __future__ import annotations
 from io import StringIO
 
 import pytest
+from django.contrib.auth.hashers import make_password
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from apps.identity import services
-from apps.identity.models import User
+from apps.common.errors import ValidationError
+from apps.identity import pending, services
+from apps.identity import repositories as repo
 
 pytestmark = pytest.mark.django_db
 
@@ -32,12 +38,10 @@ EMAIL = "ada@example.com"
 PASSWORD = "Str0ng-Passw0rd!x"
 
 
-def _register() -> User:
+def _register(email: str = EMAIL) -> None:
     services.register_tourist(
-        email=EMAIL, password=PASSWORD, first_name="Ada", last_name="Lovelace"
+        email=email, password=PASSWORD, first_name="Ada", last_name="Lovelace"
     )
-    user = User.objects.get(email=EMAIL)
-    return user
 
 
 def _run(*args: str) -> str:
@@ -60,25 +64,20 @@ class TestInDevelopment:
     def _debug_on(self, settings) -> None:  # type: ignore[no-untyped-def]
         settings.DEBUG = True
 
-    def test_it_prints_a_link_the_verify_endpoint_accepts(self) -> None:
-        """The property that makes this worth having rather than a shortcut:
-        the token is real, so the command cannot pass while the flow it exists
-        to exercise is broken."""
-        _register()
-        token = _run(EMAIL).rsplit("token=", 1)[1]
-
-        dto = services.verify_email(token)
-        assert dto.email_verified
-
     def test_it_prints_a_code_the_dialog_endpoint_accepts(self) -> None:
-        """The other half. §24.3's dialog asks for six digits, and a command
-        that printed only the link would leave that screen untestable — which
-        is the situation this command exists to end."""
+        """The property that makes this worth having rather than a shortcut:
+        the code is real, so the command cannot pass while the flow it exists
+        to exercise is broken."""
         _register()
         code = _code_from(_run(EMAIL))
 
-        dto = services.verify_email_code(EMAIL, code)
-        assert dto.email_verified
+        assert services.verify_email_code(EMAIL, code).email_verified
+
+    def test_it_prints_a_link_the_verify_endpoint_accepts(self) -> None:
+        _register()
+        token = _run(EMAIL).rsplit("token=", 1)[1]
+
+        assert services.verify_email(token).email_verified
 
     def test_the_code_is_six_digits(self) -> None:
         _register()
@@ -98,19 +97,41 @@ class TestInDevelopment:
             EMAIL, "--base-url", "http://192.168.1.4:3000"
         )
 
-    def test_an_already_verified_account_is_told_so_rather_than_reissued(self) -> None:
-        """A fresh token for an account that does not need one is a live
-        credential nobody asked for."""
-        user = _register()
-        token = _run(EMAIL).rsplit("token=", 1)[1]
-        services.verify_email(token)
-        user.refresh_from_db()
+    def test_it_supersedes_the_previous_code(self) -> None:
+        """It reissues rather than reading back what was sent, so the code it
+        prints is the only live one — printing a stale code would be worse
+        than printing none."""
+        _register()
+        first = _code_from(_run(EMAIL))
+        second = _code_from(_run(EMAIL))
 
+        assert first != second
+        with pytest.raises(ValidationError):
+            services.verify_email_code(EMAIL, first)
+
+    def test_an_address_with_a_real_account_is_told_so(self) -> None:
+        """Not an error, and no secret. There is nothing to verify."""
+        repo.create_tourist(
+            email=EMAIL,
+            password_hash=make_password(PASSWORD),
+            first_name="Ada",
+            last_name="Lovelace",
+        )
         assert "already verified" in _run(EMAIL)
 
-    def test_an_unknown_address_is_an_error_not_a_token(self) -> None:
-        with pytest.raises(CommandError, match="no account"):
+    def test_an_address_with_no_registration_is_an_error_not_a_secret(self) -> None:
+        """ADR 0021: there is no account to look up and no entry to reissue
+        against. The message says to register first rather than inventing a
+        registration nobody asked for."""
+        with pytest.raises(CommandError, match="no registration in progress"):
             _run("nobody@example.com")
+
+    def test_it_creates_no_account_of_its_own(self) -> None:
+        from apps.identity.models import User
+
+        _register()
+        _run(EMAIL)
+        assert User.objects.count() == 0
 
 
 class TestOutsideDevelopment:
@@ -120,19 +141,21 @@ class TestOutsideDevelopment:
 
     def test_it_refuses_to_run(self) -> None:
         """The security boundary. Verification proves the registrant can read
-        the mailbox they claimed; a command that issues tokens on demand proves
-        nothing at all."""
+        the mailbox they claimed; a command that hands out secrets on demand
+        proves nothing at all."""
         _register()
         with pytest.raises(CommandError, match="DEBUG"):
             _run(EMAIL)
 
-    def test_the_refusal_issues_no_token(self) -> None:
-        """A refusal that had already written the row would be worse than no
-        refusal, because it would look safe."""
-        from apps.identity.models import OneTimeToken
-
+    def test_the_refusal_issues_nothing(self) -> None:
+        """A refusal that had already superseded the live code would be worse
+        than no refusal, because it would look safe while locking the person
+        out of the code they were sent."""
         _register()
-        before = OneTimeToken.objects.count()
+        before = pending.get(EMAIL)
         with pytest.raises(CommandError):
             _run(EMAIL)
-        assert OneTimeToken.objects.count() == before
+        after = pending.get(EMAIL)
+
+        assert before is not None and after is not None
+        assert before.code_hash == after.code_hash

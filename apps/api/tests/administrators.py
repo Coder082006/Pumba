@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -47,12 +48,18 @@ def signed_in_as(*role: Role, email: str | None = None) -> APIClient:
     are about.
     """
     address = email or f"actor-{uuid.uuid4().hex[:10]}@example.com"
-    identity_services.register_tourist(
-        email=address, password=PASSWORD, first_name="Test", last_name="Actor"
+    # Built through the repository rather than by registering and verifying.
+    # ADR 0021 means `register_tourist` writes nothing to the database — it
+    # stages the details and emails a code — so driving it here would leave no
+    # user at all. These tests need a principal, not the ceremony that produces
+    # one, and going through the service would make every authorisation test
+    # depend on the verification flow staying correct.
+    user = identity_repo.create_tourist(
+        email=address,
+        password_hash=make_password(PASSWORD),
+        first_name="Test",
+        last_name="Actor",
     )
-    user = identity_repo.find_user_by_email(address)
-    assert user is not None
-
     identity_repo.mark_email_verified(user, now=timezone.now())
     for granted in role:
         identity_repo.grant_role(user, granted)

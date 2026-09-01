@@ -454,11 +454,22 @@ PASSWORD = "a-perfectly-fine-passphrase"
 
 
 def make_user(email: str) -> Any:
-    services.register_tourist(email=email, password=PASSWORD, first_name="Test", last_name="User")
-    user = repo.find_user_by_email(email)
-    assert user is not None
+    """A verified account, built through the repository.
+
+    ADR 0021 means `register_tourist` writes nothing to the database, so
+    "register, then look the user up" now finds nothing. These tests are about
+    whether a foreign principal gets 404; they need a principal, not the
+    registration ceremony that produces one.
+    """
+    from django.contrib.auth.hashers import make_password
     from django.utils import timezone
 
+    user = repo.create_tourist(
+        email=email,
+        password_hash=make_password(PASSWORD),
+        first_name="Test",
+        last_name="User",
+    )
     repo.mark_email_verified(user, now=timezone.now())
     user.refresh_from_db()
     return user

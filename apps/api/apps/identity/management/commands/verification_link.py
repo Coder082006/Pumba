@@ -13,27 +13,31 @@ running without a configured adapter, and a misconfigured production is exactly
 the environment where that is worst.
 
 **This issues real secrets through the real path** rather than flipping a
-column. Marking `email_verified` directly would let this command keep working
-while the token path was broken, which is the one thing it must not do.
+column. It calls `resend_verification` and reads what the fake email port
+recorded, so a code it prints is one the endpoint accepts — and the command
+cannot keep working while the flow it exists to exercise is broken.
 
 It prints **both** the six-digit code and the link, because the verification
 email carries both and they are spent on different screens — the code in
 §24.3's dialog, the link at `/verify-email`. Printing one would leave half the
 flow untestable, which is the situation this command exists to end.
+
+**It needs a registration in progress** (ADR 0021). Nothing is written to the
+database until a code is verified, so there is no account to look up — the
+details live in `pending` for the length of the TTL, and this reissues against
+them. Register first; if the entry has expired, register again.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-from django.utils import timezone
 
 from apps.common.config import get_setting
+from apps.identity import pending, services
 from apps.identity import repositories as repo
-from apps.identity.models import TokenPurpose
 
 
 class Command(BaseCommand):
@@ -59,25 +63,29 @@ class Command(BaseCommand):
             )
 
         email = options["email"]
-        user = repo.find_user_by_email(email)
-        if user is None:
-            raise CommandError(f"no account for {email!r}")
+        entry = pending.get(email)
+        if entry is None:
+            if repo.find_user_by_email(email) is not None:
+                self.stdout.write(f"{email} is already verified — sign in normally.")
+                return
+            raise CommandError(
+                f"no registration in progress for {email!r} — register first, or the "
+                "code has already expired"
+            )
 
-        if user.email_verified_at is not None:
-            self.stdout.write(f"{email} is already verified — sign in normally.")
-            return
+        # Reissued through the same staging call the API makes, so the printed
+        # secrets are ones the endpoints accept — and the command cannot keep
+        # working while the flow it exists to exercise is broken.
+        #
+        # The service hands them back rather than the command reading them out
+        # of the email port: only `FakeEmail` records what it was given, so
+        # scraping it would make this work *only* while no real provider was
+        # configured, which is the opposite of useful.
+        issued = services.reissue_verification(email)
+        if issued is None:  # pragma: no cover - guarded above
+            raise CommandError(f"nothing to reissue for {email!r}")
+        code, token = issued
 
-        now = timezone.now()
-        raw = repo.issue_one_time_token(
-            user,
-            TokenPurpose.EMAIL_VERIFICATION,
-            ttl=timedelta(hours=int(get_setting("auth.email_verification_ttl_hours"))),
-            now=now,
-        )
         minutes = int(get_setting("auth.email_verification_code_ttl_minutes"))
-        code = repo.issue_verification_code(user, ttl=timedelta(minutes=minutes), now=now)
-
-        # Both, because the email carries both and they are spent on different
-        # screens: the code in §24.3's dialog, the link at `/verify-email`.
         self.stdout.write(f"code: {code}   (expires in {minutes} minutes)")
-        self.stdout.write(f"link: {options['base_url']}/verify-email?token={raw}")
+        self.stdout.write(f"link: {options['base_url']}/verify-email?token={token}")

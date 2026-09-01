@@ -184,20 +184,23 @@ class TestOnlyACatalogueAdministratorReachesTheConsole:
         without TOTP. Asserted here so that the console's dependence on it is
         recorded where the console is tested.
         """
+        from django.contrib.auth.hashers import make_password
         from django.utils import timezone
 
         from apps.identity import repositories as identity_repo
         from apps.identity import services as identity_services
         from apps.identity.services import MfaRequiredError
 
-        identity_services.register_tourist(
+        # Built through the repository: ADR 0021 means registering writes
+        # nothing until a code is verified, and this test is about what
+        # happens at the door to an administrator who never enrolled a second
+        # factor — not about how the account came to exist.
+        user = identity_repo.create_tourist(
             email="unenrolled-admin@example.com",
-            password="correct-horse-battery-staple-42",
+            password_hash=make_password("correct-horse-battery-staple-42"),
             first_name="Un",
             last_name="Enrolled",
         )
-        user = identity_repo.find_user_by_email("unenrolled-admin@example.com")
-        assert user is not None
         identity_repo.mark_email_verified(user, now=timezone.now())
         identity_repo.grant_role(user, Role.CATALOGUE_ADMIN)
 

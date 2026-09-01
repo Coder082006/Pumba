@@ -1462,7 +1462,18 @@ paths:
   /api/v1/auth/register:
     post:
       operationId: auth_register_create
-      description: SRS §9.4.1.
+      description: |-
+        **202, and no user object** — ADR 0021.
+
+        It answered 201 with the created account while §28.2.1's SD-01 inserted
+        a `user` row here. Nothing is created now until the code is verified,
+        so there is no `public_id` to return and no account to describe. 202
+        Accepted says what actually happened: the details are understood and
+        held, and the registration completes elsewhere.
+
+        The address is echoed because the client needs it for the verification
+        dialog and for Resend, and it is the one the *server* normalised —
+        which is what every later call must use.
       summary: Register a tourist account
       tags:
       - auth
@@ -1481,11 +1492,11 @@ paths:
       security:
       - {}
       responses:
-        '201':
+        '202':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/RegistrationAccepted'
           description: ''
   /api/v1/auth/verify-email:
     post:
@@ -4314,6 +4325,24 @@ components:
       - first_name
       - last_name
       - password
+    RegistrationAccepted:
+      type: object
+      description: |-
+        What `POST /auth/register` answers with — ADR 0021.
+
+        No user, because none exists yet. The address comes back normalised by the
+        server, since that is the form every later call has to use.
+      properties:
+        email:
+          type: string
+          format: email
+          readOnly: true
+        verification_required:
+          type: boolean
+          readOnly: true
+      required:
+      - email
+      - verification_required
     ResendVerificationRequest:
       type: object
       description: |-

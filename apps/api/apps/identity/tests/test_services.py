@@ -7,9 +7,9 @@ failure names the acceptance criterion it breaks.
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
 
 import pytest
+from django.contrib.auth.hashers import check_password, make_password
 from django.utils import timezone
 
 from apps.common import audit
@@ -17,11 +17,10 @@ from apps.common.audit import AuditRecord
 from apps.common.authz import Role as RoleEnum
 from apps.common.errors import AuthenticationError, ConflictError, ValidationError
 from apps.common.ports_registry import get_breach_port, get_email_port, reset_ports
+from apps.identity import pending, services
 from apps.identity import repositories as repo
-from apps.identity import services
 from apps.identity.models import (
     Device,
-    OneTimeToken,
     Session,
     User,
     UserStatus,
@@ -67,9 +66,19 @@ def register(email: str = "alice@example.com", password: str = VALID_PASSWORD, *
 
 
 def verified_user(email: str = "alice@example.com", password: str = VALID_PASSWORD) -> User:
-    register(email=email, password=password)
-    user = repo.find_user_by_email(email)
-    assert user is not None
+    """An account that exists, built without the registration ceremony.
+
+    ADR 0021 means `register_tourist` writes nothing to the database, so this
+    can no longer be "register, then mark verified". Tests about login,
+    refresh and lockout need a user; going through the service would make all
+    of them depend on the verification flow, which has its own file.
+    """
+    user = repo.create_tourist(
+        email=email,
+        password_hash=make_password(password),
+        first_name="Alice",
+        last_name="Muller",
+    )
     repo.mark_email_verified(user, now=timezone.now())
     user.refresh_from_db()
     return user
@@ -80,53 +89,107 @@ def audit_actions(recorded: list[AuditRecord]) -> list[str]:
 
 
 class TestTc001Register:
-    def test_creates_a_pending_user_and_a_profile(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
-        dto = register()
-        assert dto.status == UserStatus.PENDING
-        assert dto.profile is not None
-        assert dto.profile.first_name == "Alice"
+    """§9.4.1 as amended by ADR 0021: registering creates nothing.
 
-    def test_grants_the_tourist_role(self) -> None:
-        assert register().roles == {str(RoleEnum.TOURIST)}
+    TC-001 read "creates user (status PENDING) and tourist_profile". That is
+    the behaviour the amendment removes — the `user` table now holds verified
+    accounts only, and everything TC-001 described happens in
+    `verify_email_code`, which `test_verification_code.py` covers.
+    """
 
-    def test_sends_a_verification_email(  # type: ignore[no-untyped-def]
-        self, email_port, django_capture_on_commit_callbacks
-    ) -> None:
-        """Sent via transaction.on_commit: an email is not rollback-able, and
-        a verification link for a user row that never existed is worse than a
-        delayed one. The test has to let the commit hooks run."""
-        with django_capture_on_commit_callbacks(execute=True):
-            register()
+    def test_no_user_row_is_created(self) -> None:
+        register()
+        assert User.objects.count() == 0
+
+    def test_no_profile_is_created_either(self) -> None:
+        """The row TC-001 named second. A profile for an account that does not
+        exist would be the same orphan by another name."""
+        from apps.identity.models import TouristProfile
+
+        register()
+        assert TouristProfile.objects.count() == 0
+
+    def test_it_returns_nothing_to_describe(self) -> None:
+        """No DTO, because there is no account. Returning one would put a
+        `public_id` on the wire for something that may never exist."""
+        assert register() is None
+
+    def test_the_details_are_held_for_verification(self) -> None:
+        register()
+        held = pending.get("alice@example.com")
+        assert held is not None
+        assert held.first_name == "Alice"
+
+    def test_the_password_is_held_hashed_never_in_plain(self) -> None:
+        """The cache is no weaker a place for a credential than the password
+        column — but only because the same Argon2 hashing happens first."""
+        register()
+        held = pending.get("alice@example.com")
+        assert held is not None
+        assert VALID_PASSWORD not in held.password_hash
+        assert check_password(VALID_PASSWORD, held.password_hash)
+
+    def test_sends_a_verification_email(self, email_port) -> None:  # type: ignore[no-untyped-def]
+        """Sent directly now rather than from an `on_commit` hook: there is no
+        transaction to hang it on, because there is no write."""
+        register()
         assert [m["recipient"] for m in email_port.sent] == ["alice@example.com"]
 
-    def test_writes_an_audit_row(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
+    def test_no_audit_row_yet(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
+        """§41.13 audits what happened. Nothing has, and an entry naming an
+        account that does not exist could not carry an entity id."""
         register()
-        assert "user.register" in audit_actions(_recording_audit_sink)
-
-    def test_the_dto_never_carries_a_credential(self, _recording_audit_sink) -> None:  # type: ignore[no-untyped-def]
-        dto = register()
-        assert not hasattr(dto, "password")
-        assert not hasattr(dto, "mfa_secret")
-        assert not hasattr(dto, "id")
+        assert "user.register" not in audit_actions(_recording_audit_sink)
 
 
 class TestTc002DuplicateRegistration:
-    def test_a_second_registration_conflicts(self) -> None:
-        register()
+    """§9.4.1's 409, against a *real* account — ADR 0021.
+
+    The conflict used to fire on the PENDING row a first registration left
+    behind. There is no such row now, so it fires against a verified account
+    and nothing else — which is both what §24.3's "this email is already
+    registered, log in instead" actually means, and the only case where the
+    message is true.
+    """
+
+    def test_registering_over_a_real_account_conflicts(self) -> None:
+        verified_user()
         with pytest.raises(ConflictError) as exc:
             register()
         assert exc.value.code == "EMAIL_ALREADY_REGISTERED"
 
-    def test_no_second_user_row_is_created(self) -> None:
-        register()
-        with pytest.raises(ConflictError):
-            register()
-        assert User.objects.count() == 1
-
     def test_a_differently_cased_address_is_the_same_account(self) -> None:
-        register(email="Alice@Example.com")
+        verified_user(email="alice@example.com")
         with pytest.raises(ConflictError):
             register(email="alice@EXAMPLE.COM")
+
+    def test_a_second_attempt_at_an_unverified_address_is_allowed(self) -> None:
+        """Deliberate, and the opposite of the old behaviour.
+
+        Somebody who mistyped their address, or whose first email never
+        arrived, registers again. Refusing would lock them out of their own
+        address for the length of the TTL over a mistake they are trying to
+        correct — and there is no account to protect, because none exists.
+        """
+        register()
+        register()
+        assert User.objects.count() == 0
+
+    def test_the_second_attempt_supersedes_the_first_code(self) -> None:
+        """One live code per address. Two would double an attacker's guesses
+        and leave a code alive that the person has already given up on."""
+        register()
+        first = pending.get("alice@example.com")
+        register()
+        second = pending.get("alice@example.com")
+
+        assert first is not None and second is not None
+        assert first.code_hash != second.code_hash
+
+    def test_no_user_row_survives_either_attempt(self) -> None:
+        register()
+        register()
+        assert User.objects.count() == 0
 
 
 class TestTc003WeakPassword:
@@ -170,14 +233,14 @@ class TestBreachCheckFailurePolicy:
 
 
 class TestEmailVerification:
-    def test_a_valid_token_activates_the_account(self, django_capture_on_commit_callbacks) -> None:  # type: ignore[no-untyped-def]
-        raw = _register_and_capture(django_capture_on_commit_callbacks)
+    def test_a_valid_token_activates_the_account(self) -> None:
+        raw = _register_and_capture()
         dto = services.verify_email(raw)
         assert dto.status == UserStatus.ACTIVE
         assert dto.email_verified
 
-    def test_a_token_cannot_be_used_twice(self, django_capture_on_commit_callbacks) -> None:  # type: ignore[no-untyped-def]
-        raw = _register_and_capture(django_capture_on_commit_callbacks)
+    def test_a_token_cannot_be_used_twice(self) -> None:
+        raw = _register_and_capture()
         services.verify_email(raw)
         with pytest.raises(ValidationError):
             services.verify_email(raw)
@@ -186,16 +249,24 @@ class TestEmailVerification:
         with pytest.raises(ValidationError):
             services.verify_email("not-a-real-token")
 
-    def test_an_expired_token_is_refused(self, django_capture_on_commit_callbacks) -> None:  # type: ignore[no-untyped-def]
-        raw = _register_and_capture(django_capture_on_commit_callbacks)
-        OneTimeToken.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+    def test_a_token_for_a_registration_that_has_expired_is_refused(self) -> None:
+        """Expiry is the cache's TTL now, not an `expires_at` column — ADR
+        0021 keeps nothing in the database to age. Dropping the entry is what
+        the TTL does when it fires."""
+        raw = _register_and_capture()
+        pending.drop("alice@example.com")
         with pytest.raises(ValidationError):
             services.verify_email(raw)
 
 
-def _register_and_capture(capture) -> str:  # type: ignore[no-untyped-def]
-    with capture(execute=True):
-        register()
+def _register_and_capture() -> str:
+    """Register and read the link token back out of the email.
+
+    No `django_capture_on_commit_callbacks` any more: ADR 0021 leaves nothing
+    to commit, so `_stage_registration` sends the message directly instead of
+    from an `on_commit` hook.
+    """
+    register()
     return _verification_link_token(get_email_port())
 
 
@@ -338,13 +409,31 @@ class TestTc013NonEnumeration:
             services.authenticate(email="alice@example.com", password=VALID_PASSWORD)
 
     def test_an_unverified_account_is_only_revealed_to_the_password_holder(self) -> None:
-        register()
+        """The guard still matters even though registration can no longer
+        produce an unverified account (ADR 0021): an administrator can create
+        one, and a future import path could. Built through the repository so
+        the case is exercised rather than assumed unreachable.
+        """
+        repo.create_tourist(
+            email="alice@example.com",
+            password_hash=make_password(VALID_PASSWORD),
+            first_name="Alice",
+            last_name="Muller",
+        )
         with pytest.raises(AuthenticationError) as wrong:
             services.authenticate(email="alice@example.com", password="wrong-but-long-enough")
         assert wrong.value.code == "INVALID_CREDENTIALS"
 
         with pytest.raises(services.EmailNotVerifiedError):
             services.authenticate(email="alice@example.com", password=VALID_PASSWORD)
+
+    def test_registering_leaves_nothing_to_enumerate(self) -> None:
+        """The strongest form of non-enumeration, and a side effect worth
+        naming: an address that was registered but never verified is
+        indistinguishable from one nobody has ever typed, because there is no
+        row either way."""
+        register(email="ghost@example.com")
+        assert repo.find_user_by_email("ghost@example.com") is None
 
     def test_password_reset_says_nothing_about_existence(self, email_port) -> None:  # type: ignore[no-untyped-def]
         """§24.5 — identical outcome, and nothing to branch on."""
