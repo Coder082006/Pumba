@@ -313,3 +313,41 @@ LOGGING = {
         "django.request": {"handlers": ["console"], "level": "INFO", "propagate": False},
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Outbound email — SRS §19.4, §34.8, rule 13
+# ---------------------------------------------------------------------------
+#
+# `PORT_ADAPTERS` names the implementation behind each port; anything absent
+# resolves to its deterministic fake (`apps.common.ports_registry`). Email is
+# read from the environment so the same image sends for real in one deployment
+# and records to memory in another, without a branch in any service.
+#
+# **The default is the fake, and that is the safe direction.** CI has no mail
+# server and must never acquire one; a teammate without credentials gets a
+# working stack rather than a broken one. Sending is opt-in, by supplying
+# `EMAIL_ADAPTER` — so the failure mode of a missing variable is "no mail",
+# never "mail to a stranger from a half-configured host".
+PORT_ADAPTERS = {
+    "email": env("EMAIL_ADAPTER", default="fake"),
+}
+
+# Django's SMTP transport, which `apps.notify.adapters.smtp` sends through.
+# Names are Django's own so the framework's connection handling applies
+# unchanged.
+#
+# §30.9: no secret in source control, in an image, or in a committed env file.
+# `EMAIL_HOST_PASSWORD` has an empty default and belongs in `.env`, which is
+# gitignored — `.env.example` documents the name and never the value.
+EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", default="")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
+
+# The From address. A real one, because a verification mail from an address
+# that bounces is a deliverability problem as much as a courtesy one.
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Pumba <no-reply@localhost>")

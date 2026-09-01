@@ -73,6 +73,16 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       CHANNELS_REDIS_URL: redis://redis:6379/3
+      # Outbound email. Absent by default, which resolves to the fake — see
+      # `config/settings/base.py`. Supply these in `.env` (gitignored, §30.9)
+      # to send real verification codes from the local stack.
+      EMAIL_ADAPTER: ${EMAIL_ADAPTER:-fake}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-true}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Pumba <no-reply@localhost>}
     volumes:
       - ./apps/api:/app
       # The bind mount above would otherwise hide the image's virtualenv, and
