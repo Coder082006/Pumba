@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import { AccountMenu } from '@/components/shell/account-menu';
+
 /**
  * The persistent header — SRS §24.
  *
@@ -55,12 +57,14 @@ export function SiteHeader() {
         <nav aria-label="Main" className="flex items-center gap-6 text-sm font-medium">
           <NavLink href="/explore">Explore</NavLink>
           <NavLink href="/stays">Where to stay</NavLink>
-          <Link
-            href="/login"
-            className="rounded-md bg-primary px-4 py-2 text-primary-foreground shadow-sm transition-colors duration-fast ease-out hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            Sign in
-          </Link>
+          {/*
+            The one part of the header that depends on who is looking. It was a
+            permanent "Sign in" button, which stayed on screen after signing in
+            — the header is server-rendered and ADR 0008 keeps the token in the
+            browser's memory, so the server cannot know. `AccountMenu` is a
+            client island; the rest of this header still renders on the server.
+          */}
+          <AccountMenu />
         </nav>
       </div>
     </header>

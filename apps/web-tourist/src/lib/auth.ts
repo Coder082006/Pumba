@@ -7,7 +7,7 @@
  */
 
 import { API_BASE_URL, ApiRequestError, apiFetch } from './api';
-import { discardRefreshToken, setAccessToken, setPrincipal } from './session';
+import { clearSession, discardRefreshToken, getAccessToken, setAccessToken, setPrincipal } from './session';
 
 export interface RegisterInput {
   email: string;
@@ -117,6 +117,31 @@ export async function refreshSession(): Promise<boolean> {
   }
 }
 
+/**
+ * Restore a session once per page load, and only once.
+ *
+ * **The single-flight is the point, not an optimisation.** `/auth/refresh`
+ * rotates: presenting a token that has already been superseded is treated as
+ * theft, and the server revokes the entire family and emails the owner that
+ * they have been signed out of every device. Two components each calling
+ * `refreshSession` on mount — the header and the guard on `/trips`, which is
+ * exactly what happens when a signed-in tourist opens the planner — would race,
+ * and the loser would present a spent token and log the user out of their own
+ * account.
+ *
+ * So every caller shares one promise. It is never reset: if the refresh
+ * succeeded there is a token and this short-circuits; if it failed there is no
+ * cookie worth retrying, and a signed-out visitor browsing the catalogue should
+ * not fire a request per page. A real page reload starts the module again.
+ */
+let bootstrap: Promise<boolean> | null = null;
+
+export function ensureSession(): Promise<boolean> {
+  if (getAccessToken() !== null) return Promise.resolve(true);
+  bootstrap ??= refreshSession();
+  return bootstrap;
+}
+
 export async function requestPasswordReset(email: string): Promise<void> {
   await authFetch<{ message: string }>('/auth/password/forgot', { email });
 }
@@ -130,7 +155,14 @@ export async function verifyEmail(token: string): Promise<void> {
 }
 
 export async function logout(): Promise<void> {
-  await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
+  try {
+    await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
+  } finally {
+    // Cleared whatever the server said. A logout that left the browser holding
+    // a live access token because the request failed would be the one failure
+    // mode a user cannot see and cannot correct.
+    clearSession();
+  }
 }
 
 /**

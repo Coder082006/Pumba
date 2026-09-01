@@ -31,10 +31,36 @@ let accessToken: string | null = null;
 let expiresAt: number | null = null;
 let principal: Principal | null = null;
 
+/**
+ * Who wants to know when the session changes.
+ *
+ * The header renders differently signed in and signed out, and it lives in the
+ * layout — which the App Router does *not* remount on a client-side
+ * navigation. So `router.push('/')` after a successful login would leave a
+ * "Sign in" button on screen for somebody who had just signed in, until they
+ * happened to reload. A subscription is how the header hears about it.
+ */
+type Listener = () => void;
+const listeners = new Set<Listener>();
+
+export function subscribeToSession(listener: Listener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function announce(): void {
+  // Copied before iterating: a listener that unsubscribes itself while being
+  // notified would otherwise mutate the set mid-loop.
+  for (const listener of [...listeners]) listener();
+}
+
 /** Record a freshly issued access token. Never persists it. */
 export function setAccessToken(token: string, expiresInSeconds: number): void {
   accessToken = token;
   expiresAt = Date.now() + expiresInSeconds * 1000;
+  announce();
 }
 
 export function getAccessToken(): string | null {
@@ -48,6 +74,7 @@ export function getAccessToken(): string | null {
 
 export function setPrincipal(next: Principal | null): void {
   principal = next;
+  announce();
 }
 
 export function getPrincipal(): Principal | null {
@@ -69,6 +96,7 @@ export function clearSession(): void {
   accessToken = null;
   expiresAt = null;
   principal = null;
+  announce();
 }
 
 /** Authorization header for an authenticated request, or nothing. */

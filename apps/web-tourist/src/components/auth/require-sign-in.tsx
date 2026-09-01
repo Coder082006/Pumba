@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { refreshSession } from '@/lib/auth';
+import { ensureSession } from '@/lib/auth';
 import { getAccessToken } from '@/lib/session';
 
 /**
@@ -28,6 +28,12 @@ import { getAccessToken } from '@/lib/session';
  * that read `getAccessToken()` and redirected on null would sign the tourist
  * out on every refresh, which is precisely what the app did before
  * `refreshSession` had a caller.
+ *
+ * **Through `ensureSession`, never `refreshSession` directly.** The header's
+ * `AccountMenu` also needs the session, and both mount on this page. Refresh
+ * rotates — presenting a superseded token is read as theft and revokes the
+ * whole family — so two unguarded calls would race and sign the tourist out of
+ * their own account. `ensureSession` gives every caller the same promise.
  */
 export function RequireSignIn({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -38,7 +44,7 @@ export function RequireSignIn({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (state !== 'checking') return;
     void (async () => {
-      setState((await refreshSession()) ? 'in' : 'out');
+      setState((await ensureSession()) ? 'in' : 'out');
     })();
   }, [state]);
 
