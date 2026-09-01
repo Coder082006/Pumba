@@ -44,18 +44,64 @@ class TestTheSettingItself:
         """
         assert getattr(base, "CORS_ALLOW_ALL_ORIGINS", False) is False
 
-    def test_production_denies_by_default(self) -> None:
+    def test_production_denies_every_origin_by_default(self) -> None:
         """`prod.py` reads the list from the environment with an empty default,
         so a missing variable denies every origin rather than allowing one. A
-        default of `["*"]` fails closed in the other direction — invisibly."""
-        from config.settings import prod
+        default of `["*"]` would fail *open*, and invisibly — which is the
+        combination that matters now that credentials are allowed.
 
-        assert isinstance(prod.CORS_ALLOWED_ORIGINS, list)
+        **The environment is supplied here rather than inherited.** `prod.py`
+        reads `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS` with no default,
+        on purpose — it must fail fast rather than boot on a fallback secret.
+        The first version of this test imported the module bare, which worked
+        under `docker compose` because the `api` service sets both, and failed
+        on CI where the backend job sets neither. That is the difference
+        between two surfaces being used as an explanation instead of a
+        hypothesis, and it turned the build red for three commits.
+
+        So the two required variables are injected for the length of the
+        import, and `CORS_ALLOWED_ORIGINS` is removed — which is the condition
+        actually under test.
+        """
+        import importlib
+        import os
+        from unittest import mock
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "DJANGO_SECRET_KEY": "supplied-only-for-this-import",
+                "DJANGO_ALLOWED_HOSTS": "example.test",
+            },
+        ):
+            # Inside the patch, so the original value is restored on exit.
+            os.environ.pop("CORS_ALLOWED_ORIGINS", None)
+            prod = importlib.reload(importlib.import_module("config.settings.prod"))
+
+        assert prod.CORS_ALLOWED_ORIGINS == []
+        assert prod.DEBUG is False
 
 
 @pytest.mark.django_db
 class TestWhatTheBrowserActuallyReceives:
-    """The headers on the wire, not the settings that should produce them."""
+    """The headers on the wire, not the settings that should produce them.
+
+    **The allow-list is set here rather than inherited**, and for the reason
+    the class above records. `CORS_ALLOWED_ORIGINS` lives in `dev.py` and
+    `prod.py`; `base.py` and `ci.py` never define it. So these tests passed
+    under `docker compose`, which runs `config.settings.dev`, and failed on CI,
+    which runs `config.settings.ci` with no allow-list at all — no origin
+    allowed, no headers emitted, three assertions red.
+
+    Declaring it makes the tests say what they depend on and pass under any
+    settings module. It also fixes `test_an_unknown_origin_is_not_echoed`,
+    which passed on CI for the wrong reason: with no allow-list, *nothing* is
+    echoed, so it could not have caught an over-permissive one.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _allow_the_web_client(self, settings) -> None:  # type: ignore[no-untyped-def]
+        settings.CORS_ALLOWED_ORIGINS = [ORIGIN]
 
     def _register(self, client: APIClient, email: str) -> object:
         return client.post(
