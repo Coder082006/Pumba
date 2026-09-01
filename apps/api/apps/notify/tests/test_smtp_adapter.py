@@ -155,9 +155,30 @@ class TestItSatisfiesThePort:
         finally:
             reset_ports()
 
-    def test_the_default_is_still_the_fake(self) -> None:
+    def test_the_default_is_the_fake_when_nothing_is_configured(self) -> None:
         """Sending is opt-in. The failure mode of a missing variable must be
-        "no mail", never "mail from a half-configured host"."""
-        from config.settings import base
+        "no mail", never "mail from a half-configured host".
+
+        **The variable is removed here rather than assumed absent.**
+        `PORT_ADAPTERS` is read from the environment at import, so this asserted
+        whatever the machine happened to be set to — and went red the moment a
+        developer put real SMTP credentials in `.env` to try the verification
+        email. A test about a default has to establish the absence it is
+        describing; the same mistake turned CI red for three commits in
+        `tests/test_cors.py`.
+        """
+        import importlib
+        import os
+        from unittest import mock
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "DJANGO_SECRET_KEY": "supplied-only-for-this-import",
+                "DJANGO_ALLOWED_HOSTS": "example.test",
+            },
+        ):
+            os.environ.pop("EMAIL_ADAPTER", None)
+            base = importlib.reload(importlib.import_module("config.settings.base"))
 
         assert base.PORT_ADAPTERS["email"] == "fake"
