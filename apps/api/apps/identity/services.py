@@ -622,8 +622,16 @@ def _notify(user: User, *, subject: str, body: str, template_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def refresh_tokens(raw_refresh: str, *, ip: str | None = None, user_agent: str = "") -> TokenPair:
+def refresh_tokens(raw_refresh: str, *, ip: str | None = None, user_agent: str = "") -> LoginResult:
     """Rotate a refresh token, or detect its reuse — §30.2.
+
+    **Returns who the session belongs to, not only the new tokens.** ADR 0008
+    keeps the access token in the browser's memory and nothing else, so this is
+    the call that restores a session after a reload — and a client that got
+    back a pair of tokens with no principal would have to make a second request
+    to `GET /me` before it could render anything role-dependent. Login already
+    answers with both; a rotation establishing the same session should not
+    answer with less.
 
     **Deliberately not wrapped in a single `atomic` block.** The reuse branch
     revokes the family and then raises, and under one transaction the raise
@@ -710,7 +718,13 @@ def refresh_tokens(raw_refresh: str, *, ip: str | None = None, user_agent: str =
             actor_user_id=session.user_id,
             ip=ip,
         )
-    return issued.pair
+
+    principal = repo.principal_for(session.user)
+    return LoginResult(
+        tokens=issued.pair,
+        user=to_user_dto(session.user),
+        roles=frozenset(str(role) for role in principal.roles),
+    )
 
 
 @transaction.atomic

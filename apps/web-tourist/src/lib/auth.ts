@@ -62,6 +62,54 @@ export async function login(input: LoginInput): Promise<LoginResponse> {
   return result;
 }
 
+/**
+ * §24.3's popup: the address that just registered, and the six digits emailed.
+ *
+ * The email is sent rather than inferred from a session because there is no
+ * session — the account is PENDING and cannot sign in until this succeeds.
+ */
+export async function verifyEmailCode(email: string, code: string): Promise<void> {
+  await authFetch<{ user: unknown }>('/auth/verify-email/code', { email, code });
+}
+
+/**
+ * §24.4's "offers to resend verification", and the popup's Resend.
+ *
+ * Always succeeds, including for an address with no account: an answer that
+ * differed would let anyone test who has registered here.
+ */
+export async function resendVerification(email: string): Promise<void> {
+  await authFetch<{ message: string }>('/auth/verify-email/resend', { email });
+}
+
+/**
+ * Spend the refresh cookie for a new access token — ADR 0008, §9.4.1.
+ *
+ * **Nothing called this, and the omission was invisible.** `lib/session` keeps
+ * the access token in a module variable and never persists it, which is the
+ * point of ADR 0008; the refresh cookie is what survives a reload. With no
+ * caller, the cookie was set at login, sent back on every auth request, and
+ * never spent — so signing in lasted exactly as long as the tab stayed on the
+ * page, and any reload logged the tourist out with no explanation.
+ *
+ * The body is empty on purpose. The endpoint takes the token from the body
+ * *or* the cookie, and the browser has no way to read an HttpOnly cookie —
+ * which is what makes it HttpOnly.
+ */
+export async function refreshSession(): Promise<boolean> {
+  try {
+    const result = await authFetch<LoginResponse>('/auth/refresh', {});
+    setAccessToken(result.access_token, result.expires_in);
+    setPrincipal({ publicId: result.principal.public_id, roles: result.principal.roles });
+    discardRefreshToken(result.refresh_token);
+    return true;
+  } catch {
+    // No cookie, expired, or revoked. Not an error to report: arriving without
+    // a session is the ordinary case for most visits.
+    return false;
+  }
+}
+
 export async function requestPasswordReset(email: string): Promise<void> {
   await authFetch<{ message: string }>('/auth/password/forgot', { email });
 }

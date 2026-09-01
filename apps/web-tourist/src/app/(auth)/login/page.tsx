@@ -14,14 +14,15 @@
  */
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState } from 'react';
 import { Button } from '@pumba/ui';
 import { ApiRequestError } from '@/lib/api';
 import { login, loginBannerFor, requiresMfa } from '@/lib/auth';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const params = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
@@ -39,7 +40,12 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login({ email, password, mfa_code: mfaCode || undefined });
-      router.push('/');
+      // §24.4's "→ Home, or → intended deep link". A tourist sent here by
+      // the guard on /trips is returned to the screen they asked for; a
+      // relative path only, because an absolute one in a query string is an
+      // open redirect waiting to be pasted into a phishing mail.
+      const next = params.get('next');
+      router.push(next?.startsWith('/') && !next.startsWith('//') ? next : '/');
     } catch (caught) {
       if (requiresMfa(caught)) {
         // Not an error state: the account has TOTP and simply has not been
@@ -159,5 +165,16 @@ export default function LoginPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  // `useSearchParams` — read for §24.4's "→ intended deep link" — opts the
+  // whole route into client rendering at build time unless it sits inside a
+  // boundary, and Next fails the build rather than shipping that silently.
+  return (
+    <Suspense fallback={<div aria-hidden className="mx-auto mt-16 h-96 max-w-md rounded-lg bg-muted" />}>
+      <LoginForm />
+    </Suspense>
   );
 }

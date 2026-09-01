@@ -1341,7 +1341,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenPair'
+                $ref: '#/components/schemas/Session'
           description: ''
   /api/v1/auth/logout:
     post:
@@ -1457,7 +1457,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenPair'
+                $ref: '#/components/schemas/Session'
           description: ''
   /api/v1/auth/register:
     post:
@@ -4168,6 +4168,21 @@ components:
         * `IOS` - IOS
         * `ANDROID` - ANDROID
         * `WEB` - WEB
+    Principal:
+      type: object
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        roles:
+          type: array
+          items:
+            type: string
+          readOnly: true
+      required:
+      - public_id
+      - roles
     PropertyTypeEnum:
       enum:
       - HOTEL
@@ -4376,6 +4391,39 @@ components:
       - public_id
       - rank
       - slug
+    Session:
+      type: object
+      description: |-
+        What `/auth/login` and `/auth/refresh` actually answer with.
+
+        Both were documented as a bare `TokenPairSerializer` while login had been
+        returning `principal` all along, so the committed specification understated
+        the response and the generated client had no type for a field it was being
+        sent. Refresh now returns it too — a client restoring a session after a
+        reload has to know whose it is — so the two are described once, together.
+      properties:
+        access_token:
+          type: string
+          readOnly: true
+        refresh_token:
+          type: string
+          readOnly: true
+        token_type:
+          type: string
+          readOnly: true
+        expires_in:
+          type: integer
+          readOnly: true
+        principal:
+          allOf:
+          - $ref: '#/components/schemas/Principal'
+          readOnly: true
+      required:
+      - access_token
+      - expires_in
+      - principal
+      - refresh_token
+      - token_type
     SetFlightsRequest:
       type: object
       description: |-
@@ -4427,26 +4475,6 @@ components:
       required:
       - label
       - slug
-    TokenPair:
-      type: object
-      properties:
-        access_token:
-          type: string
-          readOnly: true
-        refresh_token:
-          type: string
-          readOnly: true
-        token_type:
-          type: string
-          readOnly: true
-        expires_in:
-          type: integer
-          readOnly: true
-      required:
-      - access_token
-      - expires_in
-      - refresh_token
-      - token_type
     TouristProfile:
       type: object
       properties:

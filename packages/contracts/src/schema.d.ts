@@ -2216,6 +2216,11 @@ export interface components {
          * @enum {string}
          */
         PlatformEnum: "IOS" | "ANDROID" | "WEB";
+        Principal: {
+            /** Format: uuid */
+            readonly public_id: string;
+            readonly roles: string[];
+        };
         /**
          * @description * `HOTEL` - Hotel
          *     * `RESORT` - Resort
@@ -2321,6 +2326,20 @@ export interface components {
             /** Format: decimal */
             rank: string;
         };
+        /** @description What `/auth/login` and `/auth/refresh` actually answer with.
+         *
+         *     Both were documented as a bare `TokenPairSerializer` while login had been
+         *     returning `principal` all along, so the committed specification understated
+         *     the response and the generated client had no type for a field it was being
+         *     sent. Refresh now returns it too — a client restoring a session after a
+         *     reload has to know whose it is — so the two are described once, together. */
+        Session: {
+            readonly access_token: string;
+            readonly refresh_token: string;
+            readonly token_type: string;
+            readonly expires_in: number;
+            readonly principal: components["schemas"]["Principal"];
+        };
         /** @description `PUT /trips/{id}/flights` — the whole set.
          *
          *     An empty list is meaningful and therefore allowed: it is how a tourist
@@ -2341,12 +2360,6 @@ export interface components {
             label: string;
             sort_order?: number;
             is_active?: boolean;
-        };
-        TokenPair: {
-            readonly access_token: string;
-            readonly refresh_token: string;
-            readonly token_type: string;
-            readonly expires_in: number;
         };
         TouristProfile: {
             /** Format: uuid */
@@ -3471,7 +3484,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenPair"];
+                    "application/json": components["schemas"]["Session"];
                 };
             };
         };
@@ -3604,7 +3617,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenPair"];
+                    "application/json": components["schemas"]["Session"];
                 };
             };
         };

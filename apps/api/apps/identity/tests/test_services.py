@@ -360,8 +360,19 @@ class TestRefreshRotation:
     def test_a_valid_refresh_rotates(self) -> None:
         first = self._login()
         second = services.refresh_tokens(first.tokens.refresh_token)
-        assert second.refresh_token != first.tokens.refresh_token
+        assert second.tokens.refresh_token != first.tokens.refresh_token
         assert Session.objects.count() == 2
+
+    def test_a_refresh_says_whose_session_it_is(self) -> None:
+        """Login and refresh both establish a session, so both answer with the
+        principal. ADR 0008 keeps the access token in the browser's memory, so
+        refresh is the call that restores a session after a reload — and a
+        client handed only tokens would need a second trip to `/me` before it
+        could render anything role-dependent."""
+        first = self._login()
+        second = services.refresh_tokens(first.tokens.refresh_token)
+        assert second.user.public_id == first.user.public_id
+        assert second.roles == first.roles
 
     def test_the_predecessor_is_marked_superseded(self) -> None:
         first = self._login()
@@ -399,7 +410,7 @@ class TestReuseDetection:
         assert Session.objects.filter(revoked_at__isnull=True).count() == 0
         # The successor the attacker did not have is dead too.
         with pytest.raises(AuthenticationError):
-            services.refresh_tokens(second.refresh_token)
+            services.refresh_tokens(second.tokens.refresh_token)
 
     def test_replay_alerts_the_owner(self, email_port) -> None:  # type: ignore[no-untyped-def]
         first = self._login()

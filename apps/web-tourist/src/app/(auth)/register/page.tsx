@@ -17,14 +17,17 @@
  */
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Button } from '@pumba/ui';
 import { ConsentCheckbox } from '@/components/auth/consent-checkbox';
+import { VerificationDialog } from '@/components/auth/verification-dialog';
 import { fieldErrorsFrom, register } from '@/lib/auth';
 
 const MIN_PASSWORD_LENGTH = 12;
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [fields, setFields] = useState({
     email: '',
     password: '',
@@ -59,14 +62,17 @@ export default function RegisterPage() {
   }
 
   if (done) {
+    // §24.3's "Navigation → Email verification notice → Home", as a step the
+    // tourist can complete rather than a page telling them to go and look
+    // somewhere else. The password is still in this component's state and is
+    // handed over so the dialog can sign them in once the code checks out;
+    // it goes no further than that.
     return (
-      <main className="mx-auto max-w-md px-4 py-16">
-        <h1 className="text-2xl font-semibold">Check your email</h1>
-        <p className="mt-3 text-muted-foreground">
-          We have sent a verification link to {fields.email}. Verify your address to finish
-          setting up your account.
-        </p>
-      </main>
+      <VerificationDialog
+        email={fields.email}
+        password={fields.password}
+        onVerified={() => router.push('/')}
+      />
     );
   }
 

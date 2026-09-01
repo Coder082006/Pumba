@@ -39,6 +39,10 @@ export default function robots(): MetadataRoute.Robots {
         '/reset-password',
         '/verify-email',
         '/stays',
+        // A tourist's own workspace. Every page under it is behind a sign-in
+        // and answers a stranger with 404, so a crawler would index nothing —
+        // but saying so costs it the request.
+        '/trips',
       ],
     },
     sitemap: `${base}/sitemap.xml`,

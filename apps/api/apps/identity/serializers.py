@@ -33,6 +33,8 @@ __all__ = [
     "DeviceRegisterSerializer",
     "UserSerializer",
     "TokenPairSerializer",
+    "PrincipalSerializer",
+    "SessionSerializer",
 ]
 
 
@@ -150,6 +152,24 @@ class TokenPairSerializer(serializers.Serializer[Any]):
     refresh_token = serializers.CharField(read_only=True)
     token_type = serializers.CharField(read_only=True)
     expires_in = serializers.IntegerField(read_only=True)
+
+
+class PrincipalSerializer(serializers.Serializer[Any]):
+    public_id = serializers.UUIDField(read_only=True)
+    roles = serializers.ListField(child=serializers.CharField(), read_only=True)
+
+
+class SessionSerializer(TokenPairSerializer):
+    """What `/auth/login` and `/auth/refresh` actually answer with.
+
+    Both were documented as a bare `TokenPairSerializer` while login had been
+    returning `principal` all along, so the committed specification understated
+    the response and the generated client had no type for a field it was being
+    sent. Refresh now returns it too — a client restoring a session after a
+    reload has to know whose it is — so the two are described once, together.
+    """
+
+    principal = PrincipalSerializer(read_only=True)
 
 
 class DeviceSerializer(serializers.Serializer[Any]):

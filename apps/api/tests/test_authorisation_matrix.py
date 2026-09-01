@@ -72,6 +72,15 @@ PUBLIC_BY_DESIGN = {
     "v1:common:config": "Client bootstrap (§23.13, §24.1); serves an allow-listed subset only.",
     "v1:identity:register": "Account creation — there is no principal yet (§9.4.1).",
     "v1:identity:verify-email": "Consumes an emailed token; the token is the credential.",
+    # The same reasoning, with a much smaller secret. Six digits are only one
+    # of a million, so the credential is defended by a fifteen-minute life and
+    # five attempts before the row is burned rather than by its own size — see
+    # `apps/identity/tests/test_verification_code.py`.
+    "v1:identity:verify-email-code": "Consumes an emailed code; the code is the credential.",
+    # Discloses nothing and cannot: it answers 202 for every address, including
+    # ones with no account, precisely so that it cannot be used to ask who has
+    # registered here.
+    "v1:identity:verify-email-resend": "Requests a code for an address; answers 202 regardless.",
     "v1:identity:login": "Issues the credential (§9.4.2).",
     "v1:identity:refresh": "Presents a refresh token; the token is the credential.",
     "v1:identity:password-forgot": "Unauthenticated by necessity (§24.5).",

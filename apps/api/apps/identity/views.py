@@ -203,7 +203,7 @@ class LoginView(_PublicView):
     # defeated by one address attacking a thousand accounts.
     throttle_classes = [LoginIpThrottle, LoginEmailThrottle]
 
-    @extend_schema(request=ser.LoginSerializer, responses={200: ser.TokenPairSerializer})
+    @extend_schema(request=ser.LoginSerializer, responses={200: ser.SessionSerializer})
     def post(self, request: Request) -> Response:
         payload = ser.LoginSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
@@ -231,7 +231,7 @@ class LoginView(_PublicView):
 class RefreshView(_PublicView):
     """ADR 0008: the token may arrive in the body or in the cookie."""
 
-    @extend_schema(request=ser.RefreshSerializer, responses={200: ser.TokenPairSerializer})
+    @extend_schema(request=ser.RefreshSerializer, responses={200: ser.SessionSerializer})
     def post(self, request: Request) -> Response:
         payload = ser.RefreshSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
@@ -239,13 +239,27 @@ class RefreshView(_PublicView):
         if not token:
             raise AuthenticationError("No session token was supplied.")
 
-        pair = services.refresh_tokens(
+        result = services.refresh_tokens(
             token,
             ip=_client_ip(request),
             user_agent=request.headers.get("User-Agent", ""),
         )
-        response = Response(success_envelope(_tokens_payload(pair)))
-        return _attach_refresh_cookie(response, request, pair.refresh_token)
+        response = Response(
+            success_envelope(
+                {
+                    **_tokens_payload(result.tokens),
+                    # The same shape login answers with. A client restoring a
+                    # session after a reload needs to know whose it is before
+                    # it can render anything role-dependent, and a second trip
+                    # to /me for that would be a round trip on every page load.
+                    "principal": {
+                        "public_id": str(result.user.public_id),
+                        "roles": sorted(result.roles),
+                    },
+                }
+            )
+        )
+        return _attach_refresh_cookie(response, request, result.tokens.refresh_token)
 
 
 class LogoutView(APIView):

@@ -17,6 +17,15 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ConsentCheckbox } from '@/components/auth/consent-checkbox';
 
+// The page reads `useRouter` so it can send a verified tourist to the landing
+// page (§24.3's "→ Home"). There is no App Router in jsdom, and the real hook
+// throws rather than returning a no-op.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/register',
+}));
+
 describe('a consent document that exists', () => {
   it('links to it from the control itself', () => {
     render(
