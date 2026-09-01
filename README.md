@@ -72,6 +72,26 @@ on Windows by default.
 | `make contracts` | `pnpm contracts` | Regenerate OpenAPI **and** the TS types |
 | `make format` | `pnpm format` | Apply formatting |
 
+### Signing in locally
+
+Registration issues a single-use verification token and hands it to the email
+port. **No email provider is selected yet** — the brief forbids choosing one
+before the adapter work — so that resolves to `ports.fakes.FakeEmail`, which
+records the message in memory and surfaces it nowhere. Without the link, a new
+account can be created and never signed into: `POST /auth/login` answers
+`EMAIL_NOT_VERIFIED`.
+
+Print the link instead:
+
+```
+docker compose exec api python manage.py verification_link you@example.com
+```
+
+It issues a **real** token through the same path registration uses, so the link
+it prints is one `/auth/verify-email` accepts — open it in the browser and sign
+in normally. It refuses to run with `DEBUG` off: issuing a verification token
+to whoever can reach a shell defeats the only thing verification proves.
+
 ### Which one to run
 
 **`pnpm verify` before every push.** It runs each CI job's command verbatim —
