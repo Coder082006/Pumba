@@ -40,6 +40,7 @@ __all__ = [
     "RegistrationThrottle",
     "AuthenticatedReadThrottle",
     "CatalogueReadThrottle",
+    "TripQuoteThrottle",
     "parse_limit",
 ]
 
@@ -80,7 +81,22 @@ class SettingsRateThrottle(SimpleRateThrottle):
         return str(get_setting(self.setting_key))
 
     def allow_request(self, request: Request, view: APIView) -> bool:
-        self.num_requests, self.duration, self._scope_kind = parse_limit(self._load())
+        limit = self._load()
+        self.num_requests, self.duration, self._scope_kind = parse_limit(limit)
+        # `self.rate` must be set, not merely `num_requests` and `duration`.
+        # `SimpleRateThrottle.allow_request` opens with `if self.rate is None:
+        # return True` — so leaving it None, as this class did until Phase 5,
+        # made every §9.6 limit in the platform inert: login, registration,
+        # catalogue reads, all of them returned before they read the cache.
+        #
+        # Nothing caught it because no test asserted a 429 over HTTP. The unit
+        # tests exercised `parse_limit` and the cache key, both of which were
+        # correct, and a throttle that silently never fires is indistinguishable
+        # from one that never needed to.
+        #
+        # It carries the raw setting string rather than a recomputed one so
+        # that a malformed value has already raised in `parse_limit` above.
+        self.rate = limit
         return super().allow_request(request, view)
 
     def get_cache_key(self, request: Request, view: APIView) -> str | None:
@@ -138,6 +154,37 @@ class AuthenticatedReadThrottle(SettingsRateThrottle):
     """§9.6: 300 / minute / principal."""
 
     setting_key = "ratelimit.authenticated_read"
+
+
+class TripQuoteThrottle(SettingsRateThrottle):
+    """§9.6: 20 / hour / trip for `POST /trips/{id}/quote`.
+
+    **Bucketed by the trip, not by the caller**, which is what the setting
+    says and is the right unit here for a reason worth stating: a tourist
+    planning three trips in an afternoon is doing something legitimate, and a
+    per-principal bucket would punish them for it. What is not legitimate is
+    re-quoting one trip forty times an hour — every attempt takes row locks on
+    counters other tourists are queueing behind (§17.3).
+
+    The trip comes from the URL rather than the body, because §9.4.5's request
+    has no body. A caller with no trip in the path falls back to the address,
+    which cannot happen through the router and is the safe reading if it ever
+    does.
+    """
+
+    setting_key = "ratelimit.trip_quote"
+
+    def _identity(self, request: Request) -> str | None:
+        public_id = self._view_kwargs(request).get("public_id")
+        if public_id is not None:
+            return f"t{public_id}"
+        return self.get_ident(request)
+
+    @staticmethod
+    def _view_kwargs(request: Request) -> dict[str, Any]:
+        resolved = getattr(request, "resolver_match", None)
+        kwargs = getattr(resolved, "kwargs", None)
+        return dict(kwargs) if isinstance(kwargs, dict) else {}
 
 
 class CatalogueReadThrottle(SettingsRateThrottle):

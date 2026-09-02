@@ -1,6 +1,10 @@
 """Tests for the §9.6 rate limits and the §30.2 hasher parameters."""
 
+# ruff: noqa: ARG002
+
 from __future__ import annotations
+
+from typing import Any
 
 import pytest
 
@@ -155,3 +159,80 @@ class TestTheEmailBucketDoesNotStoreAddresses:
             data: dict[str, str] = {}
 
         assert LoginEmailThrottle._hashed_email(_Req()) is None  # type: ignore[arg-type]
+
+
+class TestAThrottleActuallyThrottles:
+    """The assertion this file was missing, and the defect that hid in the gap.
+
+    Every test above checks a *part*: that a limit parses, that it matches
+    §9.6's table, that a bucket key is a hash rather than an address. All of
+    them passed while no limit in the platform did anything at all —
+    `SettingsRateThrottle` set `num_requests` and `duration` per request but
+    left `self.rate` at None, and `SimpleRateThrottle.allow_request` opens with
+    `if self.rate is None: return True`. Login brute-force protection,
+    registration limits and the catalogue's IP limit were all inert.
+
+    It surfaced in Phase 5, when the quote endpoint became the first thing
+    anybody asserted a 429 from over HTTP. So the missing assertion is the one
+    below: not "the limit is configured" but "the eleventh request is
+    refused".
+    """
+
+    def _throttle(self, limit: str) -> Any:
+        from apps.common.throttling import SettingsRateThrottle
+
+        class _Fixed(SettingsRateThrottle):
+            setting_key = "ratelimit.catalogue_read"
+
+            def _load(self) -> str:
+                return limit
+
+        return _Fixed()
+
+    def _request(self, ip: str = "203.0.113.7") -> Any:
+        class _Req:
+            META = {"REMOTE_ADDR": ip}
+            query_params: dict[str, str] = {}
+            data: dict[str, str] = {}
+
+        return _Req()
+
+    def test_requests_within_the_limit_are_allowed(self) -> None:
+        from django.core.cache import cache
+
+        cache.clear()
+        throttle = self._throttle("3/minute/ip")
+        request = self._request()
+        assert [throttle.allow_request(request, None) for _ in range(3)] == [True] * 3
+
+    def test_the_request_past_the_limit_is_refused(self) -> None:
+        """The whole point. Without `self.rate`, this returned True forever."""
+        from django.core.cache import cache
+
+        cache.clear()
+        throttle = self._throttle("3/minute/ip")
+        request = self._request()
+        for _ in range(3):
+            throttle.allow_request(request, None)
+        assert throttle.allow_request(request, None) is False
+
+    def test_a_different_bucket_is_unaffected(self) -> None:
+        from django.core.cache import cache
+
+        cache.clear()
+        throttle = self._throttle("2/minute/ip")
+        for _ in range(3):
+            throttle.allow_request(self._request("198.51.100.4"), None)
+        assert throttle.allow_request(self._request("203.0.113.9"), None) is True
+
+    def test_the_rate_is_set_from_the_setting_on_every_request(self) -> None:
+        """An administrator's change takes effect without a restart, which is
+        why the rate is resolved per request rather than at import — and the
+        reason `self.rate` was left None in the first place."""
+        from django.core.cache import cache
+
+        cache.clear()
+        throttle = self._throttle("5/hour/ip")
+        throttle.allow_request(self._request(), None)
+        assert throttle.rate == "5/hour/ip"
+        assert (throttle.num_requests, throttle.duration) == (5, 3600)
