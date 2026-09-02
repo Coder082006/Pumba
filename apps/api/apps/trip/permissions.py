@@ -22,39 +22,12 @@ depend on which trip they asked for, so it discloses nothing about any of them.
 
 from __future__ import annotations
 
-from rest_framework.permissions import BasePermission
-from rest_framework.request import Request
-from rest_framework.views import APIView
-
-from apps.common.authentication import principal_from_request
+# Moved to `common` in Phase 5, and re-exported here so this module keeps
+# naming what `trip`'s views use. §9.4.5's quote is `booking`'s use case
+# (ADR 0022) and needs the same gate, and `apps.trip.permissions` is private
+# to `trip` under §6.5 rule 1 — so the definition had to move somewhere both
+# could reach. A copy in `booking` would be a second answer to "who is a
+# tourist", and the one that drifts is always the copy.
+from apps.common.permissions import IsTourist, tourist_id_of
 
 __all__ = ["IsTourist", "tourist_id_of"]
-
-
-class IsTourist(BasePermission):
-    """The principal has a tourist profile.
-
-    Not "the principal owns this trip" — see the module docstring. This is a
-    question about the caller alone, which is why answering it with 403
-    discloses nothing.
-    """
-
-    message = "A tourist profile is required."
-
-    def has_permission(self, request: Request, view: APIView) -> bool:
-        principal = principal_from_request(request)
-        return principal is not None and principal.tourist_id is not None
-
-
-def tourist_id_of(request: Request) -> int:
-    """The caller's `tourist_profile.id`, for the service's `tourist_id`.
-
-    `IsTourist` has already run, so both the principal and the id are present;
-    the assertions state that rather than defending against it, because a view
-    reachable without them would be a routing bug and silently defaulting to
-    some other tourist is the worst possible recovery.
-    """
-    principal = principal_from_request(request)
-    assert principal is not None, "IsTourist should have refused an anonymous request"
-    assert principal.tourist_id is not None, "IsTourist should have refused a non-tourist"
-    return principal.tourist_id
