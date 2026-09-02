@@ -25,7 +25,7 @@ the label load-bearing rather than decorative.
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Any, ClassVar
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from django.core.cache import cache
@@ -79,7 +79,7 @@ CACHE_SECONDS = 60
 class ActivityDeparturesView(APIView):
     """SD-06's `GET /activities/{id}/departures?from&to&pax`."""
 
-    authentication_classes: ClassVar[list[Any]] = []
+    authentication_classes: list[Any] = []
     permission_classes = [AllowAny]
     throttle_classes = [CatalogueReadThrottle]
 

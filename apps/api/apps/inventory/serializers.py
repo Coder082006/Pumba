@@ -51,7 +51,8 @@ class DepartureQuerySerializer(StrictSerializer):
         data = dict(data)
         if "from" in data:
             data["date_from"] = data.pop("from")
-        return super().to_internal_value(data)
+        validated: dict[str, Any] = super().to_internal_value(data)
+        return validated
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         since = attrs.get("date_from")
