@@ -3,7 +3,12 @@
 Every route is mounted under /api/v1 (SRS §9.1). Module routers are added
 here as each module is built; Phase 1 mounted only `common`, which owns the
 health endpoint; Phase 2 adds `identity`; Phase 3 adds `catalogue`; Phase 4
-adds `trip`.
+adds `trip`; Phase 5 adds `inventory`.
+
+`inventory` mounts `activities/{reference}/departures` — a path under
+`catalogue`'s noun, served by the module that owns the counters. ADR 0011:
+`catalogue` may not compose inventory data, so the endpoint that joins an
+activity to its capacity lives with the capacity.
 """
 
 from django.urls import include, path
@@ -14,6 +19,7 @@ api_v1_patterns = [
     path("", include("apps.identity.urls")),
     path("", include("apps.catalogue.urls")),
     path("", include("apps.trip.urls")),
+    path("", include("apps.inventory.urls")),
 ]
 
 urlpatterns = [

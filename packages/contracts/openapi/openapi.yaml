@@ -167,6 +167,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/Activity'
           description: ''
+  /api/v1/activities/{reference}/departures:
+    get:
+      operationId: activities_departures_list
+      description: |-
+        Sellable departures for one activity, with the seats remaining on each.
+
+        **These figures are indicative and every row says so.** SRS §17.1 principle I3: *search may read cached or stale capacity; committing a booking may not.* The authoritative check happens under a row lock inside `POST /trips/{id}/quote`, and a `basis` of `INDICATIVE` here means precisely that this number must not be used to promise anybody a seat.
+
+        Supplying `pax` turns the list into advice: each row then carries `unbookable` — `SOLD_OUT`, `PAST_CUTOFF`, `PARTY_TOO_LARGE` and the rest — so a client can say why a date it is showing cannot be taken. Cancelled departures are listed rather than hidden: a date that silently vanishes reads as a bug to somebody who was looking at it a minute ago.
+      summary: List an activity's departures
+      parameters:
+      - in: query
+        name: date_from
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: pax
+        schema:
+          type: integer
+          maximum: 99
+          minimum: 1
+      - in: path
+        name: reference
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date
+      tags:
+      - inventory
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Departure'
+          description: ''
   /api/v1/admin/accommodation:
     post:
       operationId: admin_accommodation_create
@@ -2960,6 +3003,61 @@ components:
       - destination
       - end_date
       - start_date
+    Departure:
+      type: object
+      description: |-
+        One departure — §7.5.9's row as §24.10 renders it.
+
+        **`remaining`, not the three counters.** Publishing `capacity_held` would
+        tell a tourist how many seats somebody else is midway through paying for: a
+        number that is nobody's business, that changes with nothing happening, and
+        that reads as availability disappearing for no reason.
+
+        **`basis` is always present.** §17.1 I3 and §8.10: this figure may be stale
+        and may never confirm a booking. A payload that said so only sometimes
+        would be one a client learns to ignore.
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        departs_at:
+          type: string
+          format: date-time
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        remaining:
+          type: integer
+          readOnly: true
+        basis:
+          type: string
+          readOnly: true
+        price_override:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        unbookable:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        is_bookable:
+          type: boolean
+          readOnly: true
+      required:
+      - basis
+      - departs_at
+      - is_bookable
+      - price_override
+      - public_id
+      - remaining
+      - status
+      - unbookable
     Destination:
       type: object
       description: |-

@@ -88,6 +88,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/activities/{reference}/departures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List an activity's departures
+         * @description Sellable departures for one activity, with the seats remaining on each.
+         *
+         *     **These figures are indicative and every row says so.** SRS §17.1 principle I3: *search may read cached or stale capacity; committing a booking may not.* The authoritative check happens under a row lock inside `POST /trips/{id}/quote`, and a `basis` of `INDICATIVE` here means precisely that this number must not be used to promise anybody a seat.
+         *
+         *     Supplying `pax` turns the list into advice: each row then carries `unbookable` — `SOLD_OUT`, `PAST_CUTOFF`, `PARTY_TOO_LARGE` and the rest — so a client can say why a date it is showing cannot be taken. Cancelled departures are listed rather than hidden: a date that silently vanishes reads as a bug to somebody who was looking at it a minute ago.
+         */
+        get: operations["activities_departures_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/accommodation": {
         parameters: {
             query?: never;
@@ -1726,6 +1750,29 @@ export interface components {
             infants: number;
             title?: string | null;
         };
+        /** @description One departure — §7.5.9's row as §24.10 renders it.
+         *
+         *     **`remaining`, not the three counters.** Publishing `capacity_held` would
+         *     tell a tourist how many seats somebody else is midway through paying for: a
+         *     number that is nobody's business, that changes with nothing happening, and
+         *     that reads as availability disappearing for no reason.
+         *
+         *     **`basis` is always present.** §17.1 I3 and §8.10: this figure may be stale
+         *     and may never confirm a booking. A payload that said so only sometimes
+         *     would be one a client learns to ignore. */
+        Departure: {
+            /** Format: uuid */
+            readonly public_id: string;
+            /** Format: date-time */
+            readonly departs_at: string;
+            readonly status: string;
+            readonly remaining: number;
+            readonly basis: string;
+            /** Format: decimal */
+            readonly price_override: string | null;
+            readonly unbookable: string | null;
+            readonly is_bookable: boolean;
+        };
         /** @description §7.5.6.
          *
          *     `timezone` is here because §7.2 renders timestamps in the destination's
@@ -2599,6 +2646,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Activity"];
+                };
+            };
+        };
+    };
+    activities_departures_list: {
+        parameters: {
+            query?: {
+                date_from?: string;
+                pax?: number;
+                to?: string;
+            };
+            header?: never;
+            path: {
+                reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Departure"][];
                 };
             };
         };
