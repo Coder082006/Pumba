@@ -134,3 +134,57 @@ rule as inert *"because §6.4 does not permit trip -> inventory"*. It still does
 not; the departure's `departs_at` arrives as a fact supplied by the caller,
 which is the same shape `catalogue.opening_status` already uses to answer a
 question `trip` may not answer for itself.
+
+## Addendum — the provider capacity API is blocked, not skipped
+
+**Date:** 2026-09-02
+
+§37.5 lists *"provider departure and capacity APIs"* among Phase 5's features,
+and §26.5 specifies them:
+
+> A month-grid calendar per room type or activity showing, per date,
+> availability, held, sold and rate. Bulk editing supports a date range, a
+> weekday mask, and set-availability / set-rate / open / close operations in one
+> submission. A conflict (attempting to reduce availability below what is
+> already sold or held) is rejected with the specific dates named. API
+> `PUT /provider/room-types/{id}/availability`,
+> `PUT /provider/activities/{id}/departures`. **Amended v1.2.** In v1 the
+> calendar exists for activity departures only.
+
+**They cannot be built in Phase 5, and the reason is not effort.** There is no
+principal that can own an activity:
+
+* `apps/provider/` is a Phase 1 skeleton — seven files, no models, no table.
+* `catalogue.activity.provider_id` is a plain `BigIntegerField` that nothing
+  writes. The admin serializer does not accept it and the seed does not set it.
+* `Role.PROVIDER_OWNER` and `PROVIDER_STAFF` exist in the authorisation enum,
+  and `ownership.py` maps them to `USER`, `SESSION` and `DEVICE` — nothing that
+  reaches a listing.
+
+So `PUT /provider/activities/{id}/departures` could be routed and could enforce
+BR-023, and it could not answer the question every endpoint in this system is
+required to answer: *whose activity is this?* CLAUDE.md's working agreement is
+that **every endpoint gets an authorisation test proving a foreign principal
+receives 404, not 403**, and there is no way to write that test — a second
+provider does not exist to be foreign.
+
+Building it against the administrator role instead would not be the same
+endpoint. §26.4 draws the line deliberately: accommodation is
+administrator-curated because it is reference data, and an activity is
+provider-supplied because its price, capacity and cut-off are claims only its
+operator can make.
+
+**What this costs Phase 5.** Nothing in the tourist-facing flow: departures
+come from `activity_schedule` through the nightly materialiser, and capacity is
+held, committed, released and reconciled by the routines above. What is missing
+is the ability for an operator to close Tuesday's boat for weather without an
+engineer.
+
+**Where it belongs.** §37.11's Provider Portal already declares *"Dependencies
+Phases 5, 7 and 8"* and lists *"the availability and rate calendar with bulk
+editing"* among its features. The dependency runs that way round — the portal
+needs the inventory this phase built, not the reverse — and BR-023's rule
+(*"a provider may not reduce availability below what is already held or
+sold"*) is stated here so that whoever builds it does not have to rediscover
+that the counters it guards are `capacity_held` and `capacity_sold` together,
+not either alone.
