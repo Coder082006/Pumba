@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { Money } from '@pumba/ui';
 
 import type { ItineraryItem } from '@/lib/trips';
@@ -37,32 +38,62 @@ import type { ItineraryItem } from '@/lib/trips';
  * §24.21's breakdown already makes on the summary screen — "Nothing priced
  * yet" rather than a row of zeroes — and the two screens disagreeing about the
  * same trip would be worse than either wording alone.
+ *
+ * **Phase 5 gave the footer an action.** Until the quote existed the total was
+ * provisional and there was nothing to do about it; now `POST /trips/{id}/quote`
+ * holds the seats behind it for twenty minutes, and §24.20 counts down. A
+ * priced trip therefore shows the offer and its clock rather than an estimate,
+ * because those are different promises and only one of them expires.
  */
 export function RunningTotal({
   items,
   amount,
   currency,
   summaryHref,
+  status,
+  expiresAt,
+  busy = false,
+  onQuote,
 }: {
   items: readonly ItineraryItem[];
   amount: string;
   currency: string;
   summaryHref: string;
+  /** §20.5's state. `PRICED` means the seats are held and the clock is running. */
+  status?: string;
+  /** `trip.quote_expires_at`, when there is a live offer. */
+  expiresAt?: string | null;
+  busy?: boolean;
+  onQuote?: () => void;
 }) {
   // `line_total` is null for everything the platform does not charge for, which
   // is the same test §24.21's breakdown groups by. A present "0.00" is a priced
   // line that costs nothing and stays on the figure side of this branch.
   const priced = items.some((item) => item.line_total);
+  const holdable = items.some((item) => item.item_type === 'ACTIVITY');
+  const quoted = status === 'PRICED';
 
   return (
     <footer className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 backdrop-blur">
       <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="text-sm text-muted-foreground">
-          {priced ? (
+          {quoted ? (
+            <p>
+              <span className="font-medium text-foreground">
+                <Money value={{ amount, currency }} />
+              </span>
+              <span className="block text-xs">
+                <Countdown until={expiresAt ?? null} holding={holdable} />
+              </span>
+            </p>
+          ) : priced ? (
             <p>
               Estimated so far ·{' '}
               <span className="font-medium text-foreground">
                 <Money value={{ amount, currency }} />
+              </span>
+              <span className="block text-xs">
+                Nothing is held until you ask for a price.
               </span>
             </p>
           ) : (
@@ -76,13 +107,76 @@ export function RunningTotal({
             </p>
           )}
         </div>
-        <Link
-          href={summaryHref}
-          className="rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground"
-        >
-          Continue
-        </Link>
+
+        <div className="flex items-center gap-2">
+          {onQuote ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onQuote}
+              className="rounded-md border border-border px-5 py-2 text-sm font-semibold transition-colors duration-fast ease-out hover:bg-muted disabled:opacity-60"
+            >
+              {busy ? 'Pricing…' : quoted ? 'Refresh the price' : 'Get a price'}
+            </button>
+          ) : null}
+          <Link
+            href={summaryHref}
+            className="rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground"
+          >
+            Continue
+          </Link>
+        </div>
       </div>
     </footer>
   );
+}
+
+/**
+ * How long this offer stands — §24.20, §17.2.
+ *
+ * **It ticks.** A static "expires at 14:32" is a number somebody has to
+ * subtract from their own clock, and the whole point of a twenty-minute hold is
+ * that it is short enough to matter. It re-renders once a second, which is
+ * cheap for one element and is the only place in the app that does.
+ *
+ * **It says what expires.** A trip whose activities are held loses seats when
+ * this runs out; a trip of stays and attractions loses only the price. The
+ * sentence differs because the consequence does, and a tourist who thinks
+ * seats are at stake when they are not will hurry for no reason.
+ */
+function Countdown({ until, holding }: { until: string | null; holding: boolean }) {
+  const [left, setLeft] = useState(() => remaining(until));
+
+  useEffect(() => {
+    setLeft(remaining(until));
+    if (until === null) return;
+    const timer = setInterval(() => setLeft(remaining(until)), 1000);
+    return () => clearInterval(timer);
+  }, [until]);
+
+  if (until === null) return <>Priced. Nothing is held.</>;
+  if (left <= 0) {
+    // The sweeper runs every sixty seconds (§17.5), so there is a window where
+    // the browser knows the hold is dead and the server has not caught up. Say
+    // the true thing rather than a countdown to a negative number.
+    return <>This price has expired — ask again to hold the seats.</>;
+  }
+  return (
+    <>
+      {holding ? 'Seats held for ' : 'Price held for '}
+      <span className="font-medium tabular-nums text-foreground">{clock(left)}</span>
+    </>
+  );
+}
+
+function remaining(until: string | null): number {
+  if (until === null) return 0;
+  return Math.max(0, Date.parse(until) - Date.now());
+}
+
+function clock(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }

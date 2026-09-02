@@ -11,6 +11,7 @@ import { ApiRequestError } from '@/lib/api';
 import {
   generateItinerary,
   getTrip,
+  quoteTrip,
   removeItem,
   tripLevelFindings,
   type ItineraryItem,
@@ -40,6 +41,13 @@ import {
  * the figure but whether a figure is the honest thing to show — `RunningTotal`
  * carries that reasoning.
  *
+ * **Getting a price is a separate act from planning the days**, and §9.4.5 is
+ * why. A quote takes row locks on capacity counters other tourists are queueing
+ * behind and holds seats for twenty minutes; doing it automatically after every
+ * edit would hold inventory for somebody who was still deciding, and §9.6
+ * throttles it at twenty an hour per trip for exactly that reason. So it is a
+ * button, and the footer says what the resulting hold covers.
+ *
  * What is deliberately absent: drag-to-reorder and the add-item action sheet.
  * §10.4 assigns `sequence_no` itself and rewrites it on every generate, so a
  * dragged order would survive until the next plan and no longer; adding items
@@ -64,6 +72,7 @@ export default function TripPlannerPage({ params }: { params: Promise<{ id: stri
   const [state, setState] = useState<State>({ status: 'loading' });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState<UnavailableItem[]>([]);
 
   const load = useCallback(async () => {
     setState({ status: 'loading' });
@@ -91,6 +100,7 @@ export default function TripPlannerPage({ params }: { params: Promise<{ id: stri
     async (action: () => Promise<Trip>) => {
       setBusy(true);
       setProblem(null);
+      setUnavailable([]);
       try {
         setState({ status: 'ready', trip: await action() });
       } catch (error) {
@@ -105,6 +115,42 @@ export default function TripPlannerPage({ params }: { params: Promise<{ id: stri
     },
     [],
   );
+
+  /**
+   * §9.4.5, and the reload after it.
+   *
+   * The quote answers with the totals and the clock rather than the trip
+   * (`booking.serializers` says why), so the trip is re-read — which it would
+   * need to be anyway: it is `PRICED` now and its items carry the departures
+   * that were bound.
+   *
+   * A 409 is not treated as a failure of the request. `INVENTORY_UNAVAILABLE`
+   * is an answer about the world, and its `details` name every departure that
+   * could not be held along with alternatives — so it is rendered as a list
+   * beside the plan rather than as one line of error text.
+   */
+  const quote = useCallback(async () => {
+    setBusy(true);
+    setProblem(null);
+    setUnavailable([]);
+    try {
+      await quoteTrip(id);
+      setState({ status: 'ready', trip: await getTrip(id) });
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.code === 'INVENTORY_UNAVAILABLE') {
+        setUnavailable(error.details as UnavailableItem[]);
+        setProblem(error.message);
+      } else {
+        setProblem(
+          error instanceof ApiRequestError
+            ? error.message
+            : 'This trip could not be priced just now.',
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [id]);
 
   if (state.status === 'loading') {
     return <div aria-hidden className="h-64 rounded-lg bg-muted" />;
@@ -193,9 +239,10 @@ export default function TripPlannerPage({ params }: { params: Promise<{ id: stri
       <FindingList findings={tripLevelFindings(findings)} />
 
       {problem ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">
-          {problem}
-        </p>
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">
+          <p>{problem}</p>
+          {unavailable.length > 0 ? <Unavailable items={unavailable} zone={timezone} /> : null}
+        </div>
       ) : null}
 
       <DayTimeline
@@ -245,7 +292,64 @@ export default function TripPlannerPage({ params }: { params: Promise<{ id: stri
         amount={trip.total_amount}
         currency={trip.currency}
         summaryHref={`/trips/${id}/summary`}
+        status={trip.status}
+        expiresAt={trip.quote_expires_at}
+        busy={busy}
+        onQuote={() => void quote()}
       />
     </div>
+  );
+}
+
+
+/** One entry of §9.4.5's `details` array, as this screen reads it. */
+interface UnavailableItem {
+  departure?: string;
+  reason?: string;
+  alternatives?: Array<{ public_id: string; departs_at: string; remaining: number }>;
+}
+
+const WHY: Record<string, string> = {
+  SOLD_OUT: 'is now full',
+  CANCELLED: 'has been cancelled',
+  CLOSED: 'is no longer selling',
+  PAST_CUTOFF: 'is past its booking cut-off',
+  PARTY_TOO_SMALL: 'needs a larger party',
+  PARTY_TOO_LARGE: 'cannot take a party this size',
+};
+
+/**
+ * What could not be held, and what could be instead — §9.4.5.
+ *
+ * The alternatives are the point. A 409 that only said "sold out" ends a
+ * booking; one that names the 13:30 departure with four seats left redirects
+ * it, which is why the server goes to the trouble of finding them.
+ */
+function Unavailable({ items, zone }: { items: UnavailableItem[]; zone: string }) {
+  return (
+    <ul className="mt-2 space-y-2">
+      {items.map((entry, index) => (
+        <li key={entry.departure ?? index}>
+          <span>The departure you chose {WHY[entry.reason ?? ''] ?? 'is unavailable'}.</span>
+          {entry.alternatives && entry.alternatives.length > 0 ? (
+            <span className="block text-xs">
+              Still open:{' '}
+              {entry.alternatives
+                .map((alternative) =>
+                  new Intl.DateTimeFormat(undefined, {
+                    timeZone: zone,
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }).format(new Date(alternative.departs_at)),
+                )
+                .join(' · ')}
+            </span>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }

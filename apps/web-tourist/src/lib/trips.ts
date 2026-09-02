@@ -28,6 +28,7 @@ export type TripSummary = components['schemas']['TripSummary'];
 export type ItineraryItem = components['schemas']['ItineraryItem'];
 export type Finding = components['schemas']['Finding'];
 export type TripFlight = components['schemas']['TripFlight'];
+export type Quote = components['schemas']['Quote'];
 
 /** `apiFetch` with the bearer token attached. */
 function authed<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -102,6 +103,26 @@ export function setFlights(publicId: string, flights: unknown[]): Promise<Trip> 
 
 export function generateItinerary(publicId: string): Promise<Trip> {
   return authed<Trip>(`/trips/${publicId}/itinerary/generate`, { method: 'POST' });
+}
+
+/**
+ * `POST /trips/{id}/quote` — SRS §9.4.5.
+ *
+ * The one call in this module that changes anything outside the trip. It locks
+ * every departure the itinerary names, holds a seat per traveller on each, and
+ * prices the result — so a 409 here is not a failure of the request but an
+ * answer about the world: somebody else took the seats, or the departure is no
+ * longer running.
+ *
+ * **The response deliberately does not carry the trip.** The totals and the
+ * clock come back; the line-by-line breakdown does not, because the trip has to
+ * be re-read anyway — it is `PRICED` now, its items carry bound departures, and
+ * §24.14 re-renders after every change. `ApiRequestError.details` holds
+ * §9.4.5's per-item array, which is what a client renders "the 09:00 snorkel is
+ * full, try 13:30" from.
+ */
+export function quoteTrip(publicId: string): Promise<Quote> {
+  return authed<Quote>(`/trips/${publicId}/quote`, { method: 'POST' });
 }
 
 export function cancelTrip(publicId: string): Promise<Trip> {
