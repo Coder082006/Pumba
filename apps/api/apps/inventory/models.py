@@ -54,11 +54,20 @@ alone write one.
 
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
+
 from django.db import models
 
-from apps.common.models import BaseModel, VersionedModel
+from apps.common.models import BaseModel, TimestampedModel, VersionedModel
 
-__all__ = ["DepartureStatus", "ActivityDeparture"]
+__all__ = [
+    "DepartureStatus",
+    "ActivityDeparture",
+    "HoldStatus",
+    "HeldResource",
+    "InventoryHold",
+]
 
 
 class DepartureStatus(models.TextChoices):
@@ -150,3 +159,142 @@ class ActivityDeparture(BaseModel, VersionedModel):
         if self.status != DepartureStatus.OPEN:
             return 0
         return self.capacity_total - self.capacity_held - self.capacity_sold
+
+
+class HoldStatus(models.TextChoices):
+    """§17.2's four states.
+
+    `HELD` is the only live one; the other three are terminal, and which one a
+    hold ends in is the whole of its history — committed because the money
+    arrived, released because something gave it back, expired because nobody
+    came. A single `is_active` boolean would lose that distinction, and §17.4's
+    reconciliation is exactly the job of noticing when the counters and the
+    reasons disagree.
+    """
+
+    HELD = "HELD", "Held"
+    COMMITTED = "COMMITTED", "Committed"
+    RELEASED = "RELEASED", "Released"
+    EXPIRED = "EXPIRED", "Expired"
+
+
+class HeldResource(models.TextChoices):
+    """What a hold is against.
+
+    §7.3 draws `inventory_hold` polymorphically — `resource_type` plus
+    `resource_id` — because it was written when two counter tables existed. In
+    v1 there is one (§17.1 I1, ADR 0013), so this enum has a single member.
+
+    It is kept polymorphic anyway, and that is a deliberate cost. A hold row
+    that named `activity_departure_id` directly would have to be migrated when
+    `room_availability` returns in v2, and every reader of it rewritten; the
+    enum costs one column and a `WHERE` clause now.
+    """
+
+    ACTIVITY_DEPARTURE = "ACTIVITY_DEPARTURE", "Activity departure"
+
+
+class InventoryHold(TimestampedModel, VersionedModel):
+    """SRS §7.3, §17.2. Capacity that is spoken for but not yet paid.
+
+    §17.1 I4 is the reason this is a row rather than a flag:
+
+        Holds are explicit, time-boxed rows — never implicit reservations
+        inferred from booking status.
+
+    An inferred reservation cannot be swept, cannot be counted, and cannot be
+    told apart from a booking that failed halfway. This table is what makes
+    §17.4's reconciliation possible at all: the counter says how much capacity
+    is spoken for, and these rows say *why*, and a nightly job compares them.
+
+    **No `public_id`, and no `SoftDeleteModel`.** §7.3 names `hold_token` as
+    this table's unique external identifier, so `BaseModel` would give it a
+    second UUID meaning the same thing — two identifiers for one row is one
+    more than anybody can keep straight. And `common.models.SoftDeleteModel` is
+    explicit that booking and financial records are excluded (§7.2): a hold
+    that vanished from the default manager would take its capacity with it and
+    leave a counter nothing accounts for.
+
+    **`trip_id` carries no foreign key** (ADR 0022). `inventory` is L2 and
+    `trip` is L3; the SQL foreign keys `inventory` does have all point at
+    `catalogue`, which is downhill. A constraint pointing uphill would be the
+    dependency §6.4 forbids, written in DDL instead of in an import. `booking`
+    is the module that can see both sides, and it is what keeps this column
+    honest.
+    """
+
+    #: §7.3's `(U)`. The identifier this row is known by outside `inventory` —
+    #: DTOs carry it, §7.2 keeps the BIGSERIAL inside the database.
+    hold_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    #: -> trip.trip.id. No FK; see the class docstring and ADR 0022.
+    trip_id = models.BigIntegerField(db_index=True)
+
+    resource_type = models.CharField(max_length=32, choices=HeldResource.choices)
+    #: -> activity_departure.id while `resource_type` has one member.
+    resource_id = models.BigIntegerField()
+
+    #: §7.3 carries a date range because a room hold covered a span of nights.
+    #: A departure is an instant, so both are null for every v1 hold. They stay
+    #: on the table for the same reason `itinerary_item.room_type_id` did not:
+    #: the column is cheap and re-deriving it in v2 is not.
+    date_from = models.DateField(null=True, blank=True, default=None)
+    date_to = models.DateField(null=True, blank=True, default=None)
+
+    #: Seats, for an activity departure. Rooms, when v2 returns.
+    quantity = models.SmallIntegerField()
+
+    expires_at = models.DateTimeField()
+    status = models.CharField(max_length=20, choices=HoldStatus.choices, default=HoldStatus.HELD)
+
+    class Meta:
+        db_table = "inventory_hold"
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(quantity__gt=0), name="inventory_hold_quantity_positive"
+            ),
+            # Either both dates or neither, and ordered when present. A half
+            # range is not a shorter range; it is a row nobody can interpret.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(date_from__isnull=True, date_to__isnull=True)
+                    | models.Q(
+                        date_from__isnull=False,
+                        date_to__isnull=False,
+                        date_to__gte=models.F("date_from"),
+                    )
+                ),
+                name="inventory_hold_dates_are_whole_and_ordered",
+            ),
+        ]
+        indexes = [
+            # §7.6, verbatim: "INDEX(expires_at) WHERE status='HELD' — expiry
+            # sweeper". Partial because the sweeper reads only live holds and
+            # the terminal ones outnumber them within a day of launch.
+            models.Index(
+                fields=["expires_at"],
+                condition=models.Q(status=HoldStatus.HELD),
+                name="inventory_hold_expiry_idx",
+            ),
+            # §9.4.5 step 2: "release any prior holds belonging to this trip".
+            models.Index(fields=["trip_id", "status"], name="inventory_hold_trip_idx"),
+            # §17.4's reconciliation sums live holds per counter row.
+            models.Index(
+                fields=["resource_type", "resource_id", "status"],
+                name="inventory_hold_resource_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.status} {self.quantity}x {self.resource_type}#{self.resource_id}"
+
+    def is_live(self, *, now: datetime) -> bool:
+        """HELD and not yet past its TTL.
+
+        §17.1 I5: expiry is driven by a sweeper *and defensively re-checked at
+        commit*, so a delayed sweeper cannot cause an oversell. That second
+        check is this method — a hold whose `expires_at` has passed is dead
+        whether or not the sweeper has reached it yet.
+        """
+        return self.status == HoldStatus.HELD and self.expires_at > now
