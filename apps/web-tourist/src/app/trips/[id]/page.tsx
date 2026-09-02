@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
-import { Money } from '@pumba/ui';
 
 import { DayTimeline } from '@/components/trip/day-timeline';
 import { FindingList, ValidationBanner } from '@/components/trip/findings';
+import { RunningTotal } from '@/components/trip/running-total';
 import { TripSettings } from '@/components/trip/trip-settings';
 import { ApiRequestError } from '@/lib/api';
 import {
@@ -36,7 +36,9 @@ import {
  * ROUND_HALF_UP applied once per line and once per aggregate, and §7.5.10 has a
  * database CHECK that the total equals its parts. A client that summed the
  * lines itself would be a second implementation of the pricing path, in
- * floating point, disagreeing in the last cent.
+ * floating point, disagreeing in the last cent. What the footer decides is not
+ * the figure but whether a figure is the honest thing to show — `RunningTotal`
+ * carries that reasoning.
  *
  * What is deliberately absent: drag-to-reorder and the add-item action sheet.
  * §10.4 assigns `sequence_no` itself and rewrites it on every generate, so a
@@ -235,24 +237,15 @@ export default function TripPlannerPage({ params }: { params: Promise<{ id: stri
         </Link>
       </div>
 
-      {/* §24.14's "running total footer". The figures are the server's; see the
-          module docstring for why none of them is computed here. */}
-      <footer className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <p className="text-sm text-muted-foreground">
-            Estimated so far ·{' '}
-            <span className="font-medium text-foreground">
-              <Money value={{ amount: trip.total_amount, currency: trip.currency }} />
-            </span>
-          </p>
-          <Link
-            href={`/trips/${id}/summary`}
-            className="rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground"
-          >
-            Continue
-          </Link>
-        </div>
-      </footer>
+      {/* §24.14's running total footer. The figures are the server's; see the
+          module docstring for why none of them is computed here, and
+          `RunningTotal` for why a zero is written out in words. */}
+      <RunningTotal
+        items={itinerary?.items ?? []}
+        amount={trip.total_amount}
+        currency={trip.currency}
+        summaryHref={`/trips/${id}/summary`}
+      />
     </div>
   );
 }
