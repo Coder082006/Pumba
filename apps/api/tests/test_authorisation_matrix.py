@@ -114,6 +114,18 @@ PUBLIC_BY_DESIGN = {
     "v1:catalogue:accommodation-detail": "§9.3.2 public catalogue; filtered by visibility.",
     "v1:catalogue:search": "§24.7 search; every kind filtered by visibility.",
     "v1:catalogue:tag-list": "§24.7 chip vocabulary; retired tags are excluded.",
+    # Served by `inventory` and public for the same reasons as the rows above
+    # it: §24.10 is an indexable page and a tourist compares dates before
+    # signing in. The activity is resolved through
+    # `catalogue.services.resolve_listing_ref`, which applies the same
+    # visibility chain — so a withdrawn activity's calendar is a 404 rather
+    # than an empty list, and `apps/inventory/tests/test_departures_api.py`
+    # asserts exactly that.
+    #
+    # What it exposes about a *provider* is deliberately thin: seats remaining,
+    # never `capacity_held` and `capacity_sold` separately, because the split
+    # would say how many seats somebody else is midway through paying for.
+    "v1:inventory:activity-departures": "§9.3.2 public catalogue; filtered by visibility.",
 }
 
 
@@ -195,6 +207,17 @@ SCOPED_BY_A_SELECTOR = {
     ),
     "v1:trip:trip-flights": (
         "Replaces the flights of a trip loaded through the `trip.selectors.trips_of` selector."
+    ),
+    # §9.4.5's quote. `booking` owns the use case (ADR 0022) and loads the
+    # trip through `trip.services.quote_basis`, which composes from the same
+    # `trip.selectors.trips_of(tourist_id)` selector every route above it uses
+    # — so a stranger's trip is never fetched and the answer is 404.
+    # `tests/test_quote_api.py` asserts that, and asserts the stronger thing
+    # underneath it: a foreign principal takes no capacity on the way past.
+    "v1:booking:trip-quote": (
+        "`booking.quote_trip` loads the trip through `trip.services.quote_basis`, "
+        "which fetches via `trip.selectors.trips_of(tourist_id)` — the owner is in "
+        "the WHERE clause."
     ),
     "v1:trip:trip-generate": (
         "Regenerates the itinerary of a trip loaded through the `trip.selectors.trips_of` selector."

@@ -19,6 +19,7 @@ carried it only sometimes would be one nobody reads.
 from __future__ import annotations
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.apps import apps as django_apps
@@ -28,6 +29,7 @@ from rest_framework.test import APIClient
 
 from apps.inventory import services
 from apps.inventory.dto import HoldRequest
+from apps.inventory.tests.catalogue_rows import ZONE
 from apps.inventory.tests.factories import make_departure
 
 pytestmark = pytest.mark.django_db
@@ -120,13 +122,23 @@ class TestTheWindow:
 
     def test_the_day_named_by_to_is_included(self) -> None:
         """A window that excluded its own end date would drop the departure a
-        tourist typed the date of."""
+        tourist typed the date of.
+
+        The date is taken **in the destination's zone**, which is the whole
+        point of the endpoint resolving it there. `when.date()` is the UTC
+        date, and the test fixtures sit in Pacific/Auckland (UTC+12) — so a
+        departure at 22:00 UTC is the *next* day locally, and asking for the
+        UTC date returns an empty window. That made this test pass or fail
+        according to the hour it ran at, which it did: green all afternoon and
+        red at 20:00.
+        """
         when = timezone.now() + dt.timedelta(days=3)
         departure = make_departure(departs_at=when)
+        local_date = when.astimezone(ZoneInfo(ZONE)).date().isoformat()
         response = _get(
             departure.activity_id,
-            **{"from": when.date().isoformat()},
-            to=when.date().isoformat(),
+            **{"from": local_date},
+            to=local_date,
         )
         assert len(response.data["data"]) == 1  # type: ignore[attr-defined]
 
