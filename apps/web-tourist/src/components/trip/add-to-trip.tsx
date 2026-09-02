@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
+import { DeparturePicker } from '@/components/catalogue/departure-picker';
 import { ApiRequestError } from '@/lib/api';
 import { addItem, getTrip, listTrips, type AddItemInput, type TripSummary } from '@/lib/trips';
 
@@ -48,7 +49,22 @@ export type Timing =
    * The dates are already chosen — the stay picker's own check-in and check-out
    * — so the day number is derived rather than asked for again.
    */
-  | { kind: 'dates'; startDate: string; endDate: string; startTime: string; endTime: string };
+  | { kind: 'dates'; startDate: string; endDate: string; startTime: string; endTime: string }
+  /**
+   * The tourist picks one of the operator's real departures — Phase 5.
+   *
+   * This replaces `on-day` for activities, and the difference is not
+   * cosmetic. A free `<input type="time">` let somebody ask for 09:00 on a
+   * boat that leaves at 08:30, which was fine while nothing checked and is a
+   * refused quote now that something does. The instant chosen here *is* the
+   * departure: `UNIQUE(activity_id, departs_at)` is what turns it back into
+   * one when the trip is priced, so no client ever handles an internal id.
+   *
+   * The day number is derived from the instant rather than asked for, because
+   * the departure already knows which day it is on and offering a second
+   * answer would let the two disagree.
+   */
+  | { kind: 'departure'; reference: string; timeZone: string; durationMinutes: number };
 
 export interface AddToTripProps {
   /** What the API needs, minus the placement this control works out. */
@@ -143,6 +159,7 @@ export function AddToTrip({ item, timing, label = 'Add to trip' }: AddToTripProp
   const [tripId, setTripId] = useState('');
   const [day, setDay] = useState('1');
   const [start, setStart] = useState(timing.kind === 'on-day' ? timing.defaultStart : '');
+  const [departsAt, setDepartsAt] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -175,7 +192,32 @@ export function AddToTrip({ item, timing, label = 'Add to trip' }: AddToTripProp
     let startsAt: string;
     let endsAt: string;
 
-    if (timing.kind === 'dates') {
+    if (timing.kind === 'departure') {
+      if (!departsAt) {
+        setStatus({ kind: 'error', message: 'Choose a departure first.' });
+        return;
+      }
+      // Which day of the trip the departure falls on, measured at the
+      // destination. The browser's own date would put an early departure on
+      // the previous day for anybody west of it — a correct instant filed
+      // under the wrong day.
+      const localDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: zone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date(departsAt));
+      dayNumber = daysBetween(trip.start_date, localDate) + 1;
+      if (dayNumber < 1 || dayNumber > dayCount(trip)) {
+        setStatus({
+          kind: 'error',
+          message: `That departure is outside this trip, which runs ${trip.start_date} to ${trip.end_date}.`,
+        });
+        return;
+      }
+      startsAt = departsAt;
+      endsAt = new Date(Date.parse(departsAt) + timing.durationMinutes * 60_000).toISOString();
+    } else if (timing.kind === 'dates') {
       dayNumber = daysBetween(trip.start_date, timing.startDate) + 1;
       if (dayNumber < 1 || dayNumber > dayCount(trip)) {
         setStatus({
@@ -219,7 +261,7 @@ export function AddToTrip({ item, timing, label = 'Add to trip' }: AddToTripProp
     } finally {
       setBusy(false);
     }
-  }, [status, tripId, day, start, item, timing]);
+  }, [status, tripId, day, start, departsAt, item, timing]);
 
   if (status.kind === 'loading') {
     // Roughly the height of what replaces it. §29 measures CLS, and a
@@ -228,7 +270,7 @@ export function AddToTrip({ item, timing, label = 'Add to trip' }: AddToTripProp
     return (
       <div
         aria-hidden
-        className={`rounded-md bg-muted ${timing.kind === 'on-day' ? 'h-52' : 'h-32'}`}
+        className={`rounded-md bg-muted ${timing.kind === 'dates' ? 'h-32' : 'h-52'}`}
       />
     );
   }
@@ -295,7 +337,18 @@ export function AddToTrip({ item, timing, label = 'Add to trip' }: AddToTripProp
         </select>
       </label>
 
-      {timing.kind === 'on-day' ? (
+      {timing.kind === 'departure' ? (
+        <DeparturePicker
+          reference={timing.reference}
+          timeZone={timing.timeZone}
+          // The party the trip carries, which is the party the quote will hold
+          // for. Asking the picker about a different number would grey out the
+          // wrong dates.
+          pax={chosen ? chosen.adults + chosen.children : undefined}
+          value={departsAt}
+          onChange={setDepartsAt}
+        />
+      ) : timing.kind === 'on-day' ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm">
             Which day
@@ -328,7 +381,7 @@ export function AddToTrip({ item, timing, label = 'Add to trip' }: AddToTripProp
 
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || (timing.kind === 'departure' && !departsAt)}
         onClick={() => void add()}
         className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors duration-fast ease-out hover:bg-primary/90 disabled:opacity-60"
       >
@@ -336,8 +389,18 @@ export function AddToTrip({ item, timing, label = 'Add to trip' }: AddToTripProp
       </button>
 
       <p className="text-xs text-muted-foreground">
-        Times are local to {chosen?.destination.name ?? 'the destination'}, and the planner will
-        adjust them when you generate the itinerary.
+        {timing.kind === 'departure' ? (
+          <>
+            Times are the operator&apos;s, local to{' '}
+            {chosen?.destination.name ?? 'the destination'}. A departure is not held until you
+            ask for a price.
+          </>
+        ) : (
+          <>
+            Times are local to {chosen?.destination.name ?? 'the destination'}, and the planner
+            will adjust them when you generate the itinerary.
+          </>
+        )}
       </p>
     </div>
   );

@@ -12,15 +12,14 @@ import type { Activity } from '@pumba/contracts';
 /**
  * Activity — SRS §24.10.
  *
- * Two things this page deliberately does **not** show, both because the data
- * does not exist rather than because they were forgotten.
+ * The departures panel is real as of Phase 5: `GET /activities/{id}/departures`
+ * serves the operator's own dates with the seats remaining on each, and the
+ * picker inside `AddToTrip` is what a tourist chooses from. The figures are
+ * indicative (§17.1 I3) and the component says so — capacity is held under a
+ * row lock when the trip is priced, not when it is planned.
  *
- * **No departures calendar.** §24.10's design has a month grid with per-date
- * seat counts. Those come from `activity_departure`, which ADR 0011 moved to
- * `inventory` and whose materialisation is Phase 5 — there is no endpoint
- * serving them, and there will not be one this phase. Rendering an empty
- * calendar would look like an activity with no availability, which is a
- * commercial lie about a provider. The panel states its own absence instead.
+ * One thing this page still deliberately does **not** show, because the data
+ * does not exist rather than because it was forgotten.
  *
  * **No converted price.** The design shows "TZS 117,000 indicative" beside the
  * USD figure. The `Activity` schema's own docstring rules it out: *"§18.4 puts
@@ -147,21 +146,24 @@ export default async function ActivityPage({ params }: Params) {
             <span className="text-sm font-normal text-muted-foreground">per person</span>
           </h2>
 
-          <DeparturesUnavailable />
-
           {/*
-            §24.10's last step. The start time is the tourist's rather than the
-            provider's, because the provider's is a departure and departures
-            live in `inventory` (Phase 5) — see `DeparturesUnavailable`. The
-            duration is the activity's own, and §10.4 re-times the whole day on
-            the next generate in any case.
+            §24.10's last step, and the departure picker is inside it rather
+            than above it: the seats it shows depend on the party size, which
+            is the chosen trip's, so a picker outside the panel would be
+            answering about a party nobody had picked yet.
+
+            The start time is the operator's now. It was the tourist's until
+            Phase 5, because a departure is `inventory`'s and there was nothing
+            to choose from — and a freely typed 09:00 on a boat that leaves at
+            08:30 is exactly what the quote now refuses.
           */}
           <AddToTrip
             item={{ item_type: 'ACTIVITY', activity: activity.slug }}
             timing={{
-              kind: 'on-day',
+              kind: 'departure',
+              reference: activity.slug,
+              timeZone: activity.destination.timezone,
               durationMinutes: activity.duration_minutes,
-              defaultStart: '09:00',
             }}
           />
         </section>
@@ -206,14 +208,3 @@ function Bullets({ title, items, mark }: { title: string; items: string[]; mark:
   );
 }
 
-function DeparturesUnavailable() {
-  return (
-    <div className="rounded-md border border-dashed border-border bg-muted p-3 text-sm text-muted-foreground">
-      <p className="font-medium text-foreground">Dates and availability</p>
-      <p className="mt-1">
-        Live departure dates are not available yet. Availability is confirmed when you add this
-        activity to a trip.
-      </p>
-    </div>
-  );
-}

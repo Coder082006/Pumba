@@ -34,10 +34,22 @@ export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   'http://localhost:8000/api/v1';
 
+/**
+ * One entry of §9.2's `details` array.
+ *
+ * The shape depends on the error code, which is why this is a bag rather than
+ * a record type: `VALIDATION_ERROR` names a field and an issue,
+ * `INVENTORY_UNAVAILABLE` names a departure, why it is unavailable, and the
+ * alternatives the catalogue offers (§9.4.5). Narrowing it to the first shape
+ * — as this did until Phase 5 — makes the second unreadable without a cast,
+ * and a cast is where a client stops noticing that the server changed.
+ */
+export type ApiErrorDetail = Readonly<Record<string, unknown>>;
+
 export class ApiRequestError extends Error {
   readonly code: string;
   readonly status: number;
-  readonly details: Array<{ field: string; issue: string }>;
+  readonly details: ApiErrorDetail[];
   readonly retryable: boolean;
   readonly requestId: string | null;
 
