@@ -38,6 +38,23 @@
 ;
 ; Every module may import `apps.common` and `ports`, which are leaves.
 ;
+; Every `deps-*` contract below sets `allow_indirect_imports = True`, which
+; makes it check DIRECT imports only. That is what "read STRICTLY and
+; NON-TRANSITIVELY" above means, and without it the contracts contradict the
+; graph they encode: `booking -> trip` is legal and `trip -> catalogue` is
+; legal, so `booking` reaches `catalogue` through a chain of two permitted
+; edges — which is the transitive closure of a legal DAG, not a violation.
+;
+; Left unset, the first module to actually use one of its declared
+; dependencies fails the contract for its dependency's dependencies. That did
+; not happen until Phase 5 because nothing above L2 had imported anything yet;
+; `booking.services` calling `inventory.services` and `trip.services` is the
+; first time an L4 module used the triple §6.4 gave it.
+;
+; The privacy contracts have carried the same flag since ADR 0014, for the
+; same reason: what is being forbidden is an import somebody wrote, not a
+; module somebody can reach.
+;
 ; PAYMENT NOTE. SRS §6.4 gives payment's dependency as "booking (via events)".
 ; That is not implementable as written: §9.4.7 asserts `trip.status` and reads
 ; `trip.total_amount` synchronously, and §20.8's confirmation routine commits
@@ -59,6 +76,7 @@ include_external_packages = True
 [importlinter:contract:deps-identity]
 name = identity depends on no other module
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.identity
 forbidden_modules =
@@ -79,6 +97,7 @@ forbidden_modules =
 [importlinter:contract:deps-location]
 name = location depends on no other module
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.location
 forbidden_modules =
@@ -99,6 +118,7 @@ forbidden_modules =
 [importlinter:contract:deps-notify]
 name = notify depends on no other module
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.notify
 forbidden_modules =
@@ -119,6 +139,7 @@ forbidden_modules =
 [importlinter:contract:deps-catalogue]
 name = catalogue depends only on location
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.catalogue
 forbidden_modules =
@@ -138,6 +159,7 @@ forbidden_modules =
 [importlinter:contract:deps-provider]
 name = provider depends only on identity
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.provider
 forbidden_modules =
@@ -157,6 +179,7 @@ forbidden_modules =
 [importlinter:contract:deps-inventory]
 name = inventory depends only on catalogue
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.inventory
 forbidden_modules =
@@ -176,6 +199,7 @@ forbidden_modules =
 [importlinter:contract:deps-transport]
 name = transport depends only on location and provider
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.transport
 forbidden_modules =
@@ -194,6 +218,7 @@ forbidden_modules =
 [importlinter:contract:deps-trip]
 name = trip depends only on catalogue and transport
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.trip
 forbidden_modules =
@@ -212,6 +237,7 @@ forbidden_modules =
 [importlinter:contract:deps-booking]
 name = booking depends only on inventory, trip and provider
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.booking
 forbidden_modules =
@@ -229,6 +255,7 @@ forbidden_modules =
 [importlinter:contract:deps-payment]
 name = payment depends only on booking, trip and inventory (see PAYMENT NOTE)
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.payment
 forbidden_modules =
@@ -246,6 +273,7 @@ forbidden_modules =
 [importlinter:contract:deps-messaging]
 name = messaging depends only on booking
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.messaging
 forbidden_modules =
@@ -265,6 +293,7 @@ forbidden_modules =
 [importlinter:contract:deps-review]
 name = review depends only on booking
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.review
 forbidden_modules =
@@ -284,6 +313,7 @@ forbidden_modules =
 [importlinter:contract:deps-finance]
 name = finance depends only on payment and booking
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     apps.finance
 forbidden_modules =
