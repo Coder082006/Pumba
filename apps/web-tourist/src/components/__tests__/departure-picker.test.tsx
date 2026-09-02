@@ -27,11 +27,15 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DeparturePicker } from '@/components/catalogue/departure-picker';
+import type * as Inventory from '@/lib/inventory';
 import type { Departure } from '@/lib/inventory';
 
 const listDepartures = vi.fn();
+// `importActual` rather than a bare object: `byLocalDate`, `scarcity` and
+// `unbookableLabel` are the module's own and are what the component renders
+// with. Stubbing them too would leave the test asserting against copies.
 vi.mock('@/lib/inventory', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/inventory')>('@/lib/inventory');
+  const actual = await vi.importActual<typeof Inventory>('@/lib/inventory');
   return { ...actual, listDepartures: (...args: unknown[]) => listDepartures(...args) };
 });
 
