@@ -43,6 +43,8 @@ from apps.administration.management.commands.seed import DEFAULT_ROOT, find_seed
 from apps.administration.models import AuditLog
 from apps.catalogue.models import (
     Accommodation,
+    Activity,
+    ActivitySchedule,
     Attraction,
     CancellationPolicy,
     Country,
@@ -50,7 +52,7 @@ from apps.catalogue.models import (
     Region,
     Tag,
 )
-from apps.catalogue.services import SEED_FILES
+from apps.catalogue.services import SCHEDULE_SEED_FILE, SEED_FILES
 from apps.common.geo import BoundingBox, Coordinates
 
 pytestmark = pytest.mark.django_db
@@ -70,6 +72,12 @@ APPENDIX_C = {
     Attraction: 26,  # "~25"
     Accommodation: 43,  # "~40"
     CancellationPolicy: 4,  # FLEX_48H, MODERATE_7D, STRICT_14D, NON_REFUNDABLE
+    # Not Appendix C's. ADR 0013 made activities provider-supplied, and the
+    # provider portal that would supply them is Phase 11; Phase 5 seeds them
+    # because activity capacity is the only thing v1 sells, and a platform
+    # whose sole bookable product cannot be seen until Phase 11 is one nobody
+    # can test, demonstrate or price.
+    Activity: 12,
 }
 
 
@@ -127,6 +135,17 @@ def _coordinates_by_country() -> list[tuple[str, BoundingBox, Coordinates]]:
             )
     assert found, "no seeded coordinates found — the walk above is broken"
     return found
+
+
+def _schedule_rows() -> list[dict[str, object]]:
+    """The schedule file, which is not in `SEED_FILES`.
+
+    `activity_schedule` has no natural key a person can write — it is not a
+    thing with a name, it is "this activity, at this time" — so it is loaded
+    separately (`load_schedule_seed`) and read separately here.
+    """
+    path = SEEDS / f"{SCHEDULE_SEED_FILE}.json"
+    return list(json.loads(path.read_text(encoding="utf-8")))
 
 
 class TestTheSeedDirectoryIsFoundInEitherLayout:
@@ -319,9 +338,81 @@ class TestTheCommittedFiles:
         destinations = {r["slug"] for r in _rows("destination")}
         for row in _rows("destination"):
             assert row["region"] in regions, row["slug"]
-        for stem in ("attraction", "accommodation"):
+        for stem in ("attraction", "accommodation", "activity"):
             for row in _rows(stem):
                 assert row["destination"] in destinations, row["slug"]
+
+        policies = {row["code"] for row in _rows("cancellation_policy")}
+        for row in _rows("activity"):
+            named = row.get("cancellation_policy")
+            if named is not None:
+                assert named in policies, row["slug"]
+
+        activities = {row["slug"] for row in _rows("activity")}
+        for row in _schedule_rows():
+            assert row["activity"] in activities, row["activity"]
+
+
+class TestTheActivitiesArePriceableAndBookable:
+    """Phase 5 sells activity capacity, and these are the columns it sells by.
+
+    Every one of these would be a plausible-looking row that produced no
+    departures, no price, or a price nobody could charge — the failures that
+    only show up when somebody tries to buy something.
+    """
+
+    def test_every_activity_carries_a_price_and_a_currency(self) -> None:
+        """§10.7: an activity is the only item type that produces a
+        `line_total`. One without a price is an activity a trip cannot cost."""
+        for row in _rows("activity"):
+            assert row["price_per_person"], row["slug"]
+            assert len(row["currency"]) == 3, row["slug"]
+
+    def test_no_price_is_written_as_a_number(self) -> None:
+        """Hard rule 6: money is `Decimal`, never float. A JSON number is
+        parsed as a float before anything can object, so the file has to
+        carry strings."""
+        for row in _rows("activity"):
+            assert isinstance(row["price_per_person"], str), row["slug"]
+            assert row["price_per_group"] is None or isinstance(row["price_per_group"], str)
+
+    def test_every_party_range_is_satisfiable(self) -> None:
+        for row in _rows("activity"):
+            assert 1 <= row["min_pax"] <= row["max_pax"], row["slug"]
+
+    def test_every_activity_has_at_least_one_schedule(self) -> None:
+        """The failure this exists to refuse: a seeded activity with no rule
+        has no departures, shows an empty calendar, and looks exactly like a
+        working activity nobody has booked."""
+        scheduled = {row["activity"] for row in _schedule_rows()}
+        for row in _rows("activity"):
+            assert row["slug"] in scheduled, row["slug"]
+
+    def test_every_schedule_runs_on_a_day(self) -> None:
+        for row in _schedule_rows():
+            assert row["days"], row["activity"]
+
+    def test_a_schedule_never_seats_more_than_the_activity_takes(self) -> None:
+        """A twelve-seat boat with a sixteen-seat departure sells four seats
+        the operator cannot honour, and every layer below this believes the
+        counter."""
+        limits = {row["slug"]: row["max_pax"] for row in _rows("activity")}
+        for row in _schedule_rows():
+            assert row["capacity"] <= limits[row["activity"]], row["activity"]
+
+    def test_every_tag_an_activity_uses_is_in_the_vocabulary(self) -> None:
+        vocabulary = {row["slug"] for row in _rows("tag")}
+        for row in _rows("activity"):
+            unknown = set(row.get("tags", ())) - vocabulary
+            assert not unknown, f"{row['slug']} uses {sorted(unknown)}"
+
+    def test_an_activity_with_a_minimum_age_says_so_in_both_places(self) -> None:
+        """§16.4's `requirements` feeds VR-15 and the booking guards; the
+        `min_age` column feeds the same rule. Two sources disagreeing is a
+        restriction enforced in one place and displayed from the other."""
+        for row in _rows("activity"):
+            declared = row.get("requirements", {}).get("min_age")
+            assert declared == row["min_age"], row["slug"]
 
 
 class TestLoadingIt:
@@ -330,6 +421,30 @@ class TestLoadingIt:
         for model, expected in APPENDIX_C.items():
             assert model.all_objects.count() == expected, model.__name__
         assert Tag.all_objects.count() == 7
+
+    def test_the_schedules_load_with_the_activities(self) -> None:
+        call_command("seed", verbosity=0)
+        assert ActivitySchedule.objects.count() == len(_schedule_rows())
+
+    def test_a_second_run_does_not_double_the_schedules(self) -> None:
+        """Keyed by `(activity, start_time)`. A duplicate rule would double
+        every departure the materialiser then produced, which reads as a
+        provider running twice as many boats."""
+        call_command("seed", verbosity=0)
+        call_command("seed", verbosity=0)
+        assert ActivitySchedule.objects.count() == len(_schedule_rows())
+
+    def test_the_seeded_schedules_produce_departures(self) -> None:
+        """End to end: the point of seeding any of this. §16.2's job turns
+        rules into sellable instants, and a catalogue that produced none would
+        pass every assertion above it."""
+        from apps.inventory import services as inventory
+
+        call_command("seed", verbosity=0)
+        created = inventory.materialise_departures(
+            start=Destination.objects.first().created_at.date(), horizon_days=14
+        )
+        assert created > 0
 
     def test_a_second_run_updates_rather_than_duplicating(self) -> None:
         """`make seed` runs on every fresh checkout and again whenever a
@@ -366,7 +481,17 @@ class TestLoadingIt:
             "attraction",
             "accommodation",
             "cancellation_policy",
+            "activity",
         }
+
+    def test_a_seeded_schedule_is_not_audited_as_a_catalogue_write(self) -> None:
+        """`activity_schedule` is loaded outside the entity registry, so it
+        writes no audit row — stated rather than left as an omission somebody
+        later reads as a bug. §41.13 audits *administrative actions*, and a
+        recurrence rule arriving with its activity is part of one write, not a
+        second one."""
+        call_command("seed", verbosity=0)
+        assert not AuditLog.objects.filter(entity_type="activity_schedule").exists()
 
     def test_a_seeded_market_is_immediately_public(self) -> None:
         """The seed set is only useful if it reaches the §9.3.2 endpoints — so

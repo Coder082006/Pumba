@@ -97,6 +97,8 @@ __all__ = [
     "resolve_references",
     "to_orm_fields",
     "SEED_FILES",
+    "SCHEDULE_SEED_FILE",
+    "load_schedule_seed",
     "SeedResult",
     "load_seed",
     "create",
@@ -591,7 +593,29 @@ SEED_FILES: tuple[tuple[str, str], ...] = (
     # seeded anyway because they are the vocabulary a provider picks from — a
     # portal offering an empty policy list is a portal nobody can list on.
     ("08-cancellation-policies", "cancellation_policy"),
+    # Activities come after the policies they reference. Appendix C as amended
+    # by ADR 0013 calls them provider-supplied rather than seeded, and they are
+    # seeded anyway for the reason the policies above them are: Phase 5 sells
+    # activity capacity, the provider portal that would supply them is Phase
+    # 11, and a platform whose only bookable product cannot be seen before then
+    # is one nobody can test, demonstrate or price.
+    ("10-activities", "activity"),
 )
+
+
+#: The schedule seed, loaded separately from `SEED_FILES` — for the same
+#: reason `media` is.
+#:
+#: `activity_schedule` is **not** a `CatalogueEntity` and cannot be one. Every
+#: entity in that registry is identified by a natural key a person can write —
+#: an ISO code, a slug, a policy code — and a recurrence rule has none. It is
+#: not a thing with a name; it is "this activity, at this time". Inventing a
+#: slug for it would put a synthetic identifier in the schema to satisfy a
+#: loader, which is the tail wagging the dog.
+#:
+#: So it gets `(activity, start_time)` as its natural key and a loader of its
+#: own, which says plainly that a schedule is a different kind of row.
+SCHEDULE_SEED_FILE = "11-activity-schedules"
 
 
 #: The media seed, loaded separately from `SEED_FILES`.
@@ -678,6 +702,76 @@ def load_media_seed(rows: Sequence[Mapping[str, Any]]) -> SeedResult:
     return SeedResult("media", created, updated)
 
 
+def load_schedule_seed(rows: Sequence[Mapping[str, Any]]) -> SeedResult:
+    """Load `activity_schedule`, resolving each row's activity by slug.
+
+    Idempotent by `(activity, start_time)`: re-seeding the 08:30 Mnemba
+    departure rule updates it rather than adding a second one, which would
+    double every departure the materialiser then produced.
+
+    A row naming an activity that does not exist is an error rather than a
+    skip. A seeded activity with no schedule has no departures, shows an empty
+    calendar, and looks exactly like a working activity nobody has booked —
+    which is the failure this loader is cheapest at refusing.
+
+    `weekday_mask` is accepted as a list of day names rather than an integer.
+    Bit 0 is Monday (`domain.schedules`), and a seed file full of `63` and `31`
+    is one nobody can review: the whole point of the mask being data is that a
+    person can see which days a boat runs.
+    """
+    created = updated = 0
+    for row in rows:
+        fields = dict(row)
+        activity_slug = str(fields.pop("activity"))
+        activity = repo.find_by_natural_key(Activity, "slug", activity_slug)
+        if activity is None:
+            raise ValidationError(
+                f"activity_schedule: no live activity with slug {activity_slug!r}"
+            )
+
+        fields["weekday_mask"] = _weekday_mask(fields.pop("days"))
+        start_time = fields["start_time"]
+
+        existing = ActivitySchedule.objects.filter(
+            activity_id=activity.pk, start_time=start_time
+        ).first()
+        if existing is None:
+            ActivitySchedule.objects.create(activity_id=activity.pk, **fields)
+            created += 1
+        else:
+            for key, value in fields.items():
+                setattr(existing, key, value)
+            existing.save()
+            updated += 1
+
+    return SeedResult("activity_schedule", created, updated)
+
+
+#: Monday first, matching `date.weekday()` and `domain.schedules`. Written out
+#: so a seed file says "mon" and a reviewer can check it against a provider's
+#: own timetable without doing binary arithmetic.
+_WEEKDAYS: Mapping[str, int] = MappingProxyType(
+    {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+)
+
+
+def _weekday_mask(days: Sequence[str]) -> int:
+    mask = 0
+    for day in days:
+        try:
+            mask |= 1 << _WEEKDAYS[day.lower()]
+        except KeyError as exc:
+            raise ValidationError(
+                f"activity_schedule: {day!r} is not a weekday; "
+                f"expected one of {sorted(_WEEKDAYS)}."
+            ) from exc
+    if mask == 0:
+        # The CHECK constraint refuses this too. Refusing it here names the
+        # file and the row instead of the constraint.
+        raise ValidationError("activity_schedule: a schedule must run on at least one day.")
+    return mask
+
+
 def load_seed(
     entity_key: str,
     rows: Sequence[Mapping[str, Any]],
@@ -726,6 +820,28 @@ def load_seed(
     return SeedResult(entity_key, created, updated)
 
 
+def _natural_key_of(model: type[SoftDeleteModel]) -> str:
+    """How a seed file names a row of `model`.
+
+    Read off `ENTITIES`, where each entity already declares it, rather than
+    branched on. This was `"iso_code" if model is Country else "slug"`, which
+    is right for seven of the nine entities and silently wrong for the two it
+    is not: `cancellation_policy` is keyed by `code`, so an activity naming
+    `"MODERATE_7D"` looked for a policy with that *slug*, found no such field,
+    and failed with a Django keyword error naming neither the file nor the row.
+
+    Nothing referenced a policy until Phase 5 seeded the first activity, which
+    is why a two-branch conditional survived: it was correct for every
+    reference that existed when it was written.
+    """
+    for entity in ENTITIES.values():
+        if entity.model is model:
+            return entity.natural_key
+    # Unreachable while `references` only names registered entities, and a
+    # loud failure is better than a silent fallback to `slug` if that changes.
+    raise ValidationError(f"{model.__name__} is not a seedable catalogue entity.")
+
+
 def _resolve_natural_references(entity: CatalogueEntity, row: Mapping[str, Any]) -> dict[str, Any]:
     """Swap each parent's slug or ISO code for that parent's `public_id`.
 
@@ -740,8 +856,7 @@ def _resolve_natural_references(entity: CatalogueEntity, row: Mapping[str, Any])
         value = fields.get(name)
         if value is None:
             continue
-        key = "iso_code" if model is Country else "slug"
-        parent = repo.find_by_natural_key(model, key, str(value))
+        parent = repo.find_by_natural_key(model, _natural_key_of(model), str(value))
         if parent is None:
             raise ValidationError(
                 f"seed row names a {name} that does not exist: {value!r}",

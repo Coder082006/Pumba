@@ -1,0 +1,138 @@
+[
+  {
+    "activity": "mnemba-atoll-snorkelling",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat"],
+    "start_time": "08:30:00",
+    "capacity": 12,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "mnemba-atoll-snorkelling",
+    "days": ["mon", "wed", "fri"],
+    "start_time": "13:30:00",
+    "capacity": 12,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "spice-farm-tour",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "start_time": "09:00:00",
+    "capacity": 16,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "prison-island-half-day",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "start_time": "09:30:00",
+    "capacity": 14,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "prison-island-half-day",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "start_time": "14:00:00",
+    "capacity": 14,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "stone-town-walking-tour",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "start_time": "15:30:00",
+    "capacity": 12,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "stone-town-walking-tour",
+    "days": ["tue", "thu", "sat"],
+    "start_time": "09:00:00",
+    "capacity": 12,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "paje-kitesurfing-lesson",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat"],
+    "start_time": "10:00:00",
+    "capacity": 2,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "paje-kitesurfing-lesson",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat"],
+    "start_time": "14:30:00",
+    "capacity": 2,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "jozani-forest-red-colobus",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "start_time": "09:00:00",
+    "capacity": 20,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "jozani-forest-red-colobus",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "start_time": "14:00:00",
+    "capacity": 20,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "sunset-dhow-cruise",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "start_time": "16:45:00",
+    "capacity": 16,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "mnemba-two-tank-dive",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat"],
+    "start_time": "07:30:00",
+    "capacity": 8,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "kiwengwa-caves-and-village",
+    "days": ["mon", "wed", "fri"],
+    "start_time": "10:00:00",
+    "capacity": 15,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "kendwa-sandbank-picnic",
+    "days": ["tue", "thu", "sat", "sun"],
+    "start_time": "10:30:00",
+    "capacity": 10,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "michamvi-sunset-kayak",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "start_time": "16:30:00",
+    "capacity": 8,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  },
+  {
+    "activity": "safari-blue-full-day",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "start_time": "09:00:00",
+    "capacity": 20,
+    "valid_from": "2026-01-01",
+    "valid_to": null
+  }
+]
