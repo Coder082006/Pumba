@@ -32,7 +32,8 @@ grows a cache round trip later.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.db import transaction
 
@@ -50,6 +51,7 @@ from apps.inventory.dto import AvailabilityBasis, DepartureDTO, DriftDTO, HoldDT
 from apps.inventory.models import ActivityDeparture, HoldStatus, InventoryHold
 
 __all__ = [
+    "materialise_departures",
     "list_departures",
     "check_availability",
     "resolve_departure_at",
@@ -62,6 +64,91 @@ __all__ = [
 
 #: §17.5: "in batches of 200".
 SWEEP_BATCH = 200
+
+#: Schedules read per page by the materialiser. Not a business constant — it
+#: trades memory against round trips and nothing observable depends on it.
+SCHEDULE_PAGE = 500
+
+
+def materialise_departures(*, start: date, horizon_days: int) -> int:
+    """§16.2's nightly expansion of schedules into sellable departures.
+
+    Returns the number of departures created.
+
+    **Idempotent by the unique constraint, not by a lookup.**
+    `UNIQUE(activity_id, departs_at)` already says a departure happens once,
+    and `ignore_conflicts=True` lets the database enforce that instead of a
+    read-then-write that races itself when two runs overlap. §8.8 requires
+    idempotence of this job; this is the cheapest honest way to get it.
+
+    **An existing departure is never touched.** A schedule whose capacity a
+    provider raised from twelve to sixteen produces sixteen-seat departures
+    from tomorrow and leaves next Tuesday's twelve-seat one exactly as it is —
+    which is §26.4's rule that *"changes to price, cancellation policy or
+    capacity take effect only for new bookings, never for existing ones"*,
+    obtained for free rather than implemented separately.
+
+    **The wall time is resolved in the destination's zone.** §16.2's
+    `start_time` is local — "Monday to Saturday at 08:30" means half past eight
+    where the boat leaves from, and resolving it in UTC puts every departure
+    an hour out for half the year in any destination that observes DST.
+    Zanzibar does not, which is exactly why this must be right for reasons
+    nobody here will ever see: §4.2 forbids the code from knowing which
+    destination it is serving.
+
+    A local time that does not exist — the hour a spring-forward skips — is
+    resolved by `zoneinfo`'s `fold` rules rather than raised on. There is no
+    good answer for "08:30 on a day with no 08:30", the alternative is a
+    missing departure nobody is told about, and the provider can cancel or
+    move the one date affected.
+    """
+    created = 0
+    after = 0
+    while True:
+        page = catalogue.active_schedules(
+            start=start, horizon_days=horizon_days, after=after, limit=SCHEDULE_PAGE
+        )
+        if not page:
+            return created
+        after = max(fact.schedule_id for fact in page)
+
+        wanted: dict[int, set[datetime]] = {}
+        capacity: dict[tuple[int, datetime], tuple[int, int]] = {}
+        for fact in page:
+            zone = ZoneInfo(fact.timezone)
+            for day in fact.local_dates:
+                instant = datetime.combine(day, fact.start_time, tzinfo=zone)
+                wanted.setdefault(fact.activity_id, set()).add(instant)
+                capacity[(fact.activity_id, instant)] = (fact.capacity, fact.schedule_id)
+
+        # What already exists, in one query per page. Without this the job
+        # would re-send every row it has ever created, every night: after the
+        # first run almost all of them are duplicates, and `ignore_conflicts`
+        # discards them *after* they have crossed the wire and been parsed.
+        existing: set[tuple[int, datetime]] = set(
+            ActivityDeparture.objects.filter(activity_id__in=wanted).values_list(
+                "activity_id", "departs_at"
+            )
+        )
+
+        rows = [
+            ActivityDeparture(
+                activity_id=activity_id,
+                schedule_id=schedule_id,
+                departs_at=instant,
+                capacity_total=seats,
+            )
+            for (activity_id, instant), (seats, schedule_id) in capacity.items()
+            if (activity_id, instant) not in existing
+        ]
+        if rows:
+            # `ignore_conflicts` stays as the backstop, not the mechanism. The
+            # filter above is what makes the count meaningful and the job
+            # cheap; the flag is what keeps two overlapping runs — a nightly
+            # beat and an operator's manual catch-up — from colliding on the
+            # unique constraint.
+            ActivityDeparture.objects.bulk_create(rows, ignore_conflicts=True)
+            created += len(rows)
 
 
 def _rules(activity_id: int) -> PartyRules:

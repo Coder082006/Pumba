@@ -40,7 +40,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from types import MappingProxyType
 from typing import Any
@@ -52,10 +52,12 @@ from django.db import transaction
 
 from apps.catalogue import repositories as repo
 from apps.catalogue.domain import opening_hours
+from apps.catalogue.domain.schedules import ScheduleError, ScheduleRule, occurrence_dates
 from apps.catalogue.dto import ListingRefDTO
 from apps.catalogue.models import (
     Accommodation,
     Activity,
+    ActivitySchedule,
     Attraction,
     CancellationPolicy,
     Country,
@@ -90,6 +92,8 @@ __all__ = [
     "activity_facts",
     "attraction_facts",
     "opening_status",
+    "ScheduleFacts",
+    "active_schedules",
     "resolve_references",
     "to_orm_fields",
     "SEED_FILES",
@@ -1109,6 +1113,85 @@ def attraction_facts(ids: Sequence[int]) -> dict[int, AttractionFacts]:
         row.id: AttractionFacts(place=_place(row), visit_minutes=row.visit_minutes)
         for row in _rows(Attraction, wanted)
     }
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleFacts:
+    """§16.2's recurring rule, already expanded into the local dates it runs.
+
+    **The expansion happens here, not in the caller.** `domain.schedules` owns
+    what a weekday mask means — bit 0 is Monday — and a mask read Sunday-first
+    shifts every departure by a day while looking entirely plausible in a
+    console. `inventory` may not import that module (contract
+    `private-catalogue`), and it should not want to: the recurrence is the
+    catalogue's rule and the departure is inventory's row.
+
+    `local_dates` are dates, and `start_time` is a *local wall time* (§16.2).
+    Resolving the two into an instant needs the destination's zone and its DST
+    history; `timezone` comes along for exactly that, and doing the resolution
+    is the materialiser's job.
+    """
+
+    schedule_id: int
+    activity_id: int
+    start_time: time
+    capacity: int
+    timezone: str
+    local_dates: tuple[date, ...]
+
+
+def active_schedules(
+    *, start: date, horizon_days: int, after: int = 0, limit: int = 500
+) -> list[ScheduleFacts]:
+    """Every live schedule and the dates it runs, for §8.8's nightly job.
+
+    Paged by ascending id rather than offset: the job runs for minutes over a
+    growing table, and an `OFFSET` page shifts under an insert in a way that
+    silently skips a schedule. `after` is the last id of the previous page.
+
+    Soft-deleted and inactive schedules are excluded here rather than by the
+    caller. §16.2 lets a provider retire a rule without touching the departures
+    it already produced, and "what should generate tomorrow" is the catalogue's
+    question — a filter in `inventory` would be a second answer to it.
+
+    A rule the domain refuses — a zero mask, an inverted window — is skipped
+    rather than raised. Both are impossible under `activity_schedule`'s CHECK
+    constraints, so one appearing means a constraint was bypassed; failing the
+    whole nightly job over one bad row would stop every other activity's
+    calendar from extending, which is a much larger outage than one activity
+    with no dates.
+
+    A schedule whose validity window has passed yields an empty tuple rather
+    than being filtered out, so a caller counting schedules and a caller
+    counting departures agree about what was examined.
+    """
+    rows = (
+        ActivitySchedule.objects.filter(is_active=True, activity__is_active=True, id__gt=after)
+        .select_related("activity__destination")
+        .order_by("id")[:limit]
+    )
+    out: list[ScheduleFacts] = []
+    for row in rows:
+        try:
+            rule = ScheduleRule(
+                weekday_mask=row.weekday_mask,
+                start_time=row.start_time,
+                valid_from=row.valid_from,
+                valid_to=row.valid_to,
+            )
+        except ScheduleError:
+            continue
+        out.append(
+            ScheduleFacts(
+                schedule_id=row.id,
+                activity_id=row.activity_id,
+                start_time=row.start_time,
+                capacity=row.capacity,
+                timezone=row.activity.destination.timezone,
+                local_dates=occurrence_dates(rule, start=start, horizon_days=horizon_days),
+            )
+        )
+    return out
 
 
 def opening_status(when: Sequence[tuple[int, datetime]]) -> dict[int, bool | None]:
