@@ -68,7 +68,7 @@ from apps.trip.domain.sequencing import (
     sequence_trip,
 )
 from apps.trip.domain.validation import ItemFacts, Limits, PartyFacts, TripFacts, validate
-from apps.trip.dto import TripDTO, TripSummaryDTO
+from apps.trip.dto import QuoteBasisDTO, QuoteLineDTO, TripDTO, TripSummaryDTO
 from apps.trip.models import (
     ItemType,
     Itinerary,
@@ -92,6 +92,10 @@ __all__ = [
     "set_flights",
     "cancel_trip",
     "generate_itinerary",
+    "quote_basis",
+    "mark_priced",
+    "expire_quote",
+    "TripPriced",
     "ItineraryGenerated",
     "DEFERRED_INPUTS",
     "get_trip",
@@ -129,6 +133,23 @@ class ItineraryGenerated(DomainEvent):
     tourist_id: int = 0
     version: int = 0
     error_count: int = 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TripPriced(DomainEvent):
+    """§9.4.5's last step: "Emit TripPriced".
+
+    Carries the total as a *string*. §8.9 requires an event to hold primitives
+    only, and a `Decimal` is not JSON-serialisable while a float would lose
+    the last cent — which is the one thing a money event exists to carry.
+    """
+
+    name = "trip.priced"
+    trip_public_id: str = ""
+    tourist_id: int = 0
+    total_amount: str = "0"
+    currency: str = ""
+    expires_at: str = ""
 
 
 class LockedItemError(ConflictError):
@@ -770,16 +791,13 @@ def _item_facts(
                 min_pax=activity.min_pax if activity else None,
                 max_pax=activity.max_pax if activity else None,
                 booking_cutoff_hours=activity.booking_cutoff_hours if activity else None,
-                # `departs_at` is the *departure's* scheduled time, not the
-                # item's own start. Passing the item's start would compare a
-                # time against itself and make VR-06 fire on every activity,
-                # which is exactly what it did until a test caught it.
-                #
-                # Departures live in `inventory`, which §6.4 does not let this
-                # module import, and nothing binds `activity_departure_id`
-                # until Phase 5. So it is None here and VR-06 is inert — the
-                # rule is written and tested, and has no input yet. Recorded
-                # in DEFERRED_INPUTS below rather than left to be discovered.
+                # Still None, and Phase 5 did not change that — DEFERRED_INPUTS
+                # below now records a different reason. The short version:
+                # §16.3 compares `now()` against the cutoff and this rule
+                # compares `starts_at`, so the input it wants is a clock rather
+                # than a column an itinerary carries. The cutoff *is* enforced,
+                # in `inventory` at quote time, where the comparison is made
+                # against one.
                 departs_at=None,
                 min_age=activity.min_age if activity else None,
                 is_open_at_scheduled_time=(
@@ -799,11 +817,18 @@ def _item_facts(
 #: that silently never runs is indistinguishable from one that always passes.
 DEFERRED_INPUTS: dict[str, str] = {
     "VR-06": (
-        "Needs activity_departure.departs_at. Departures are `inventory`'s "
-        "(§7.5.9) and §6.4 does not permit trip -> inventory; nothing binds "
-        "itinerary_item.activity_departure_id until Phase 5. The rule is "
-        "written and tested in domain/validation.py and receives departs_at "
-        "of None until then."
+        "Inert here, and enforced elsewhere as of Phase 5. §16.3 states the "
+        "cutoff as `now() <= departs_at - booking_cutoff_hours`; this rule "
+        "compares the item's own `starts_at`, which for an activity bound to "
+        "a departure is that same instant — so supplying departs_at would "
+        "make it fire on every activity ever planned. The input it wants is "
+        "a clock, not an itinerary column. `inventory.domain.capacity` "
+        "implements §16.3 against `now`, and POST /trips/{id}/quote refuses "
+        "a past-cutoff departure with 409 INVENTORY_UNAVAILABLE / "
+        "PAST_CUTOFF — so the rule holds, in the module that owns "
+        "departures, and a copy here would be the drift §10.1 warns about. "
+        "The finding stays written and tested for the day a warning at plan "
+        "time is wanted rather than a refusal at quote time."
     ),
     "VR-09 (provider half)": (
         "Needs provider.is_active. `provider` is a Phase 1 skeleton, so "
@@ -1147,6 +1172,178 @@ def generate_itinerary(public_id: UUID, *, tourist_id: int) -> TripDTO:
         )
     )
     return _dto_with(trip, all_findings)
+
+
+# ---------------------------------------------------------------------------
+# The quote seam — §9.4.5, ADR 0022
+# ---------------------------------------------------------------------------
+#
+# `booking` owns the quote, because §6.4 forbids `trip -> inventory` and the
+# quote locks inventory counters. These three functions are the whole of what
+# it needs from here: what may be quoted, what the result was, and how a quote
+# ends. Trip state is still only ever written by `trip`.
+
+
+def quote_basis(public_id: UUID, *, tourist_id: int) -> QuoteBasisDTO:
+    """What §9.4.5 needs to decide whether this trip may be quoted.
+
+    Ownership is a filter, not a check (`_owned`), so a foreign principal gets
+    404 here exactly as it does everywhere else — and `booking` inherits that
+    rather than reimplementing it.
+
+    The activity lines carry `starts_at` because that instant *is* the
+    departure the tourist chose: the picker offers only real departures, and
+    `UNIQUE(activity_id, departs_at)` makes the reverse lookup exact. That is
+    what lets a departure be bound without `trip` ever importing `inventory`.
+    """
+    trip = _owned(public_id, tourist_id)
+    itinerary = getattr(trip, "itinerary", None)
+    rows = list(itinerary.items.all()) if itinerary is not None else []
+    party = trip.adults + trip.children
+
+    return QuoteBasisDTO(
+        trip_id=int(trip.pk),
+        public_id=trip.public_id,
+        status=trip.status,
+        currency=trip.currency,
+        # Infants do not take a seat, and this is the same party
+        # `generate_itinerary` costs with — two answers to "how many people"
+        # would be two subtotals for one trip.
+        party=party,
+        has_errors=(itinerary is not None and itinerary.validation_state == ValidationState.ERRORS),
+        generated=itinerary is not None and itinerary.generated_at is not None,
+        lines=tuple(
+            QuoteLineDTO(
+                item_public_id=row.public_id,
+                item_type=row.item_type,
+                activity_id=row.activity_id,
+                starts_at=row.starts_at,
+                pax=party,
+                is_locked=row.is_locked,
+            )
+            for row in rows
+        ),
+    )
+
+
+@transaction.atomic
+def mark_priced(
+    public_id: UUID,
+    *,
+    tourist_id: int,
+    departures: Mapping[UUID, int],
+    expires_at: datetime,
+) -> TripDTO:
+    """§9.4.5 steps 6 to 8: bind, recost, and price the trip.
+
+    `departures` maps an item's `public_id` to the `activity_departure.id` the
+    caller held capacity on. Writing it here rather than in `booking` keeps
+    `itinerary_item` a table only `trip` writes — and it closes
+    `DEFERRED_INPUTS["VR-06"]`, which recorded that nothing bound this column
+    from Phase 4 until now.
+
+    **Totals are recomputed rather than trusted.** §9.4.5 step 6 says so, and
+    the reason is that `generate_itinerary` wrote them provisionally at some
+    earlier moment: a provider may have changed a price since, and a quote is
+    the offer a tourist is asked to accept.
+
+    **A re-quote is not a transition.** §20.5 draws `DRAFT -> PRICED` and
+    `PRICED -> DRAFT`, and no self-edge — so a trip that is already PRICED is
+    repriced in place with its expiry extended, which is exactly what §9.4.5's
+    "assert status in {DRAFT, PRICED}" describes.
+    """
+    trip = _owned(public_id, tourist_id)
+    if TripState(trip.status) not in (TripState.DRAFT, TripState.PRICED):
+        raise ConflictError(f"a trip in {trip.status} cannot be quoted", code="TRIP_NOT_QUOTABLE")
+
+    itinerary = getattr(trip, "itinerary", None)
+    if itinerary is None:
+        raise ConflictError("this trip has no itinerary to quote", code="TRIP_NOT_QUOTABLE")
+
+    items = list(itinerary.items.all())
+    for row in items:
+        bound = departures.get(row.public_id)
+        if bound is not None and row.activity_departure_id != bound:
+            repo.bind_departure(row, departure_id=bound)
+
+    facts = _gather(items, trip)
+    cost = compute_cost(
+        _priced_rows(items, facts, trip.adults + trip.children),
+        currency=trip.currency,
+        platform_fee_rate=Decimal(str(get_setting("platform_fee_rate"))),
+    )
+    repo.price_trip(trip, items=items, cost=cost, expires_at=expires_at)
+
+    publish(
+        TripPriced(
+            trip_public_id=str(trip.public_id),
+            tourist_id=tourist_id,
+            total_amount=str(cost.total.amount),
+            currency=cost.total.currency,
+            expires_at=expires_at.isoformat(),
+        )
+    )
+    return _dto(trip)
+
+
+@transaction.atomic
+def expire_quote(trip_id: int) -> bool:
+    """§20.5's `PRICED --quote expired--> DRAFT`, and TC-052's second half.
+
+    Takes the storage id and no `tourist_id`: the caller is §17.5's sweeper,
+    which has a `trip_id` off a hold row and no principal at all. There is no
+    authorisation question here — a TTL elapsing is nobody's action.
+
+    Returns whether anything moved, so an idempotent job can report honestly.
+    A trip that is not PRICED is left alone: dragging a PENDING_PAYMENT trip
+    back to DRAFT because one hold expired is the outcome §17.5's "defers once
+    and raises an alert" exists to avoid.
+    """
+    trip = Trip.objects.filter(pk=trip_id).first()
+    if trip is None or TripState(trip.status) is not TripState.PRICED:
+        return False
+    repo.unprice_trip(trip)
+    return True
+
+
+def _priced_rows(items: Sequence[ItineraryItem], facts: _Facts, party: int) -> list[PricedItem]:
+    """`_priced`, for a quote rather than a generate.
+
+    `generate_itinerary` prices the *planned* items the sequencer returned; a
+    quote prices the stored rows, because sequencing has already happened and
+    re-running it would be a second answer to a question §10.4 settled. The
+    arithmetic is `costing.price_item`'s either way — only where the kind comes
+    from differs.
+    """
+    out: list[PricedItem] = []
+    for row in items:
+        # A STAY is absent from the map on purpose: `costing.price_item`
+        # refuses to price a stay anchor rather than returning zero (ADR 0013),
+        # and the two anchors the sequencer derives from one row are a planning
+        # view that a stored row does not have. It contributes nothing to a
+        # subtotal either way.
+        kind = _KIND_FOR_TYPE.get(ItemType(row.item_type))
+        if kind is None:
+            continue
+        activity = facts.activities.get(row.activity_id) if row.activity_id else None
+        if activity is None:
+            out.append(PricedItem(item_id=row.pk, kind=kind, title=row.title))
+            continue
+        out.append(
+            PricedItem(
+                item_id=row.pk,
+                kind=kind,
+                title=row.title,
+                unit_price=Money(activity.price_per_person, activity.currency),
+                quantity=party,
+                group_price=(
+                    Money(activity.price_per_group, activity.currency)
+                    if activity.price_per_group is not None
+                    else None
+                ),
+            )
+        )
+    return out
 
 
 def _dto_with(trip: Trip, findings: Sequence[Finding]) -> TripDTO:

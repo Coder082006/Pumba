@@ -36,15 +36,18 @@ has already proved it may write.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any, TypeVar
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Model
+from django.utils import timezone
 
 from apps.common.errors import ValidationError
 from apps.common.reference import new_reference
-from apps.trip.models import Itinerary, ItineraryItem, Trip, TripFlight
+from apps.trip.domain.lifecycle import TRIP_MACHINE, TripState
+from apps.trip.models import Itinerary, ItineraryItem, Trip, TripFlight, TripStatus
 
 __all__ = [
     "UnwritableFieldError",
@@ -56,6 +59,9 @@ __all__ = [
     "update_item",
     "delete_item",
     "replace_flights",
+    "bind_departure",
+    "price_trip",
+    "unprice_trip",
 ]
 
 _M = TypeVar("_M", bound=Model)
@@ -255,6 +261,109 @@ def update_item(item: ItineraryItem, **fields: Any) -> ItineraryItem:
     for name, value in fields.items():
         setattr(item, name, value)
     return _save(item)
+
+
+# ---------------------------------------------------------------------------
+# The quote — §9.4.5, ADR 0022
+# ---------------------------------------------------------------------------
+#
+# Three writes `booking` cannot make and `trip` will not expose as fields. Each
+# touches a column in `NEVER_WRITABLE`, which is exactly why each is a named
+# function: `status` moves only through §20.5's machine, the money columns only
+# through §10.7's computation, and `priced_at` and `quote_expires_at` only
+# through a quote. A `update_trip_row(status="PRICED")` would make all three
+# reachable from any serializer that grew a field.
+
+
+@transaction.atomic
+def bind_departure(item: ItineraryItem, *, departure_id: int) -> ItineraryItem:
+    """Point an ACTIVITY item at the `activity_departure` it was quoted on.
+
+    §7.5.11 has carried this column since Phase 4 with nothing to write it —
+    `trip.services.DEFERRED_INPUTS["VR-06"]` records why — because the
+    departure lives in `inventory` and §6.4 forbids `trip -> inventory`. The
+    id arrives from `booking`, which may see both (ADR 0022).
+
+    The SQL foreign key added by `trip/0001` is what refuses an id that names
+    no departure, so there is no lookup here to disagree with it.
+    """
+    item.activity_departure_id = departure_id
+    return _save(item)
+
+
+@transaction.atomic
+def price_trip(
+    trip: Trip,
+    *,
+    items: Sequence[ItineraryItem],
+    cost: Any,
+    expires_at: datetime,
+) -> Trip:
+    """§9.4.5 steps 6 and 7: the totals, the state, and the clock.
+
+    One function rather than three, because the three are one fact. A trip
+    whose `status` said PRICED while its `quote_expires_at` was null would be
+    priced forever, and a total written without a status would be a figure
+    nobody had offered.
+
+    `status` is set here rather than through `TRIP_MACHINE.transition` for the
+    case the machine has no edge for: a re-quote of an already-PRICED trip.
+    §20.5 draws `DRAFT -> PRICED` and `PRICED -> DRAFT` and no self-loop, and
+    §9.4.5 permits quoting from either state — so the service layer validates
+    the source state and this writes the result. `common.state_machine` refuses
+    a duplicate edge at construction time, which is why adding one was not the
+    answer.
+    """
+    line_totals = dict(cost.lines)
+    for row in items:
+        money = line_totals.get(row.pk)
+        if money is None:
+            continue
+        row.line_total = money.amount
+        row.currency = money.currency
+        row.save(update_fields=["line_total", "currency", "updated_at"])
+
+    trip.subtotal_amount = cost.subtotal.amount
+    trip.fee_amount = cost.fee.amount
+    trip.tax_amount = cost.tax.amount
+    trip.total_amount = cost.total.amount
+    trip.status = TripStatus.PRICED
+    trip.priced_at = timezone.now()
+    trip.quote_expires_at = expires_at
+    trip.version += 1
+    trip.save(
+        update_fields=[
+            "subtotal_amount",
+            "fee_amount",
+            "tax_amount",
+            "total_amount",
+            "status",
+            "priced_at",
+            "quote_expires_at",
+            "version",
+            "updated_at",
+        ]
+    )
+    return trip
+
+
+@transaction.atomic
+def unprice_trip(trip: Trip) -> Trip:
+    """§20.5's `PRICED --quote expired--> DRAFT`, driven by §17.5's sweeper.
+
+    **The totals stay.** Only the offer expired, not the arithmetic: the trip
+    still costs what it costs, and blanking the figures would leave a tourist
+    who walked away for half an hour looking at a plan that appeared to have
+    lost its price. `priced_at` and `quote_expires_at` are cleared, because
+    those describe an offer that no longer stands — and §9.4.7 asserts
+    `holds are live` against exactly that pair.
+    """
+    trip.status = TRIP_MACHINE.transition(TripState(trip.status), TripState.DRAFT)
+    trip.priced_at = None
+    trip.quote_expires_at = None
+    trip.version += 1
+    trip.save(update_fields=["status", "priced_at", "quote_expires_at", "version", "updated_at"])
+    return trip
 
 
 def _checked(model: type[Model], fields: Mapping[str, Any]) -> dict[str, Any]:

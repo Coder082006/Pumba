@@ -2197,6 +2197,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/Trip'
           description: ''
+  /api/v1/trips/{public_id}/quote:
+    post:
+      operationId: trips_quote_create
+      description: |-
+        Converts a plan into a priced, inventory-backed, time-boxed offer — SRS §9.4.5.
+
+        Every activity on the itinerary is resolved to the departure its start instant names, and capacity for the whole party is held against each **under a row lock** (§17.3). The figures returned here are authoritative in a way the ones from `GET /activities/{id}/departures` are not: those may be stale, these were true at the moment the lock was held.
+
+        The hold lasts `quote.ttl_minutes` — twenty by default — and is released automatically when it expires, at which point the trip returns to `DRAFT` and can be edited again.
+
+        A re-quote **releases this trip's own prior holds first**, so asking twice does not make a trip compete with itself for the last seats.
+
+        **409 `INVENTORY_UNAVAILABLE`** carries a `details` array naming every departure that could not be held, why, and any alternative departures of the same activity. **409 `TRIP_NOT_QUOTABLE`** means the itinerary has not been planned, has blocking validation errors, or is in a state past pricing.
+      summary: Price a trip and hold its capacity
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trip
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+          description: ''
 components:
   schemas:
     Accommodation:
@@ -4306,6 +4338,53 @@ components:
         * `LODGE` - Lodge
         * `GUESTHOUSE` - Guesthouse
         * `APARTMENT` - Apartment
+    Quote:
+      type: object
+      description: A priced, inventory-backed, time-boxed offer.
+      properties:
+        quote_token:
+          type: string
+          format: uuid
+          readOnly: true
+        expires_at:
+          type: string
+          format: date-time
+          readOnly: true
+        held_seats:
+          type: integer
+          readOnly: true
+        trip_public_id:
+          type: string
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        subtotal_amount:
+          type: string
+          readOnly: true
+        fee_amount:
+          type: string
+          readOnly: true
+        tax_amount:
+          type: string
+          readOnly: true
+        total_amount:
+          type: string
+          readOnly: true
+      required:
+      - currency
+      - expires_at
+      - fee_amount
+      - held_seats
+      - quote_token
+      - status
+      - subtotal_amount
+      - tax_amount
+      - total_amount
+      - trip_public_id
     RefreshRequest:
       type: object
       description: |-

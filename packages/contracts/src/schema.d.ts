@@ -1427,6 +1427,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trips/{public_id}/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Price a trip and hold its capacity
+         * @description Converts a plan into a priced, inventory-backed, time-boxed offer — SRS §9.4.5.
+         *
+         *     Every activity on the itinerary is resolved to the departure its start instant names, and capacity for the whole party is held against each **under a row lock** (§17.3). The figures returned here are authoritative in a way the ones from `GET /activities/{id}/departures` are not: those may be stale, these were true at the moment the lock was held.
+         *
+         *     The hold lasts `quote.ttl_minutes` — twenty by default — and is released automatically when it expires, at which point the trip returns to `DRAFT` and can be edited again.
+         *
+         *     A re-quote **releases this trip's own prior holds first**, so asking twice does not make a trip compete with itself for the last seats.
+         *
+         *     **409 `INVENTORY_UNAVAILABLE`** carries a `details` array naming every departure that could not be held, why, and any alternative departures of the same activity. **409 `TRIP_NOT_QUOTABLE`** means the itinerary has not been planned, has blocking validation errors, or is in a state past pricing.
+         */
+        post: operations["trips_quote_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2287,6 +2315,21 @@ export interface components {
          * @enum {string}
          */
         PropertyTypeEnum: "HOTEL" | "RESORT" | "LODGE" | "GUESTHOUSE" | "APARTMENT";
+        /** @description A priced, inventory-backed, time-boxed offer. */
+        Quote: {
+            /** Format: uuid */
+            readonly quote_token: string;
+            /** Format: date-time */
+            readonly expires_at: string;
+            readonly held_seats: number;
+            readonly trip_public_id: string;
+            readonly status: string;
+            readonly currency: string;
+            readonly subtotal_amount: string;
+            readonly fee_amount: string;
+            readonly tax_amount: string;
+            readonly total_amount: string;
+        };
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
@@ -4301,6 +4344,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Trip"];
+                };
+            };
+        };
+    };
+    trips_quote_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quote"];
                 };
             };
         };

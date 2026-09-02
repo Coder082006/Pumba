@@ -55,6 +55,8 @@ __all__ = [
     "ItineraryDTO",
     "TripDTO",
     "TripSummaryDTO",
+    "QuoteLineDTO",
+    "QuoteBasisDTO",
 ]
 
 
@@ -90,6 +92,60 @@ class TripFlightDTO:
     terminal: str | None = None
     pax_count: int = 1
     luggage_count: int = 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class QuoteLineDTO:
+    """One itinerary item, as the module that quotes it needs it.
+
+    **The one DTO in this module that carries an integer id**, and the
+    exception is narrow enough to be worth stating rather than hiding.
+
+    §7.2 forbids sequential integers reaching a *client*. `booking` is not a
+    client: it is the module §6.4 gives `inventory`, `trip` and `provider` to,
+    and it exists to compose exactly this (ADR 0022). `activity_id` is the row
+    both modules are talking about, and making it a round trip through a UUID
+    would add a query to the inside of §17.3's critical section to avoid an
+    integer that never leaves the process.
+
+    It is called `activity_id` rather than `activity` so the DTO leak guard in
+    `tests/test_architecture.py` sees what it is, and this type never reaches
+    a serializer — `TripDTO` is what the API returns.
+    """
+
+    item_public_id: UUID
+    item_type: str
+    activity_id: int | None
+    #: The instant the tourist chose. `UNIQUE(activity_id, departs_at)` on
+    #: §7.5.9 makes this a lookup rather than a search, and it is how a
+    #: departure is bound without `trip` ever seeing `inventory`.
+    starts_at: datetime
+    pax: int
+    is_locked: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class QuoteBasisDTO:
+    """Everything §9.4.5 needs to decide whether a trip may be quoted.
+
+    Returned instead of a `TripDTO` because the quote asks three questions a
+    read shape does not answer — may this trip be quoted at all, what capacity
+    must be held, and against which trip row — and answering them from a
+    payload built for a client would mean `booking` re-deriving each one.
+    """
+
+    #: `trip.trip.id`. `inventory_hold.trip_id` is this, and ADR 0022 explains
+    #: why that column carries no foreign key.
+    trip_id: int
+    public_id: UUID
+    status: str
+    currency: str
+    #: Adults plus children. §10.7 prices per person and infants do not take a
+    #: seat — the same party `generate_itinerary` costs with.
+    party: int
+    has_errors: bool
+    generated: bool
+    lines: tuple[QuoteLineDTO, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
