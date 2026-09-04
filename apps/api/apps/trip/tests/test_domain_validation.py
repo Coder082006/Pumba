@@ -297,6 +297,66 @@ class TestVR04NoNightCoveredTwice:
         ]
         assert only(items, "VR-04") == ("VR-04",)
 
+    def test_one_stay_arriving_as_two_anchors_is_still_one_stay(self) -> None:
+        """The shape the application layer actually produces, and the one this
+        class did not test until a real trip failed on it.
+
+        `sequencing.Rank` says it outright: *"A STAY appears twice because a
+        stay spans nights: on the day it begins it is a check-in and sorts
+        late, and on the day it ends it is a check-out and sorts early. The
+        application layer expands one `itinerary_item` row into whichever of
+        the two anchors fall on the day being sequenced."*
+
+        So one row reaches this rule as two `ItemFacts` **sharing an
+        `item_id`**, each carrying the same `covered_nights`. Counting
+        occurrences rather than distinct stays made every night of every trip
+        with accommodation a blocking error — which is a trip that cannot be
+        priced at all.
+
+        Both anchors carry the whole tuple rather than a half each: the nights
+        a stay covers are a property of the stay, and the anchors are two views
+        of it. A rule that assumed otherwise would be relying on the sequencer
+        to split them.
+        """
+        nights = trip_facts().nights
+        items = [
+            item(4, Kind.STAY_CHECK_IN, covered_nights=nights),
+            item(4, Kind.STAY_CHECK_OUT, covered_nights=nights),
+        ]
+        assert only(items, "VR-04") == ()
+
+    def test_two_stays_are_still_caught_when_each_has_two_anchors(self) -> None:
+        """The other half. De-duplicating by `item_id` must not blind the rule
+        to the contradiction it exists for."""
+        night = (START,)
+        items = [
+            item(1, Kind.STAY_CHECK_IN, covered_nights=night),
+            item(1, Kind.STAY_CHECK_OUT, covered_nights=night),
+            item(2, Kind.STAY_CHECK_IN, covered_nights=night),
+            item(2, Kind.STAY_CHECK_OUT, covered_nights=night),
+        ]
+        assert only(items, "VR-04") == ("VR-04",)
+
+    def test_the_finding_names_each_stay_once(self) -> None:
+        """`item_ids` is what the client renders an inline fix against (§10.6).
+        Naming one stay twice would offer the tourist two rows to remove and
+        only one to find."""
+        night = (START,)
+        findings = validate(
+            [
+                item(1, Kind.STAY_CHECK_IN, covered_nights=night),
+                item(1, Kind.STAY_CHECK_OUT, covered_nights=night),
+                item(2, Kind.STAY_CHECK_IN, covered_nights=night),
+                item(2, Kind.STAY_CHECK_OUT, covered_nights=night),
+            ],
+            trip=trip_facts(),
+            buffers=Buffers(),
+            limits=Limits(),
+        )
+        vr04 = [f for f in findings if f.code == "VR-04"]
+        assert len(vr04) == 1
+        assert vr04[0].item_ids == (1, 2)
+
     def test_an_uncovered_night_is_not_a_vr04_error(self) -> None:
         """The amendment's whole point, and what makes §10.9's "day trip with
         no accommodation: supported" true. It is VR-16's warning instead."""

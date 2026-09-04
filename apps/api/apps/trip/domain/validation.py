@@ -445,10 +445,18 @@ def _vr04_no_night_covered_twice(
     transfers to both. An *uncovered* night is VR-16's warning, and that is
     what makes §10.9's "day trip with no accommodation: supported" true.
     """
-    seen: dict[date, list[int]] = {}
+    #: Distinct stays per night, **not** occurrences. One `itinerary_item`
+    #: reaches this rule as two `ItemFacts` sharing an `item_id`:
+    #: `sequencing.Rank` expands a stay into a check-in anchor on the day it
+    #: begins and a check-out anchor on the day it ends, and both carry the
+    #: same `covered_nights`. Counting occurrences made every night of every
+    #: trip with accommodation a blocking error — a trip that cannot be priced
+    #: at all — while the rule looked correct and its tests passed, because
+    #: they fed it one fact per stay and the application layer never does.
+    seen: dict[date, set[int]] = {}
     for item in items:
         for night in item.covered_nights:
-            seen.setdefault(night, []).append(item.item_id)
+            seen.setdefault(night, set()).add(item.item_id)
 
     return [
         Finding(
@@ -456,7 +464,10 @@ def _vr04_no_night_covered_twice(
             severity=Severity.ERROR,
             # `%-d` is glibc-only; the client renders from `context` anyway.
             message=f"{night:%d %B} is covered by more than one stay.",
-            item_ids=tuple(ids),
+            # Sorted, so the client renders the same order twice, and each
+            # stay named once: §10.6 has the client put an inline fix against
+            # every id here, and a repeated id is a fix with nothing to fix.
+            item_ids=tuple(sorted(ids)),
             suggested_action=SuggestedAction.REMOVE_ITEM,
             context={"night": night.isoformat()},
         )

@@ -348,6 +348,32 @@ class TestFindings:
         errors = [f.code for f in result.itinerary.findings if f.severity == "ERROR"]
         assert errors == [], f"unexpected blocking findings: {errors}"
 
+    def test_one_stay_does_not_report_every_night_as_double_booked(self, planned: Fixture) -> None:
+        """The bug the domain tests could not see, and the reason for this one.
+
+        `sequencing.Rank` expands one STAY row into two anchors — a check-in on
+        the day it begins, a check-out on the day it ends — so VR-04 receives
+        two `ItemFacts` sharing an `item_id`. It counted occurrences, so a
+        single hotel made every night of the trip a blocking error and no trip
+        with accommodation could be priced at all.
+
+        `test_domain_validation.py` passed throughout, because it fed the rule
+        one fact per stay and the application layer never does. The lesson is
+        the placement rather than the assertion: a rule whose input is built by
+        another layer has to be exercised through that layer at least once.
+        """
+        result = planned.generate()
+        codes = [f.code for f in result.itinerary.findings]
+        assert "VR-04" not in codes, [(f.code, f.message) for f in result.itinerary.findings]
+
+    def test_a_trip_with_a_stay_and_an_activity_is_quotable(self, planned: Fixture) -> None:
+        """The property a tourist actually depends on: no blocking findings on
+        an ordinary plan. §9.4.5 refuses to quote an itinerary with ERRORs, so
+        anything that fires here is a trip nobody can buy."""
+        result = planned.generate()
+        errors = [(f.code, f.message) for f in result.itinerary.findings if f.severity == "ERROR"]
+        assert errors == [], f"an ordinary trip cannot be priced: {errors}"
+
 
 class TestRulesThatCannotFireYet:
     """Rules that are written and tested but have no input — SRS §10.6.
