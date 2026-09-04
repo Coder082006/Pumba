@@ -16,6 +16,8 @@ service raises an exception rather than choosing a status.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
+from typing import Any
 
 import pytest
 from django.apps import apps as django_apps
@@ -46,6 +48,19 @@ def _signed_in() -> tuple[APIClient, int]:
     return client, int(profile.id)
 
 
+def _post(client: APIClient, public_id: object, *, key: str | None = None) -> Any:
+    """Quote a trip, carrying the §9.4.5 `Idempotency-Key` every call needs.
+
+    A **fresh** key per call by default, so the tests below exercise the
+    endpoint rather than its replay cache: a shared constant would make the
+    second post in any test a cached copy of the first, and the throttle and
+    conflict tests would silently stop testing anything.
+
+    `TestIdempotency` is the one place that passes `key` deliberately.
+    """
+    return client.post(_url(public_id), **{"HTTP_IDEMPOTENCY_KEY": key or uuid.uuid4().hex})
+
+
 def _case(**kwargs: object) -> tuple[APIClient, scenario.Scenario]:
     """A signed-in tourist and a quotable trip they own."""
     client, tourist_id = _signed_in()
@@ -55,13 +70,13 @@ def _case(**kwargs: object) -> tuple[APIClient, scenario.Scenario]:
 class TestTheHappyPath:
     def test_it_answers_200(self) -> None:
         client, case = _case()
-        assert client.post(_url(case.trip_public_id)).status_code == 200
+        assert _post(client, case.trip_public_id).status_code == 200
 
     def test_it_returns_the_token_the_clock_and_the_totals(self) -> None:
         """§9.4.5's response: the cost breakdown, `quote_expires_at` and a
         `quote_token` presented at confirmation."""
         client, case = _case(adults=2, price_per_person="95.00")
-        body = client.post(_url(case.trip_public_id)).data["data"]
+        body = _post(client, case.trip_public_id).data["data"]
         assert body["quote_token"]
         assert body["expires_at"]
         assert body["subtotal_amount"] == "190.00"
@@ -72,20 +87,20 @@ class TestTheHappyPath:
 class TestItRefusesWhatItCannotSell:
     def test_a_sold_out_departure_is_a_409(self) -> None:
         client, case = _case(adults=2, capacity=1, capacity_sold=1)
-        assert client.post(_url(case.trip_public_id)).status_code == 409
+        assert _post(client, case.trip_public_id).status_code == 409
 
     def test_the_envelope_carries_the_code_and_the_details(self) -> None:
         """§9.2's error envelope and §9.4.5's `details` array, over the wire.
         A client renders "the 09:00 snorkelling trip is full — try 13:30" from
         this and nothing else."""
         client, case = _case(adults=2, capacity=1, capacity_sold=1)
-        body = client.post(_url(case.trip_public_id)).data
+        body = _post(client, case.trip_public_id).data
         assert body["error"]["code"] == "INVENTORY_UNAVAILABLE"
         assert body["error"]["details"][0]["reason"] == "SOLD_OUT"
 
     def test_an_unplanned_trip_is_a_409(self) -> None:
         client, case = _case(generated=False)
-        response = client.post(_url(case.trip_public_id))
+        response = _post(client, case.trip_public_id)
         assert response.status_code == 409
         assert response.data["error"]["code"] == "TRIP_NOT_QUOTABLE"
 
@@ -98,12 +113,12 @@ class TestAuthorisation:
         403."""
         _, case = _case()
         stranger, _ = _case()
-        assert stranger.post(_url(case.trip_public_id)).status_code == 404
+        assert _post(stranger, case.trip_public_id).status_code == 404
 
     def test_a_foreign_principal_takes_no_capacity(self) -> None:
         _, case = _case()
         stranger, _ = _case()
-        stranger.post(_url(case.trip_public_id))
+        _post(stranger, case.trip_public_id)
         departure = django_apps.get_model("inventory", "ActivityDeparture").objects.get(
             id=case.departure_id
         )
@@ -111,13 +126,11 @@ class TestAuthorisation:
 
     def test_an_anonymous_caller_is_refused(self) -> None:
         case = scenario.build()
-        assert APIClient().post(_url(case.trip_public_id)).status_code == 401
+        assert _post(APIClient(), case.trip_public_id).status_code == 401
 
     def test_a_trip_that_does_not_exist_is_a_404(self) -> None:
         client, _ = _case()
-        import uuid
-
-        response = client.post(_url(uuid.uuid4()))
+        response = _post(client, uuid.uuid4())
         assert response.status_code == 404
 
 
@@ -134,7 +147,7 @@ class TestItIsThrottled:
 
     def test_the_limit_is_enforced(self) -> None:
         client, case = _case(capacity=12)
-        statuses = [client.post(_url(case.trip_public_id)).status_code for _ in range(21)]
+        statuses = [_post(client, case.trip_public_id).status_code for _ in range(21)]
         assert statuses[-1] == 429
 
     def test_another_trip_is_unaffected(self) -> None:
@@ -142,8 +155,8 @@ class TestItIsThrottled:
         client, case = _case(capacity=12)
         elsewhere, other = _case(capacity=12)
         for _ in range(21):
-            client.post(_url(case.trip_public_id))
-        assert elsewhere.post(_url(other.trip_public_id)).status_code == 200
+            _post(client, case.trip_public_id)
+        assert _post(elsewhere, other.trip_public_id).status_code == 200
 
 
 class TestTheItineraryIsUnchangedByGenerating:
@@ -196,6 +209,6 @@ class TestTheDocumentedContract:
         self,
     ) -> None:
         client, case = _case()
-        body = client.post(_url(case.trip_public_id)).data["data"]
+        body = _post(client, case.trip_public_id).data["data"]
         parsed = dt.datetime.fromisoformat(body["expires_at"].replace("Z", "+00:00"))
         assert parsed.tzinfo is not None

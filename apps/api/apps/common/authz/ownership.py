@@ -252,6 +252,21 @@ OWNERSHIP: Mapping[tuple[Role, Resource], OwnershipRule] = MappingProxyType(
         # ownership path `room_type__accommodation__provider_id`, which can no
         # longer resolve.
         **_provider_listed(Resource.ACTIVITY_DEPARTURE, "activity__provider_id"),
+        # `inventory_hold` deliberately has **no** member, though Phase 5 built
+        # the table. A `Resource` is a protected *row class an endpoint scopes
+        # by*, and nothing addresses a hold: it is created inside
+        # `POST /trips/{id}/quote`, released by a Beat job, and reaches a client
+        # only as fields of a quote already scoped by its trip's owner. §9.4.6's
+        # payment intent names a `quote_token`, not a hold.
+        #
+        # Nine ownership rules for a resource no queryset filters would be nine
+        # statements the totality test proves are *stated* and nothing proves
+        # are *right* — the rot the register exists to prevent, in the shape it
+        # actually takes. ACTIVITY_DEPARTURE above is the opposite case and
+        # earns its rules: the rows are provider-owned and §37.11's portal will
+        # scope them.
+        #
+        # If Phase 7 or 8 gives a hold its own endpoint, this is where it starts.
         # --- media -------------------------------------------------------------
         # Polymorphic, so there is no single column to scope by: the owner of a
         # `media` row is whatever `(owner_type, owner_id)` points at.

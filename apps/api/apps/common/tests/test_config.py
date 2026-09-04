@@ -124,6 +124,14 @@ class TestRegister:
                         operator must be able to correct that without a
                         release. It is also the one key here that differs per
                         environment rather than per market.
+            idempotency. Phase 5, §9.1. How long a replayable response is kept
+                        — *"server stores key -> response for 24 h"*. Appendix
+                        B never names the key because the appendix describes
+                        business thresholds and this is an operational one, but
+                        it is a setting for the reason NFR-M07 gives: the table
+                        grows with traffic, and shortening the window is how it
+                        is made to shed rows during an incident. Lengthening it
+                        is the riskier direction and equally needs no release.
             map.        Phase 3, ADR 0016 / Appendix D9. The tile URL and its
                         attribution string. Held as settings so changing map
                         provider is an administrator action rather than a
@@ -153,6 +161,7 @@ class TestRegister:
                     "routing.",
                     "buffer.",
                     "web.",
+                    "idempotency.",
                 )
             )
         }
@@ -172,6 +181,7 @@ class TestRegister:
             ("routing.road_factor", Decimal("1.35")),
             ("routing.average_speed_kmh", 45),
             ("location.retention_days", 30),
+            ("idempotency.retention_hours", 24),
         ],
     )
     def test_defaults_match_the_srs(self, key: str, expected: object) -> None:

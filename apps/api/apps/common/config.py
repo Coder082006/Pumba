@@ -100,6 +100,11 @@ SETTINGS_REGISTER: dict[str, Setting] = {
         # -- Quote and payment windows --
         Setting("quote.ttl_minutes", 20, "Quote and hold validity"),
         Setting("payment.window_minutes", 30, "Extended hold during payment"),
+        # §9.1: "server stores key -> response for 24 h". A row rather than a
+        # literal for the same reason every other window here is one — and this
+        # one has an operational edge: shortening it is how the table is made
+        # to shed rows under load without a deployment.
+        Setting("idempotency.retention_hours", 24, "How long a replayable response is kept (§9.1)"),
         # -- Dispatch --
         Setting("dispatch.lead_hours", 72, "When scheduled dispatch begins"),
         Setting("offer.ttl_seconds.scheduled", 3600, "Offer validity for future work"),

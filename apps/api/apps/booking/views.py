@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -28,6 +28,7 @@ from rest_framework.views import APIView
 from apps.booking import serializers as ser
 from apps.booking import services
 from apps.common.envelope import success_envelope
+from apps.common.idempotency import IDEMPOTENCY_HEADER, idempotent
 from apps.common.permissions import IsTourist, tourist_id_of
 from apps.common.throttling import TripQuoteThrottle
 
@@ -46,6 +47,13 @@ class TripQuoteView(APIView):
     nothing about any particular trip. Whether it is *their* trip is the
     service's `tourist_id` filter, and a stranger gets 404 rather than 403
     (§30.3).
+
+    **`Idempotency-Key` is required** — §9.4.5 says so in as many words, and
+    this is the endpoint where it earns the requirement. The quote takes row
+    locks, holds seats and starts a twenty-minute clock; a client whose request
+    timed out and retried would otherwise hold a second set of seats against
+    the same trip and be told the first offer had gone. The throttle above
+    limits how often that can happen and does not stop it happening once.
     """
 
     permission_classes = [IsTourist]
@@ -53,6 +61,22 @@ class TripQuoteView(APIView):
 
     @extend_schema(
         request=None,
+        parameters=[
+            OpenApiParameter(
+                name=IDEMPOTENCY_HEADER,
+                type=str,
+                location=OpenApiParameter.HEADER,
+                required=True,
+                description=(
+                    "A client-generated key, at most 64 characters, unique to this "
+                    "attempt. Repeating a request with the same key returns the "
+                    "first response and takes no further capacity; reusing one for "
+                    "a different trip is `409 IDEMPOTENCY_KEY_REUSED`. Kept for "
+                    "`idempotency.retention_hours`. A failed attempt releases its "
+                    "key, so a retry after `409 INVENTORY_UNAVAILABLE` may reuse it."
+                ),
+            )
+        ],
         responses={200: ser.QuoteSerializer},
         summary="Price a trip and hold its capacity",
         description=(
@@ -74,10 +98,15 @@ class TripQuoteView(APIView):
             "every departure that could not be held, why, and any alternative "
             "departures of the same activity. **409 `TRIP_NOT_QUOTABLE`** "
             "means the itinerary has not been planned, has blocking "
-            "validation errors, or is in a state past pricing."
+            "validation errors, or is in a state past pricing.\n\n"
+            "**`Idempotency-Key` is required.** Retrying with the same key "
+            "replays the first answer rather than holding a second set of "
+            "seats; a second request arriving while the first is still running "
+            "is `409 IDEMPOTENT_REQUEST_IN_PROGRESS` and is safe to retry."
         ),
         tags=["trip"],
     )
+    @idempotent
     def post(self, request: Request, public_id: UUID) -> Response:
         result = services.quote_trip(public_id, tourist_id=tourist_id_of(request))
         return Response(success_envelope(ser.QuoteSerializer(result).data))

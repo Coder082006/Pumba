@@ -2407,8 +2407,21 @@ paths:
         A re-quote **releases this trip's own prior holds first**, so asking twice does not make a trip compete with itself for the last seats.
 
         **409 `INVENTORY_UNAVAILABLE`** carries a `details` array naming every departure that could not be held, why, and any alternative departures of the same activity. **409 `TRIP_NOT_QUOTABLE`** means the itinerary has not been planned, has blocking validation errors, or is in a state past pricing.
+
+        **`Idempotency-Key` is required.** Retrying with the same key replays the first answer rather than holding a second set of seats; a second request arriving while the first is still running is `409 IDEMPOTENT_REQUEST_IN_PROGRESS` and is safe to retry.
       summary: Price a trip and hold its capacity
       parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: A client-generated key, at most 64 characters, unique to this
+          attempt. Repeating a request with the same key returns the first response
+          and takes no further capacity; reusing one for a different trip is `409
+          IDEMPOTENCY_KEY_REUSED`. Kept for `idempotency.retention_hours`. A failed
+          attempt releases its key, so a retry after `409 INVENTORY_UNAVAILABLE` may
+          reuse it.
+        required: true
       - in: path
         name: public_id
         schema:
