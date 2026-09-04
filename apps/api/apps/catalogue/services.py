@@ -90,6 +90,7 @@ __all__ = [
     "resolve_planning_ref",
     "ListingLocator",
     "resolve_listing_ref",
+    "resolve_curated_listing",
     "PlaceFacts",
     "ActivityFacts",
     "AttractionFacts",
@@ -99,6 +100,7 @@ __all__ = [
     "opening_status",
     "ScheduleFacts",
     "active_schedules",
+    "weekday_mask",
     "resolve_references",
     "to_orm_fields",
     "SEED_FILES",
@@ -769,20 +771,35 @@ def load_schedule_seed(rows: Sequence[Mapping[str, Any]]) -> SeedResult:
     return SeedResult("activity_schedule", created, updated)
 
 
-def _weekday_mask(days: Sequence[str]) -> int:
-    """`domain.schedules.mask_of`, with the seed file named in the message.
+def weekday_mask(days: Sequence[str]) -> int:
+    """Day names to §16.2's bitmask — `domain.schedules.mask_of`, exported.
 
-    The arithmetic moved to the domain when the console gained a schedule form:
-    two conversions, one in a seed loader and one in a serializer, is how a
-    file that says "sun" and a form that says "sun" end up meaning different
-    days. What stays here is the translation of the domain's refusal into the
-    platform's error type — `domain/` may not import it — and the prefix that
-    tells an operator which file to look in.
+    Public because `inventory` needs it and may not have it any other way:
+    contract `private-catalogue` forbids that module from importing
+    `apps.catalogue.domain`, and §26.5's departure calendar takes the same
+    `days: ["sun"]` a schedule does. A second parser in `inventory` would be
+    two answers to "which bit is Monday", and a disagreement there shifts every
+    departure by a day while looking plausible at both ends.
+
+    The domain's refusal becomes the platform's error type here, because
+    `domain/` may not import the hierarchy.
     """
     try:
         return mask_of(days)
     except ScheduleError as exc:
-        raise ValidationError(f"activity_schedule: {exc}") from exc
+        raise ValidationError(str(exc)) from exc
+
+
+def _weekday_mask(days: Sequence[str]) -> int:
+    """`weekday_mask`, with the seed file named in the message.
+
+    A seed failure names a file and a row; the same refusal reaching an API
+    caller names a field. Same rule, two readers.
+    """
+    try:
+        return weekday_mask(days)
+    except ValidationError as exc:
+        raise ValidationError(f"activity_schedule: {exc.message}") from exc
 
 
 def load_seed(
@@ -1016,6 +1033,48 @@ def resolve_listing_ref(kind: str, reference: str | UUID, *, today: date) -> Lis
     row = (
         visible(REFERENCEABLE[kind].objects.all(), today=today)
         .filter(reference_q(reference))
+        .only("id", "public_id", "slug", "name")
+        .first()
+    )
+    if row is None:
+        return None
+    return ListingLocator(
+        storage_id=int(row.id),
+        public_id=row.public_id,
+        slug=row.slug,
+        name=row.name,
+    )
+
+
+def resolve_curated_listing(kind: str, reference: str | UUID) -> ListingLocator | None:
+    """`resolve_listing_ref` for a console, which means without the visibility filter.
+
+    The two differ in exactly one clause and it is the load-bearing one. A
+    tourist reading a listing gets §30.3's answer: withdrawn is indistinguishable
+    from absent. An administrator *editing* one is the person who withdrew it,
+    and the case the filter would break is the ordinary one — a season's
+    departures are published before the activity goes live, so a calendar
+    reachable only for visible activities could not be filled in before launch.
+
+    Soft-deleted rows stay out. `objects` rather than `all_objects`: retiring a
+    listing is the decision that it is gone, and restoring it is the console
+    action that undoes it — editing the calendar of a retired activity would be
+    a way to keep working on a row nobody agreed to bring back.
+
+    Returns `None` rather than raising, so the caller chooses between a 404 and
+    a field-level validation error. Callers must hold `CATALOGUE_MANAGE`; that
+    is the view's business, and this function does not check it — which is why
+    it is named for what it returns rather than for who may call it.
+    """
+    if kind == "destination" or kind not in REFERENCEABLE:
+        raise ValidationError(
+            f"{kind!r} is not an addable catalogue listing; "
+            f"expected one of {sorted(set(REFERENCEABLE) - {'destination'})}."
+        )
+
+    row = (
+        REFERENCEABLE[kind]
+        .objects.filter(reference_q(reference))
         .only("id", "public_id", "slug", "name")
         .first()
     )

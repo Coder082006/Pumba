@@ -11,9 +11,11 @@ somebody forgot about:
     authorisation design exists to prevent.
 3.  **A foreign principal receives 404, not 403** — because 403 confirms
     existence (§30.3).
-4.  **The exemptions cannot be abused.** Both allow-lists below are themselves
-    checked: a route may only sit on the cheap one if the URL conf and the
-    view's own source prove it identifies no row.
+4.  **The exemptions cannot be abused.** All three allow-lists below are
+    themselves checked: a route may only sit on the cheap one if the URL conf
+    and the view's own source prove it identifies no row, and one that claims
+    every permitted role sees every row has that claim re-derived from
+    `OWNERSHIP` on each run.
 
 The matrix grows on its own as later phases add endpoints. That is the point:
 §37.2 requires it to run green "across every endpoint then existing", so the
@@ -34,6 +36,13 @@ principal-scoped selector rather than through `ScopedQuerysetMixin`, go on
 proof is in the selector — so it is guarded from the other direction: nothing
 create-shaped may hide on it, because anything that could be proven belongs
 where it is.
+
+`GLOBAL_BY_ROLE` is the third and last: a route that resolves an identifier and
+applies no predicate *because there is none* — every role that may reach it
+holds `Scope.GLOBAL` over the resource. That is a statement about `OWNERSHIP`
+rather than about the view, so it is the one exemption the build can check
+completely, and it does: the day a narrower role gains the permission, the
+entry fails and names the route that now needs a filter.
 """
 
 from __future__ import annotations
@@ -48,7 +57,14 @@ from django.urls import URLPattern, URLResolver, get_resolver
 from rest_framework.permissions import AllowAny
 from rest_framework.test import APIClient
 
-from apps.common.authz import Resource
+from apps.common.authz import (
+    OWNERSHIP,
+    Permission,
+    Resource,
+    Role,
+    Scope,
+    permissions_for,
+)
 from apps.common.mixins import ScopedQuerysetMixin
 from apps.common.permissions import IsAuthenticatedPrincipal
 from apps.identity import repositories as repo
@@ -228,8 +244,36 @@ SCOPED_BY_A_SELECTOR = {
     ),
 }
 
-#: Both allow-lists, for the checks that do not care which one a name is on.
-EXEMPT = {**NO_ROWS_EXPOSED, **SCOPED_BY_A_SELECTOR}
+#: Routes that resolve a caller-supplied identifier and deliberately apply
+#: **no** ownership predicate, because every role permitted to reach them holds
+#: `Scope.GLOBAL` over the resource.
+#:
+#: The third category exists because the other two would both be lies about it.
+#: It exposes rows, so `NO_ROWS_EXPOSED` is out; it scopes by nothing, so a
+#: `SCOPED_BY_A_SELECTOR` entry would name a selector that does not filter —
+#: and that list's own guard rejects a reason with no selector in it, which is
+#: how this list came to be written rather than that one bent.
+#:
+#: **It is the most mechanically checked of the three.** The claim is not a
+#: judgement a reviewer made; it is a statement about `OWNERSHIP`, and the test
+#: below re-derives it: every role holding the named permission must have
+#: `Scope.GLOBAL` over the named resource. The day §5.2 gives one of them a
+#: narrower scope — which is exactly what Phase 11 does — the build fails here
+#: and names the route that has to grow a filter.
+GLOBAL_BY_ROLE: dict[str, tuple[Permission, Resource, str]] = {
+    "v1:inventory:admin-activity-departures": (
+        Permission.CATALOGUE_MANAGE,
+        Resource.ACTIVITY_DEPARTURE,
+        "§26.5's departure calendar. Resolves an activity through "
+        "`catalogue.services.resolve_curated_listing`, which applies no principal "
+        "filter because there is no principal to filter by: an activity has no "
+        "owner until `provider` exists (ADR 0022). A `ScopedQuerysetMixin` here "
+        "would match every row while reporting a control to this matrix.",
+    ),
+}
+
+#: Every allow-list, for the checks that do not care which one a name is on.
+EXEMPT = {**NO_ROWS_EXPOSED, **SCOPED_BY_A_SELECTOR, **GLOBAL_BY_ROLE}
 
 
 def _walk(patterns: Any, prefix: str = "", namespace: str = "") -> list[tuple[str, str, Any]]:
@@ -446,6 +490,55 @@ class TestTheRowlessExemptionCannotBeAbused:
         follow, which makes it indistinguishable from no reason."""
         reason = SCOPED_BY_A_SELECTOR[name]
         assert "selector" in reason and "`" in reason, f"{name}: {reason!r}"
+
+    @pytest.mark.parametrize("name", sorted(GLOBAL_BY_ROLE))
+    def test_a_globally_scoped_route_really_is_global_for_every_role(self, name: str) -> None:
+        """The claim, re-derived from `OWNERSHIP` rather than trusted.
+
+        "No filter is needed because everybody who can reach this sees
+        everything" is only safe while it is true, and it stops being true
+        silently — a phase gives a narrower role the permission, or narrows an
+        existing role's scope, and an endpoint that was correctly unfiltered
+        becomes an unfiltered endpoint. Neither change touches this file.
+
+        So the entry names a permission and a resource, and this walks every
+        role holding that permission and asserts `Scope.GLOBAL`. Phase 11 gives
+        PROVIDER_OWNER `CATALOGUE_MANAGE` over its own listings, and this test
+        is what will say so.
+        """
+        permission, resource, _ = GLOBAL_BY_ROLE[name]
+        holders = [role for role in Role if permission in permissions_for(frozenset({role}))]
+        assert holders, f"{name} names {permission}, which no role holds"
+
+        narrower = {
+            role: OWNERSHIP[(role, resource)].scope
+            for role in holders
+            if OWNERSHIP[(role, resource)].scope is not Scope.GLOBAL
+        }
+        assert not narrower, (
+            f"{name} is exempted on the grounds that every {permission} holder is "
+            f"GLOBAL over {resource}, and these are not: {narrower}. The route now "
+            "needs an ownership filter — see the reason recorded beside it."
+        )
+
+    @pytest.mark.parametrize("name", sorted(GLOBAL_BY_ROLE))
+    def test_a_globally_scoped_route_resolves_an_identifier(self, name: str) -> None:
+        """Nothing create-shaped may hide here either.
+
+        A route with no path parameter resolves nothing and belongs on
+        `NO_ROWS_EXPOSED`, where the build proves it rather than trusting it.
+        """
+        path = ROUTE_PATHS.get(name)
+        assert path is not None, f"{name} is on GLOBAL_BY_ROLE but is not a route"
+        assert _PATH_PARAMETER.search(
+            path
+        ), f"{name} takes no path parameter. Move it to NO_ROWS_EXPOSED."
+
+    def test_the_three_lists_do_not_overlap(self) -> None:
+        names = [set(NO_ROWS_EXPOSED), set(SCOPED_BY_A_SELECTOR), set(GLOBAL_BY_ROLE)]
+        for first in range(len(names)):
+            for second in range(first + 1, len(names)):
+                assert not names[first] & names[second]
 
     def test_the_guard_would_notice_a_detail_route_being_added(self) -> None:
         """The guard tested against itself.

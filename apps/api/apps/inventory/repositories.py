@@ -58,6 +58,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import F, QuerySet, Sum
@@ -69,6 +70,8 @@ from apps.inventory.models import ActivityDeparture, HeldResource, HoldStatus, I
 __all__ = [
     "departures_by_id",
     "lock_departures",
+    "lock_departures_between",
+    "apply_departure_edit",
     "facts_of",
     "add_held",
     "move_held_to_sold",
@@ -107,6 +110,86 @@ def lock_departures(ids: Sequence[int]) -> list[ActivityDeparture]:
     return list(
         ActivityDeparture.objects.select_for_update().filter(id__in=list(ids)).order_by("id")
     )
+
+
+def lock_departures_between(
+    activity_id: int, *, since: datetime, until: datetime
+) -> list[ActivityDeparture]:
+    """Every departure of one activity in a window, locked in ascending id order.
+
+    The window is instants, not dates: `departs_at` is a `TIMESTAMPTZ` and the
+    caller has already resolved the calendar the provider typed into the
+    destination's own zone. Doing that here would need the geography tables,
+    which `inventory` may not read (contract `private-catalogue`).
+
+    Locks by query rather than by a list of ids gathered beforehand, so the set
+    of rows and the locks on them are decided in one statement. Reading first
+    and locking second leaves a gap in which the nightly materialiser can
+    insert a departure inside the window — one that would then be edited by
+    nothing and reported as edited by the count.
+
+    Ordered by `id` for the same reason `lock_departures` is (§8.4). The
+    ordering the *provider* reads — by date — is applied to the answer, not to
+    the locking.
+    """
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError(
+            "lock_departures_between must run inside a transaction: a lock "
+            "released at the end of the statement protects nothing (SRS §17.1 I2)."
+        )
+    return list(
+        ActivityDeparture.objects.select_for_update()
+        .filter(activity_id=activity_id, departs_at__gte=since, departs_at__lte=until)
+        .order_by("id")
+    )
+
+
+def apply_departure_edit(
+    rows: Sequence[ActivityDeparture],
+    *,
+    capacity_total: int | None,
+    price_override: Decimal | None,
+    clear_price: bool,
+    status: str | None,
+) -> int:
+    """Write §26.5's bulk edit onto rows already locked and already checked.
+
+    Takes the rows rather than re-selecting them: the check that made this edit
+    legal ran against exactly these versions under exactly these locks, and a
+    second query would be a second answer to a question already settled.
+
+    `clear_price` distinguishes *"set no override"* from *"leave the override
+    alone"*. Both are `price_override=None` on the wire, and collapsing them
+    would make it impossible for a provider to remove a special price once set
+    — the field would be write-once in a form that looks like it is not.
+
+    `version` is bumped on every row (§7.4). Nothing reads it optimistically on
+    this path — the lock is what makes the edit safe — but a row whose contents
+    changed without its version moving would make the column a lie for the
+    paths that do.
+    """
+    changed = 0
+    for row in rows:
+        if capacity_total is not None:
+            row.capacity_total = capacity_total
+        if clear_price:
+            row.price_override = None
+        elif price_override is not None:
+            row.price_override = price_override
+        if status is not None:
+            row.status = status
+        row.version += 1
+        row.save(
+            update_fields=[
+                "capacity_total",
+                "price_override",
+                "status",
+                "version",
+                "updated_at",
+            ]
+        )
+        changed += 1
+    return changed
 
 
 def facts_of(row: ActivityDeparture) -> Departure:

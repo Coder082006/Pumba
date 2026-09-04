@@ -33,6 +33,7 @@ __all__ = [
     "HasRole",
     "IsTourist",
     "tourist_id_of",
+    "CATALOGUE_ADMIN_PERMISSIONS",
 ]
 
 
@@ -172,3 +173,22 @@ def tourist_id_of(request: Request) -> int:
     assert principal is not None, "IsTourist should have refused an anonymous request"
     assert principal.tourist_id is not None, "IsTourist should have refused a non-tourist"
     return principal.tourist_id
+
+
+#: §5.2 grants `CATALOGUE_MANAGE` to CATALOGUE_ADMIN and, by composition, to
+#: SUPER_ADMIN — and to nobody else: *"cannot alter payments or catalogue"* is
+#: the sentence that keeps SUPPORT_AGENT off this surface. §30.2 adds the two
+#: obligations that come with holding an administrative role at all: a verified
+#: address, and TOTP satisfied *on this session* rather than merely enrolled.
+#:
+#: Here rather than in `catalogue.views` because two modules mount surfaces
+#: behind it: §27.8's console and §26.5's departure calendar, which `inventory`
+#: owns (ADR 0011) and which may not import `apps.catalogue.views` (contract
+#: `private-catalogue`). A second list would be a second answer to "who may
+#: edit the catalogue", and the one that drifted would drift silently.
+CATALOGUE_ADMIN_PERMISSIONS: list[type[BasePermission]] = [
+    IsAuthenticatedPrincipal,
+    HasPermission.for_(Permission.CATALOGUE_MANAGE),
+    EmailVerified,
+    MfaSatisfied,
+]

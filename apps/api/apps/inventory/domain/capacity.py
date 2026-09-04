@@ -33,6 +33,7 @@ split across two departures, or whether the trip as a whole is quotable, is
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -45,6 +46,9 @@ __all__ = [
     "sellable",
     "why_not_bookable",
     "is_bookable",
+    "committed",
+    "CapacityConflict",
+    "reduction_conflicts",
 ]
 
 
@@ -179,3 +183,73 @@ def is_bookable(
 ) -> bool:
     """§16.3's "bookable iff", for callers that do not need the reason."""
     return why_not_bookable(departure, rules, pax=pax, now=now) is None
+
+
+# ---------------------------------------------------------------------------
+# BR-023 — what a provider may not take away
+# ---------------------------------------------------------------------------
+
+
+def committed(departure: Departure) -> int:
+    """Seats this departure has already promised to somebody.
+
+    Held *and* sold, not either alone. A hold is a seat a tourist is partway
+    through paying for under a live TTL (§17.2); treating it as spare capacity
+    would let a bulk edit sell it out from underneath them between the quote
+    and the payment, which is the same oversell §17.3 takes a row lock to
+    prevent, arrived at from the provider's side instead of another tourist's.
+
+    Read without regard to `status`, unlike `sellable`. A cancelled departure
+    with eight sold seats has eight passengers who need telling; the number
+    does not stop being real because the departure stopped selling.
+    """
+    return departure.capacity_held + departure.capacity_sold
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CapacityConflict:
+    """One date a reduction cannot be applied to, and the arithmetic why.
+
+    §26.5 requires a conflict to be *"rejected with the specific dates named"*,
+    and the counters come with it: a provider told only that "some dates
+    conflict" has to find them by hand across a month grid, and one told
+    "12 March: 10 committed" knows immediately whether to cancel the departure
+    instead.
+    """
+
+    departs_at: datetime
+    requested: int
+    committed: int
+
+
+def reduction_conflicts(
+    departures: Iterable[Departure], *, capacity_total: int
+) -> tuple[CapacityConflict, ...]:
+    """BR-023: every departure where `capacity_total` is below what is committed.
+
+    *"A provider may not reduce availability below what is already held or
+    sold."* Empty means the reduction is legal everywhere it was asked for.
+
+    **All of them, not the first.** §26.5 names the dates plural, and a
+    provider fixing a month of capacity one rejection at a time would take a
+    month of round trips to discover the six dates that block it.
+
+    **Ascending by instant**, so the answer reads as a calendar rather than in
+    whatever order the rows arrived. The caller locks in primary-key order for
+    deadlock avoidance (§8.4) — that is a different ordering for a different
+    reason, and this one is for the person reading the error.
+
+    This says nothing about whether the reduction *should* be applied, only
+    whether it may. Raising capacity is never a conflict; a departure with no
+    committed seats never is either.
+    """
+    conflicts = [
+        CapacityConflict(
+            departs_at=departure.departs_at,
+            requested=capacity_total,
+            committed=committed(departure),
+        )
+        for departure in departures
+        if capacity_total < committed(departure)
+    ]
+    return tuple(sorted(conflicts, key=lambda conflict: conflict.departs_at))

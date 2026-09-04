@@ -17,7 +17,9 @@ from apps.inventory.domain.capacity import (
     DepartureState,
     PartyRules,
     Unbookable,
+    committed,
     is_bookable,
+    reduction_conflicts,
     sellable,
     why_not_bookable,
 )
@@ -194,3 +196,124 @@ class TestItAgreesWithTheColumn:
     def test_the_statuses_match_the_model_s_choices(self) -> None:
         """Written twice because the domain may not import Django."""
         assert {s.value for s in DepartureState} == set(DepartureStatus.values)
+
+
+class TestCommitted:
+    """What a departure has already promised — the BR-023 quantity."""
+
+    def test_it_is_held_plus_sold(self) -> None:
+        assert committed(_departure(capacity_held=2, capacity_sold=6)) == 8
+
+    def test_a_held_seat_counts(self) -> None:
+        """The half of BR-023 that is easy to drop and expensive to drop.
+
+        A hold is a seat somebody is partway through paying for under a live
+        TTL (§17.2). Counting only `capacity_sold` would let a provider shrink
+        a boat out from under a tourist between their quote and their payment —
+        the same oversell §17.3 takes a row lock to prevent, reached from the
+        provider's side instead of another tourist's.
+        """
+        assert committed(_departure(capacity_held=3)) == 3
+
+    def test_a_cancelled_departure_still_has_its_passengers(self) -> None:
+        """Unlike `sellable`, which is zero for anything but OPEN.
+
+        Eight people sold onto a cancelled boat are eight people who need
+        telling. The number does not stop being real because the departure
+        stopped selling, and a bulk edit that treated a cancelled date as empty
+        would quietly reduce it to nothing.
+        """
+        assert committed(_departure(capacity_sold=8, status=DepartureState.CANCELLED)) == 8
+        assert sellable(_departure(capacity_sold=8, status=DepartureState.CANCELLED)) == 0
+
+
+class TestReductionConflicts:
+    """BR-023 — *a provider may not reduce availability below what is already
+    held or sold* — as §26.5's bulk edit needs it: every offending date, named.
+    """
+
+    @staticmethod
+    def _on(day: int, **overrides: object) -> Departure:
+        return _departure(departs_at=dt.datetime(2027, 8, day, 8, 30, tzinfo=dt.UTC), **overrides)
+
+    def test_an_empty_calendar_has_no_conflicts(self) -> None:
+        assert reduction_conflicts([], capacity_total=0) == ()
+
+    def test_raising_capacity_is_never_a_conflict(self) -> None:
+        assert (
+            reduction_conflicts(
+                [self._on(1, capacity_sold=10), self._on(2, capacity_held=12)],
+                capacity_total=20,
+            )
+            == ()
+        )
+
+    def test_a_departure_with_nothing_committed_is_never_a_conflict(self) -> None:
+        """Reducing an untouched departure to zero is legal. It is how a
+        provider closes a date before anybody has booked it."""
+        assert reduction_conflicts([self._on(1)], capacity_total=0) == ()
+
+    def test_reducing_to_exactly_what_is_committed_is_allowed(self) -> None:
+        """The boundary, and it is inclusive.
+
+        BR-023 says *below* what is held or sold. Setting capacity to exactly
+        the committed figure leaves every passenger with a seat and sells no
+        more — which is what a provider does when a boat breaks and a smaller
+        one takes only the people already booked.
+        """
+        assert reduction_conflicts([self._on(1, capacity_sold=8)], capacity_total=8) == ()
+
+    def test_one_seat_below_is_a_conflict(self) -> None:
+        conflicts = reduction_conflicts([self._on(1, capacity_sold=8)], capacity_total=7)
+        assert len(conflicts) == 1
+        assert conflicts[0].requested == 7
+        assert conflicts[0].committed == 8
+
+    def test_held_seats_block_a_reduction_on_their_own(self) -> None:
+        assert len(reduction_conflicts([self._on(1, capacity_held=5)], capacity_total=4)) == 1
+
+    def test_every_offending_date_is_reported_not_just_the_first(self) -> None:
+        """§26.5 names the dates plural, and the reason is round trips.
+
+        A provider fixing a month of capacity one rejection at a time would
+        take a month of submissions to find the six dates that block it.
+        """
+        conflicts = reduction_conflicts(
+            [
+                self._on(1, capacity_sold=10),
+                self._on(2),
+                self._on(3, capacity_held=9),
+                self._on(4, capacity_sold=1),
+            ],
+            capacity_total=4,
+        )
+        assert [conflict.departs_at.day for conflict in conflicts] == [1, 3]
+
+    def test_the_dates_come_back_in_calendar_order(self) -> None:
+        """Ascending by instant, whatever order the rows arrived in.
+
+        The caller locks rows in primary-key order for deadlock avoidance
+        (§8.4). That is a different ordering for a different reader, and this
+        one is for the person looking at a month grid.
+        """
+        conflicts = reduction_conflicts(
+            [self._on(9, capacity_sold=9), self._on(2, capacity_sold=9)],
+            capacity_total=1,
+        )
+        assert [conflict.departs_at.day for conflict in conflicts] == [2, 9]
+
+    def test_a_cancelled_departure_with_passengers_still_blocks(self) -> None:
+        """Because `committed` ignores status and `sellable` does not.
+
+        The distinction is the whole reason the two functions exist separately.
+        """
+        conflicts = reduction_conflicts(
+            [self._on(1, capacity_sold=8, status=DepartureState.CANCELLED)],
+            capacity_total=2,
+        )
+        assert len(conflicts) == 1
+
+    def test_it_accepts_a_generator(self) -> None:
+        """The service passes locked rows straight through without listing them."""
+        rows = (self._on(day, capacity_sold=9) for day in (1, 2))
+        assert len(reduction_conflicts(rows, capacity_total=1)) == 2

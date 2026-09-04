@@ -65,7 +65,7 @@ from uuid import UUID
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import generics, status
-from rest_framework.permissions import AllowAny, BasePermission
+from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import Serializer
@@ -76,18 +76,12 @@ from apps.catalogue import serializers as ser
 from apps.catalogue.domain.ranking import SortOption
 from apps.catalogue.domain.search import SearchKind, SearchQueryError
 from apps.common.authentication import principal_from_request
-from apps.common.authz import Permission
 from apps.common.config import get_setting
 from apps.common.envelope import success_envelope
 from apps.common.errors import NotFoundError, ValidationError
 from apps.common.mixins import ScopedQuerysetMixin
 from apps.common.pagination import Page
-from apps.common.permissions import (
-    EmailVerified,
-    HasPermission,
-    IsAuthenticatedPrincipal,
-    MfaSatisfied,
-)
+from apps.common.permissions import CATALOGUE_ADMIN_PERMISSIONS
 from apps.common.serializers import StrictSerializer
 from apps.common.throttling import CatalogueReadThrottle
 
@@ -134,17 +128,13 @@ __all__ = [
     "TagListView",
 ]
 
-#: §5.2 grants `CATALOGUE_MANAGE` to CATALOGUE_ADMIN and, by composition, to
-#: SUPER_ADMIN — and to nobody else: *"cannot alter payments or catalogue"* is
-#: the sentence that keeps SUPPORT_AGENT off this surface. §30.2 adds the two
-#: obligations that come with holding an administrative role at all: a verified
-#: address, and TOTP satisfied *on this session* rather than merely enrolled.
-ADMIN_PERMISSIONS: list[type[BasePermission]] = [
-    IsAuthenticatedPrincipal,
-    HasPermission.for_(Permission.CATALOGUE_MANAGE),
-    EmailVerified,
-    MfaSatisfied,
-]
+#: §5.2's `CATALOGUE_MANAGE` holders, re-exported under this module's own name.
+#: The list moved to `apps.common.permissions` when §26.5's departure calendar
+#: arrived: `inventory` mounts a surface behind the same rule and may not
+#: import this module (contract `private-catalogue`). The alias stays because
+#: it is what every view below says, and because the §37.2 matrix and the
+#: console tests name it.
+ADMIN_PERMISSIONS = CATALOGUE_ADMIN_PERMISSIONS
 
 
 def _client_ip(request: Request) -> str | None:

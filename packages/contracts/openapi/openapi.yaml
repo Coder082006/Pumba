@@ -421,6 +421,85 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/admin/activities/{public_id}/departures:
+    get:
+      operationId: admin_activities_departures_list
+      description: |-
+        §26.5's month grid: every departure in the window with its capacity, what is held, what is sold and any price override.
+
+        Unlike the public calendar this publishes the three counters separately, because the split is what an operator is deciding on — eight taken seats of which four are holds is a boat being booked, not a boat that is full.
+      summary: An activity's departure calendar
+      parameters:
+      - in: query
+        name: date_from
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: pax
+        schema:
+          type: integer
+          maximum: 99
+          minimum: 1
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date
+      tags:
+      - inventory
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProviderDeparture'
+          description: ''
+    put:
+      operationId: admin_activities_departures_update
+      description: |-
+        §26.5's bulk edit: a date range, an optional weekday mask, and set-availability / set-rate / open / close in one submission.
+
+        **BR-023.** A capacity below what a departure has already held or sold is refused with `409 CAPACITY_BELOW_COMMITTED`, and every offending date is named in `details` with what was asked for and what is committed. Held seats count: a hold is a seat somebody is partway through paying for.
+
+        Reducing capacity does not cancel anybody, and cancelling does not release anybody's money — §14.6's refund path is separate and deliberate.
+      summary: Bulk-edit an activity's departures
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepartureEditRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DepartureEditRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DepartureEditRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: No response body
   /api/v1/admin/activities/{public_id}/restore:
     post:
       operationId: admin_activities_restore_create
@@ -3301,6 +3380,57 @@ components:
       - remaining
       - status
       - unbookable
+    DepartureEditRequest:
+      type: object
+      description: |-
+        §26.5's bulk submission: a window, an optional weekday mask, and the ops.
+
+        *"Bulk editing supports a date range, a weekday mask, and set-availability /
+        set-rate / open / close operations in one submission."*
+
+        **`days`, not a bitmask**, matching the schedule console: a provider closing
+        Sundays types "sun", and a form that took `64` would be one nobody can
+        review. `catalogue.services.weekday_mask` is the same conversion the
+        schedule form and the seed file use, so all three agree about which bit is
+        Monday — and it is reached through the service interface because contract
+        `private-catalogue` forbids this module the domain one.
+
+        **An empty submission is refused.** A body naming a window and no operation
+        would lock a month of rows, change none of them and answer 200 with a count
+        of zero — indistinguishable from a window that matched nothing.
+
+        **`clear_price` exists because `null` is ambiguous.** `price_override: null`
+        has to mean "leave it alone", or every capacity edit would silently drop a
+        special rate. Removing one is its own flag, and asking for both at once is
+        a contradiction rather than a precedence rule to remember.
+      properties:
+        date_from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        days:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 16
+        capacity_total:
+          type: integer
+          minimum: 0
+        price_override:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        clear_price:
+          type: boolean
+          default: false
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+      required:
+      - date_from
+      - to
     Destination:
       type: object
       description: |-
@@ -4592,6 +4722,61 @@ components:
         * `LODGE` - Lodge
         * `GUESTHOUSE` - Guesthouse
         * `APARTMENT` - Apartment
+    ProviderDeparture:
+      type: object
+      description: |-
+        One departure with all three counters — §26.5's grid cell.
+
+        The public `DepartureSerializer` above publishes `remaining` and refuses to
+        publish the split. This one publishes it, because the split is the whole
+        point of an operator's calendar: eight taken seats of which four are holds
+        is a boat being booked, and eight of which four are sales with a hold
+        expiring in ten minutes is a boat about to have a free seat. A provider
+        deciding whether to cancel needs to tell those apart; a tourist reading the
+        same number would watch availability move for no visible reason.
+
+        Two serializers rather than one with a flag, so widening the tourist-facing
+        payload stays something somebody has to do deliberately.
+      properties:
+        public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        departs_at:
+          type: string
+          format: date-time
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        capacity_total:
+          type: integer
+          readOnly: true
+        capacity_held:
+          type: integer
+          readOnly: true
+        capacity_sold:
+          type: integer
+          readOnly: true
+        remaining:
+          type: integer
+          readOnly: true
+        price_override:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+      required:
+      - capacity_held
+      - capacity_sold
+      - capacity_total
+      - departs_at
+      - price_override
+      - public_id
+      - remaining
+      - status
     Quote:
       type: object
       description: A priced, inventory-backed, time-boxed offer.
@@ -4898,6 +5083,16 @@ components:
             $ref: '#/components/schemas/FlightInputRequest'
       required:
       - flights
+    StatusEnum:
+      enum:
+      - OPEN
+      - CLOSED
+      - CANCELLED
+      type: string
+      description: |-
+        * `OPEN` - OPEN
+        * `CLOSED` - CLOSED
+        * `CANCELLED` - CANCELLED
     Tag:
       type: object
       properties:

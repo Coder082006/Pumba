@@ -32,27 +32,39 @@ grows a cache round trip later.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
 
 from apps.catalogue import services as catalogue
-from apps.common.errors import InventoryUnavailableError, ValidationError
+from apps.common.errors import ConflictError, InventoryUnavailableError, ValidationError
 from apps.inventory import repositories as repo
 from apps.inventory.domain.capacity import (
     PartyRules,
     Unbookable,
+    reduction_conflicts,
     sellable,
     why_not_bookable,
 )
 from apps.inventory.domain.lifecycle import HOLD_MACHINE, HoldState, returns_capacity
-from apps.inventory.dto import AvailabilityBasis, DepartureDTO, DriftDTO, HoldDTO, HoldRequest
+from apps.inventory.dto import (
+    AvailabilityBasis,
+    DepartureDTO,
+    DepartureEdit,
+    DriftDTO,
+    HoldDTO,
+    HoldRequest,
+    ProviderDepartureDTO,
+)
 from apps.inventory.models import ActivityDeparture, HoldStatus, InventoryHold
 
 __all__ = [
     "materialise_departures",
     "list_departures",
+    "provider_calendar",
+    "CapacityReductionError",
+    "edit_departures",
     "check_availability",
     "resolve_departure_at",
     "hold",
@@ -212,6 +224,123 @@ def list_departures(
     return [
         _dto(row, basis=AvailabilityBasis.INDICATIVE, rules=rules, pax=pax, now=now) for row in rows
     ]
+
+
+class CapacityReductionError(ConflictError):
+    """BR-023 — the reduction would strand seats that are already committed.
+
+    §26.5 requires the refusal to name *"the specific dates"*, so `details`
+    carries one entry per offending departure with the instant, what was asked
+    for and what is already held or sold. A provider given only "some dates
+    conflict" has to find them by hand across a month grid.
+    """
+
+    code = "CAPACITY_BELOW_COMMITTED"
+    default_message = (
+        "Capacity cannot be reduced below the seats already held or sold on these dates."
+    )
+
+
+def provider_calendar(
+    activity_id: int, *, since: datetime, until: datetime
+) -> list[ProviderDepartureDTO]:
+    """§26.5's month grid: every departure in a window, with all three counters.
+
+    Unlocked, like `list_departures` and for the same reason — this is a screen,
+    not a decision. What differs is who is reading it, and therefore what it may
+    show: an operator deciding whether to cancel Tuesday's boat needs to know
+    that four of its eight taken seats are holds rather than sales, because one
+    of those numbers will resolve itself in twenty minutes and the other will
+    not.
+
+    Ordered by `departs_at`, which is how a calendar is read. The edit path
+    below orders by primary key instead, for deadlock avoidance (§8.4) — the
+    two orderings are for different readers and neither is the other's default.
+    """
+    return [
+        ProviderDepartureDTO(
+            public_id=row.public_id,
+            departs_at=row.departs_at,
+            status=row.status,
+            capacity_total=row.capacity_total,
+            capacity_held=row.capacity_held,
+            capacity_sold=row.capacity_sold,
+            remaining=sellable(repo.facts_of(row)),
+            price_override=row.price_override,
+        )
+        for row in ActivityDeparture.objects.filter(
+            activity_id=activity_id, departs_at__gte=since, departs_at__lte=until
+        ).order_by("departs_at")
+    ]
+
+
+@transaction.atomic
+def edit_departures(activity_id: int, edit: DepartureEdit, *, timezone_name: str) -> int:
+    """§26.5's bulk edit, with BR-023 enforced under the lock that makes it true.
+
+    Returns how many departures were changed.
+
+    **The check runs after the lock, not before it.** BR-023 is a statement
+    about `capacity_held` and `capacity_sold`, and both move under other
+    people's transactions — a quote holding seats is doing exactly that. A
+    reduction validated against an unlocked read is validated against a number
+    that was true once, which is the same mistake §17.1 I2 exists to name. So
+    the rows are locked first, the conflict set is computed from the locked
+    values, and the write happens without releasing them.
+
+    **Every offending date is reported, not the first.** §26.5 says the dates
+    plural, and a provider fixing a month one rejection at a time would need a
+    month of submissions to discover the six that block it.
+
+    **The weekday mask is applied in the destination's zone.** A provider
+    closing "every Sunday" means Sunday where the boat is; the same instant is
+    Saturday for anybody west of the Atlantic. `timezone_name` arrives as an
+    argument because resolving it needs the geography tables, which `inventory`
+    may not read (contract `private-catalogue`).
+
+    **Lowering capacity does not cancel anything, and cancelling does not
+    return seats.** They are separate operations because they are separate
+    decisions: a smaller boat still sails, and a cancelled departure still has
+    passengers who booked it. Releasing their money is §14.6's refund path in
+    Phase 8, and doing it silently here would be the worst possible place for
+    it to happen.
+    """
+    zone = ZoneInfo(timezone_name)
+    rows = repo.lock_departures_between(
+        activity_id,
+        since=datetime.combine(edit.since, time.min, tzinfo=zone),
+        until=datetime.combine(edit.until, time.max, tzinfo=zone),
+    )
+    if edit.weekday_mask is not None:
+        rows = [
+            row
+            for row in rows
+            if edit.weekday_mask & (1 << row.departs_at.astimezone(zone).date().weekday())
+        ]
+
+    if edit.capacity_total is not None:
+        conflicts = reduction_conflicts(
+            (repo.facts_of(row) for row in rows), capacity_total=edit.capacity_total
+        )
+        if conflicts:
+            raise CapacityReductionError(
+                details=[
+                    {
+                        "departs_at": conflict.departs_at.isoformat(),
+                        "requested": conflict.requested,
+                        "committed": conflict.committed,
+                    }
+                    for conflict in conflicts
+                ]
+            )
+
+    return repo.apply_departure_edit(
+        rows,
+        capacity_total=edit.capacity_total,
+        price_override=edit.price_override,
+        clear_price=edit.clear_price,
+        status=edit.status,
+    )
 
 
 def check_availability(

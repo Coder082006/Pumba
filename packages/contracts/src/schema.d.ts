@@ -247,6 +247,36 @@ export interface paths {
         patch: operations["admin_activities_partial_update"];
         trace?: never;
     };
+    "/api/v1/admin/activities/{public_id}/departures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An activity's departure calendar
+         * @description §26.5's month grid: every departure in the window with its capacity, what is held, what is sold and any price override.
+         *
+         *     Unlike the public calendar this publishes the three counters separately, because the split is what an operator is deciding on — eight taken seats of which four are holds is a boat being booked, not a boat that is full.
+         */
+        get: operations["admin_activities_departures_list"];
+        /**
+         * Bulk-edit an activity's departures
+         * @description §26.5's bulk edit: a date range, an optional weekday mask, and set-availability / set-rate / open / close in one submission.
+         *
+         *     **BR-023.** A capacity below what a departure has already held or sold is refused with `409 CAPACITY_BELOW_COMMITTED`, and every offending date is named in `details` with what was asked for and what is committed. Held seats count: a hold is a seat somebody is partway through paying for.
+         *
+         *     Reducing capacity does not cancel anybody, and cancelling does not release anybody's money — §14.6's refund path is separate and deliberate.
+         */
+        put: operations["admin_activities_departures_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/activities/{public_id}/restore": {
         parameters: {
             query?: never;
@@ -1929,6 +1959,39 @@ export interface components {
             readonly unbookable: string | null;
             readonly is_bookable: boolean;
         };
+        /** @description §26.5's bulk submission: a window, an optional weekday mask, and the ops.
+         *
+         *     *"Bulk editing supports a date range, a weekday mask, and set-availability /
+         *     set-rate / open / close operations in one submission."*
+         *
+         *     **`days`, not a bitmask**, matching the schedule console: a provider closing
+         *     Sundays types "sun", and a form that took `64` would be one nobody can
+         *     review. `catalogue.services.weekday_mask` is the same conversion the
+         *     schedule form and the seed file use, so all three agree about which bit is
+         *     Monday — and it is reached through the service interface because contract
+         *     `private-catalogue` forbids this module the domain one.
+         *
+         *     **An empty submission is refused.** A body naming a window and no operation
+         *     would lock a month of rows, change none of them and answer 200 with a count
+         *     of zero — indistinguishable from a window that matched nothing.
+         *
+         *     **`clear_price` exists because `null` is ambiguous.** `price_override: null`
+         *     has to mean "leave it alone", or every capacity edit would silently drop a
+         *     special rate. Removing one is its own flag, and asking for both at once is
+         *     a contradiction rather than a precedence rule to remember. */
+        DepartureEditRequest: {
+            /** Format: date */
+            date_from: string;
+            /** Format: date */
+            to: string;
+            days?: string[];
+            capacity_total?: number;
+            /** Format: decimal */
+            price_override?: string;
+            /** @default false */
+            clear_price: boolean;
+            status?: components["schemas"]["StatusEnum"];
+        };
         /** @description §7.5.6.
          *
          *     `timezone` is here because §7.2 renders timestamps in the destination's
@@ -2470,6 +2533,31 @@ export interface components {
          * @enum {string}
          */
         PropertyTypeEnum: "HOTEL" | "RESORT" | "LODGE" | "GUESTHOUSE" | "APARTMENT";
+        /** @description One departure with all three counters — §26.5's grid cell.
+         *
+         *     The public `DepartureSerializer` above publishes `remaining` and refuses to
+         *     publish the split. This one publishes it, because the split is the whole
+         *     point of an operator's calendar: eight taken seats of which four are holds
+         *     is a boat being booked, and eight of which four are sales with a hold
+         *     expiring in ten minutes is a boat about to have a free seat. A provider
+         *     deciding whether to cancel needs to tell those apart; a tourist reading the
+         *     same number would watch availability move for no visible reason.
+         *
+         *     Two serializers rather than one with a flag, so widening the tourist-facing
+         *     payload stays something somebody has to do deliberately. */
+        ProviderDeparture: {
+            /** Format: uuid */
+            readonly public_id: string;
+            /** Format: date-time */
+            readonly departs_at: string;
+            readonly status: string;
+            readonly capacity_total: number;
+            readonly capacity_held: number;
+            readonly capacity_sold: number;
+            readonly remaining: number;
+            /** Format: decimal */
+            readonly price_override: string | null;
+        };
         /** @description A priced, inventory-backed, time-boxed offer. */
         Quote: {
             /** Format: uuid */
@@ -2611,6 +2699,13 @@ export interface components {
         SetFlightsRequest: {
             flights: components["schemas"]["FlightInputRequest"][];
         };
+        /**
+         * @description * `OPEN` - OPEN
+         *     * `CLOSED` - CLOSED
+         *     * `CANCELLED` - CANCELLED
+         * @enum {string}
+         */
+        StatusEnum: "OPEN" | "CLOSED" | "CANCELLED";
         Tag: {
             /** Format: uuid */
             public_id: string;
@@ -3034,6 +3129,57 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Activity"];
                 };
+            };
+        };
+    };
+    admin_activities_departures_list: {
+        parameters: {
+            query?: {
+                date_from?: string;
+                pax?: number;
+                to?: string;
+            };
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderDeparture"][];
+                };
+            };
+        };
+    };
+    admin_activities_departures_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartureEditRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DepartureEditRequest"];
+                "multipart/form-data": components["schemas"]["DepartureEditRequest"];
+            };
+        };
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

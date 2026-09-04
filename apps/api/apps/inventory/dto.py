@@ -30,7 +30,7 @@ inside the database.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID
@@ -40,6 +40,8 @@ from apps.inventory.domain.capacity import Unbookable
 __all__ = [
     "AvailabilityBasis",
     "DepartureDTO",
+    "ProviderDepartureDTO",
+    "DepartureEdit",
     "HoldRequest",
     "HoldDTO",
     "DriftDTO",
@@ -81,6 +83,59 @@ class DepartureDTO:
     @property
     def is_bookable(self) -> bool:
         return self.unbookable is None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProviderDepartureDTO:
+    """One departure as §26.5's calendar shows it — all three counters.
+
+    The public `DepartureDTO` publishes `remaining` and deliberately not the
+    split, because telling a tourist how many seats somebody else is midway
+    through paying for is nobody's business and reads as availability vanishing
+    for no reason. An operator needs precisely that split: §26.5 asks for
+    *"availability, held, sold and rate"* per date, and "four held" is the
+    difference between a boat that is full and one that is being booked.
+
+    So this is a second shape rather than a widened first one — the narrower
+    payload stays impossible to widen by accident.
+    """
+
+    public_id: UUID
+    departs_at: datetime
+    status: str
+    capacity_total: int
+    capacity_held: int
+    capacity_sold: int
+    remaining: int
+    price_override: Decimal | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DepartureEdit:
+    """§26.5's bulk submission: a window, a weekday mask, and what to set.
+
+    Every operation is optional and they compose in one submission, which is
+    what §26.5 asks for — *"set-availability / set-rate / open / close
+    operations in one submission"*. An edit that set none of them is refused by
+    the serializer rather than applied as a no-op that reports success.
+
+    `clear_price` is the third state `price_override` needs and cannot express:
+    `None` on the wire has to mean "leave it alone", or a provider changing
+    only the capacity would silently drop a special rate. Removing an override
+    is therefore its own flag.
+
+    `weekday_mask` is bit 0 = Monday, matching `catalogue.domain.schedules` and
+    `date.weekday()`. It is evaluated against each departure's **local** date:
+    a provider closing "every Sunday" means Sunday where the boat is.
+    """
+
+    since: date
+    until: date
+    weekday_mask: int | None = None
+    capacity_total: int | None = None
+    price_override: Decimal | None = None
+    clear_price: bool = False
+    status: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
