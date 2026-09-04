@@ -121,8 +121,27 @@ export function generateItinerary(publicId: string): Promise<Trip> {
  * §9.4.5's per-item array, which is what a client renders "the 09:00 snorkel is
  * full, try 13:30" from.
  */
-export function quoteTrip(publicId: string): Promise<Quote> {
-  return authed<Quote>(`/trips/${publicId}/quote`, { method: 'POST' });
+/**
+ * Price a trip and hold its capacity — SRS §9.4.5.
+ *
+ * **The `Idempotency-Key` is not optional.** §9.4.5 requires it and the server
+ * refuses the request without one, so a caller that omitted it would get a 422
+ * rather than a quote. It is generated here rather than left to each call site
+ * for that reason: a required header that every caller has to remember is one
+ * a caller will eventually forget, and the failure looks like the pricing
+ * being broken rather than like a missing header.
+ *
+ * A fresh key per call by default, because each press of "Get a price" is a
+ * new offer the tourist asked for. `key` is exposed so a caller retrying *the
+ * same* attempt — after a timeout, where the first request may well have
+ * succeeded unseen — can pass the original and be given the first answer back
+ * instead of holding a second set of seats.
+ */
+export function quoteTrip(publicId: string, key: string = crypto.randomUUID()): Promise<Quote> {
+  return authed<Quote>(`/trips/${publicId}/quote`, {
+    method: 'POST',
+    idempotencyKey: key,
+  });
 }
 
 export function cancelTrip(publicId: string): Promise<Trip> {
