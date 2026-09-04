@@ -37,6 +37,9 @@ from apps.catalogue.views import (
     AdminActivityCreateView,
     AdminActivityDetailView,
     AdminActivityRestoreView,
+    AdminActivityScheduleCreateView,
+    AdminActivityScheduleDetailView,
+    AdminActivityScheduleRestoreView,
     AdminAttractionCreateView,
     AdminAttractionDetailView,
     AdminAttractionRestoreView,
@@ -162,6 +165,26 @@ urlpatterns = [
         "admin/activities/<uuid:public_id>/restore",
         AdminActivityRestoreView.as_view(),
         name="admin-activity-restore",
+    ),
+    # Flat, and the parent arrives in the body like every other reference on
+    # this surface. A nested `admin/activities/{id}/schedules` would put the
+    # activity in two places on a create — the path and `activity` — with
+    # nothing to stop them disagreeing, and would still need the flat detail
+    # path below for the amend. One place, one shape.
+    path(
+        "admin/activity-schedules",
+        AdminActivityScheduleCreateView.as_view(),
+        name="admin-activity-schedule-create",
+    ),
+    path(
+        "admin/activity-schedules/<uuid:public_id>",
+        AdminActivityScheduleDetailView.as_view(),
+        name="admin-activity-schedule-detail",
+    ),
+    path(
+        "admin/activity-schedules/<uuid:public_id>/restore",
+        AdminActivityScheduleRestoreView.as_view(),
+        name="admin-activity-schedule-restore",
     ),
     path(
         "admin/accommodation",

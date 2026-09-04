@@ -52,7 +52,12 @@ from django.db import transaction
 
 from apps.catalogue import repositories as repo
 from apps.catalogue.domain import opening_hours
-from apps.catalogue.domain.schedules import ScheduleError, ScheduleRule, occurrence_dates
+from apps.catalogue.domain.schedules import (
+    ScheduleError,
+    ScheduleRule,
+    mask_of,
+    occurrence_dates,
+)
 from apps.catalogue.dto import ListingRefDTO
 from apps.catalogue.models import (
     Accommodation,
@@ -216,6 +221,21 @@ ENTITIES: Mapping[str, CatalogueEntity] = MappingProxyType(
                 },
                 point_field="coordinates",
                 country_path=("destination", "region", "country"),
+            ),
+            # §16.2's recurring rule, and the only entity here that is not
+            # seedable through `load_seed`: it has no natural key. A schedule
+            # is identified by the activity it hangs off and the time it
+            # departs, which is a pair, and `find_by_natural_key` filters on a
+            # single field. `load_schedule_seed` does that pair-wise upsert
+            # itself, so `natural_key` below is inherited and unused — stated
+            # here rather than left for a reader to infer from its absence.
+            CatalogueEntity(
+                "activity_schedule",
+                ActivitySchedule,
+                Resource.ACTIVITY_SCHEDULE,
+                repo.create_activity_schedule,
+                repo.update_activity_schedule,
+                {"activity": Activity},
             ),
             CatalogueEntity(
                 "accommodation",
@@ -606,12 +626,14 @@ SEED_FILES: tuple[tuple[str, str], ...] = (
 #: The schedule seed, loaded separately from `SEED_FILES` — for the same
 #: reason `media` is.
 #:
-#: `activity_schedule` is **not** a `CatalogueEntity` and cannot be one. Every
-#: entity in that registry is identified by a natural key a person can write —
-#: an ISO code, a slug, a policy code — and a recurrence rule has none. It is
-#: not a thing with a name; it is "this activity, at this time". Inventing a
-#: slug for it would put a synthetic identifier in the schema to satisfy a
-#: loader, which is the tail wagging the dog.
+#: `activity_schedule` **is** a `CatalogueEntity` — the console edits schedules
+#: through the same audited create/update/delete/restore path as everything
+#: else — but it cannot be loaded by `load_seed`. Every entity that loader
+#: handles is identified by a natural key a person can write into a file: an
+#: ISO code, a slug, a policy code. A recurrence rule has none. It is not a
+#: thing with a name; it is "this activity, at this time". Inventing a slug for
+#: it would put a synthetic identifier in the schema to satisfy a loader, which
+#: is the tail wagging the dog.
 #:
 #: So it gets `(activity, start_time)` as its natural key and a loader of its
 #: own, which says plainly that a schedule is a different kind of row.
@@ -747,29 +769,20 @@ def load_schedule_seed(rows: Sequence[Mapping[str, Any]]) -> SeedResult:
     return SeedResult("activity_schedule", created, updated)
 
 
-#: Monday first, matching `date.weekday()` and `domain.schedules`. Written out
-#: so a seed file says "mon" and a reviewer can check it against a provider's
-#: own timetable without doing binary arithmetic.
-_WEEKDAYS: Mapping[str, int] = MappingProxyType(
-    {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
-)
-
-
 def _weekday_mask(days: Sequence[str]) -> int:
-    mask = 0
-    for day in days:
-        try:
-            mask |= 1 << _WEEKDAYS[day.lower()]
-        except KeyError as exc:
-            raise ValidationError(
-                f"activity_schedule: {day!r} is not a weekday; "
-                f"expected one of {sorted(_WEEKDAYS)}."
-            ) from exc
-    if mask == 0:
-        # The CHECK constraint refuses this too. Refusing it here names the
-        # file and the row instead of the constraint.
-        raise ValidationError("activity_schedule: a schedule must run on at least one day.")
-    return mask
+    """`domain.schedules.mask_of`, with the seed file named in the message.
+
+    The arithmetic moved to the domain when the console gained a schedule form:
+    two conversions, one in a seed loader and one in a serializer, is how a
+    file that says "sun" and a form that says "sun" end up meaning different
+    days. What stays here is the translation of the domain's refusal into the
+    platform's error type — `domain/` may not import it — and the prefix that
+    tells an operator which file to look in.
+    """
+    try:
+        return mask_of(days)
+    except ScheduleError as exc:
+        raise ValidationError(f"activity_schedule: {exc}") from exc
 
 
 def load_seed(

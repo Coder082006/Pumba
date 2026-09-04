@@ -272,6 +272,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/activity-schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a activity schedule
+         * @description POST one new curated row.
+         *
+         *     Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+         *     yet, so a filter here would provably run against nothing while reporting to
+         *     the §37.2 matrix that ownership was enforced. What stands between a caller
+         *     and a new row is the role check, and the matrix records that by name in
+         *     `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+         */
+        post: operations["admin_activity_schedules_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/activity-schedules/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Retire a activity schedule
+         * @description §7.7's soft deletion. The row survives; the slug is released.
+         */
+        delete: operations["admin_activity_schedules_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Amend a activity schedule
+         * @description A partial update — including the one that opens or closes a market.
+         *
+         *     §4.1 wants a destination published and withdrawn without a deployment,
+         *     and both are `is_active` moving in this one call. There is deliberately
+         *     no separate activate endpoint, so there is no second path that could
+         *     record the change differently or not at all.
+         */
+        patch: operations["admin_activity_schedules_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/activity-schedules/{public_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a retired activity schedule
+         * @description Undo a soft deletion.
+         *
+         *     A POST to its own resource rather than a PATCH setting `deleted_at`.
+         *     `deleted_at` is not a writable field, and adding it to the update
+         *     serializer to support this would open the mass-assignment hole that
+         *     `repositories._WRITABLE` exists to close.
+         */
+        post: operations["admin_activity_schedules_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/attractions": {
         parameters: {
             query?: never;
@@ -1548,6 +1628,54 @@ export interface components {
             destination: components["schemas"]["Destination"];
             media: components["schemas"]["Media"][];
         };
+        /** @description The rule as the console reads it back — days, never the mask.
+         *
+         *     Asymmetry with the write side would be the bug worth having a test for: a
+         *     form that accepts `["mon"]` and renders `1` cannot round-trip through
+         *     itself, and every console edit after the first would be made against a
+         *     field the administrator has to decode by hand. */
+        ActivitySchedule: {
+            /** Format: uuid */
+            public_id: string;
+            /** Format: uuid */
+            activity: string;
+            days: string[];
+            /** Format: time */
+            start_time: string;
+            capacity: number;
+            /** Format: date */
+            valid_from: string;
+            /** Format: date */
+            valid_to: string | null;
+            is_active: boolean;
+        };
+        /** @description §16.2's recurring rule, as a console form fills it in.
+         *
+         *     **`days`, not `weekday_mask`.** The column is a bitmask and the form is a
+         *     row of checkboxes; `domain.schedules.mask_of` is the one conversion, shared
+         *     with the seed loader, so a file that says "sun" and a form that says "sun"
+         *     cannot come to mean different days. `validate` swaps one for the other, so
+         *     what reaches `_WRITABLE` — and therefore the §41.13 audit diff — is the
+         *     column, and what a reviewer reads on the wire is the timetable.
+         *
+         *     **Nothing here can oversell anything.** Lowering `capacity` changes what
+         *     the nightly materialiser generates next; it cannot reach a departure with
+         *     seats already held or sold. That is why BR-023 guards `inventory`'s
+         *     departure calendar and not this form — §16.2 keeps the rule and the
+         *     sellable instant apart precisely so that editing a timetable is safe. */
+        ActivityScheduleWriteRequest: {
+            /** Format: uuid */
+            activity: string;
+            days: string[];
+            /** Format: time */
+            start_time: string;
+            capacity: number;
+            /** Format: date */
+            valid_from: string;
+            /** Format: date */
+            valid_to?: string | null;
+            is_active?: boolean;
+        };
         /** @description §16.1. Administrator-created until the Phase 11 provider portal.
          *
          *     `price_per_person` and `currency` are both required on create and are
@@ -2099,6 +2227,33 @@ export interface components {
             /** Format: time */
             check_out_time?: string | null;
             feature_rank?: number;
+            is_active?: boolean;
+        };
+        /** @description §16.2's recurring rule, as a console form fills it in.
+         *
+         *     **`days`, not `weekday_mask`.** The column is a bitmask and the form is a
+         *     row of checkboxes; `domain.schedules.mask_of` is the one conversion, shared
+         *     with the seed loader, so a file that says "sun" and a form that says "sun"
+         *     cannot come to mean different days. `validate` swaps one for the other, so
+         *     what reaches `_WRITABLE` — and therefore the §41.13 audit diff — is the
+         *     column, and what a reviewer reads on the wire is the timetable.
+         *
+         *     **Nothing here can oversell anything.** Lowering `capacity` changes what
+         *     the nightly materialiser generates next; it cannot reach a departure with
+         *     seats already held or sold. That is why BR-023 guards `inventory`'s
+         *     departure calendar and not this form — §16.2 keeps the rule and the
+         *     sellable instant apart precisely so that editing a timetable is safe. */
+        PatchedActivityScheduleWriteRequest: {
+            /** Format: uuid */
+            activity?: string;
+            days?: string[];
+            /** Format: time */
+            start_time?: string;
+            capacity?: number;
+            /** Format: date */
+            valid_from?: string;
+            /** Format: date */
+            valid_to?: string | null;
             is_active?: boolean;
         };
         /** @description §16.1. Administrator-created until the Phase 11 provider portal.
@@ -2883,6 +3038,98 @@ export interface operations {
         };
     };
     admin_activities_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_activity_schedules_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivityScheduleWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ActivityScheduleWriteRequest"];
+                "multipart/form-data": components["schemas"]["ActivityScheduleWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivitySchedule"];
+                };
+            };
+        };
+    };
+    admin_activity_schedules_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_activity_schedules_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedActivityScheduleWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedActivityScheduleWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedActivityScheduleWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivitySchedule"];
+                };
+            };
+        };
+    };
+    admin_activity_schedules_restore_create: {
         parameters: {
             query?: never;
             header?: never;

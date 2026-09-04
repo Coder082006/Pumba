@@ -40,6 +40,7 @@ from typing import Any
 from rest_framework import serializers
 
 from apps.catalogue.domain.ranking import SortOption
+from apps.catalogue.domain.schedules import ScheduleError, mask_of
 from apps.catalogue.domain.search import SearchKind
 from apps.catalogue.models import (
     ConfirmationMode,
@@ -71,6 +72,7 @@ __all__ = [
     "CancellationPolicySerializer",
     "AttractionSerializer",
     "ActivitySerializer",
+    "ActivityScheduleSerializer",
     "AccommodationSerializer",
     "MediaSerializer",
     "READ_SERIALIZERS",
@@ -314,6 +316,71 @@ class ActivityWriteSerializer(_CoordinateWriteSerializer):
     is_active = serializers.BooleanField(required=False)
 
 
+class ActivityScheduleWriteSerializer(StrictSerializer):
+    """§16.2's recurring rule, as a console form fills it in.
+
+    **`days`, not `weekday_mask`.** The column is a bitmask and the form is a
+    row of checkboxes; `domain.schedules.mask_of` is the one conversion, shared
+    with the seed loader, so a file that says "sun" and a form that says "sun"
+    cannot come to mean different days. `validate` swaps one for the other, so
+    what reaches `_WRITABLE` — and therefore the §41.13 audit diff — is the
+    column, and what a reviewer reads on the wire is the timetable.
+
+    **Nothing here can oversell anything.** Lowering `capacity` changes what
+    the nightly materialiser generates next; it cannot reach a departure with
+    seats already held or sold. That is why BR-023 guards `inventory`'s
+    departure calendar and not this form — §16.2 keeps the rule and the
+    sellable instant apart precisely so that editing a timetable is safe.
+    """
+
+    activity = serializers.UUIDField()
+    # No `max_length=3`, deliberately. Day names are three characters, so the
+    # bound looks free — but it fires first, and "funday" then comes back as
+    # "no more than 3 characters" instead of "not a weekday; expected one of
+    # [...]". The looser bound lets `mask_of` produce the message that tells an
+    # administrator what to type.
+    days = serializers.ListField(
+        child=serializers.CharField(max_length=16), allow_empty=False, required=False
+    )
+    start_time = serializers.TimeField(required=False)
+    capacity = serializers.IntegerField(min_value=1, required=False)
+    valid_from = serializers.DateField(required=False)
+    valid_to = serializers.DateField(allow_null=True, required=False)
+    is_active = serializers.BooleanField(required=False)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """On a create every field but `valid_to` and `is_active` is required.
+
+        DRF has no per-method `required`, and the alternative — a second
+        serializer differing in four flags — is the shape that drifts. `partial`
+        is already how the view distinguishes POST from PATCH.
+        """
+        super().__init__(*args, **kwargs)
+        if not self.partial:
+            for name in ("days", "start_time", "capacity", "valid_from"):
+                self.fields[name].required = True
+
+    def validate(self, attrs: Any) -> Any:
+        """`days` becomes `weekday_mask`; the validity window is checked.
+
+        Both refusals also exist deeper — `ScheduleRule.__post_init__` in the
+        domain, and two CHECK constraints in PostgreSQL. Neither can produce a
+        422 naming the field the administrator got wrong, which is the whole
+        job of this layer.
+        """
+        data = dict(attrs)
+        days = data.pop("days", None)
+        if days is not None:
+            try:
+                data["weekday_mask"] = mask_of(days)
+            except ScheduleError as exc:
+                raise serializers.ValidationError({"days": str(exc)}) from exc
+        valid_from, valid_to = data.get("valid_from"), data.get("valid_to")
+        if valid_from is not None and valid_to is not None and valid_to < valid_from:
+            raise serializers.ValidationError({"valid_to": "cannot precede valid_from"})
+        return data
+
+
 class AccommodationWriteSerializer(_CoordinateWriteSerializer):
     """§7.5.7 as amended — ADR 0013.
 
@@ -346,6 +413,7 @@ WRITE_SERIALIZERS: dict[str, type[StrictSerializer]] = {
     "cancellation_policy": CancellationPolicyWriteSerializer,
     "attraction": AttractionWriteSerializer,
     "activity": ActivityWriteSerializer,
+    "activity_schedule": ActivityScheduleWriteSerializer,
     "accommodation": AccommodationWriteSerializer,
 }
 
@@ -673,6 +741,25 @@ class AccommodationQuerySerializer(_PageQuerySerializer):
     )
 
 
+class ActivityScheduleSerializer(serializers.Serializer[Any]):
+    """The rule as the console reads it back — days, never the mask.
+
+    Asymmetry with the write side would be the bug worth having a test for: a
+    form that accepts `["mon"]` and renders `1` cannot round-trip through
+    itself, and every console edit after the first would be made against a
+    field the administrator has to decode by hand.
+    """
+
+    public_id = serializers.UUIDField()
+    activity = serializers.UUIDField()
+    days = serializers.ListField(child=serializers.CharField())
+    start_time = serializers.TimeField()
+    capacity = serializers.IntegerField()
+    valid_from = serializers.DateField()
+    valid_to = serializers.DateField(allow_null=True)
+    is_active = serializers.BooleanField()
+
+
 READ_SERIALIZERS: dict[str, type[serializers.Serializer[Any]]] = {
     "country": CountrySerializer,
     "market": MarketRefSerializer,
@@ -682,5 +769,6 @@ READ_SERIALIZERS: dict[str, type[serializers.Serializer[Any]]] = {
     "cancellation_policy": CancellationPolicySerializer,
     "attraction": AttractionSerializer,
     "activity": ActivitySerializer,
+    "activity_schedule": ActivityScheduleSerializer,
     "accommodation": AccommodationSerializer,
 }

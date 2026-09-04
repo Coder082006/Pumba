@@ -18,8 +18,8 @@ function, and renders a DTO. The two-line bodies are not an accident of a small
 feature: a view that did anything else would be a second place the §41.13 audit
 entry could be forgotten, and the design is that there is no such place.
 
-**Seven entities, three shapes.** `_AdminCreateView`, `_AdminDetailView` and
-`_AdminRestoreView` carry the behaviour; the twenty-one classes below carry a
+**Eight entities, three shapes.** `_AdminCreateView`, `_AdminDetailView` and
+`_AdminRestoreView` carry the behaviour; the twenty-four classes below carry a
 name, an `entity_key` and a schema. The names are spelled out rather than
 generated because they are the route names the §37.2 authorisation matrix
 enumerates and the operations in the published OpenAPI document (§36.2) — both
@@ -340,7 +340,7 @@ def _restore_schema(entity_key: str) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# The twenty-one endpoints. Three per entity: create, detail, restore.
+# The twenty-four endpoints. Three per entity: create, detail, restore.
 # ---------------------------------------------------------------------------
 
 
@@ -462,6 +462,21 @@ class AdminActivityDetailView(_AdminDetailView):
 @_restore_schema("activity")
 class AdminActivityRestoreView(_AdminRestoreView):
     entity_key = "activity"
+
+
+@_create_schema("activity_schedule")
+class AdminActivityScheduleCreateView(_AdminCreateView):
+    entity_key = "activity_schedule"
+
+
+@_detail_schema("activity_schedule")
+class AdminActivityScheduleDetailView(_AdminDetailView):
+    entity_key = "activity_schedule"
+
+
+@_restore_schema("activity_schedule")
+class AdminActivityScheduleRestoreView(_AdminRestoreView):
+    entity_key = "activity_schedule"
 
 
 @_create_schema("accommodation")

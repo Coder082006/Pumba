@@ -70,6 +70,7 @@ from apps.catalogue.domain.ranking import (
     displayable_rating,
     order_terms,
 )
+from apps.catalogue.domain.schedules import names_of
 from apps.catalogue.domain.search import (
     Hit,
     SearchKind,
@@ -81,6 +82,7 @@ from apps.catalogue.domain.visibility import is_publicly_visible
 from apps.catalogue.dto import (
     AccommodationDTO,
     ActivityDTO,
+    ActivityScheduleDTO,
     AttractionDTO,
     CancellationPolicyDTO,
     CountryDTO,
@@ -95,6 +97,7 @@ from apps.catalogue.dto import (
 from apps.catalogue.models import (
     Accommodation,
     Activity,
+    ActivitySchedule,
     Attraction,
     CancellationPolicy,
     Destination,
@@ -108,6 +111,7 @@ from apps.common.geo import Coordinates
 from apps.common.pagination import Page, decode_cursor, encode_cursor
 
 __all__ = [
+    "to_activity_schedule_dto",
     "to_cancellation_policy_dto",
     "to_market_ref_dto",
     "to_market_dto",
@@ -774,6 +778,26 @@ def to_cancellation_policy_dto(policy: CancellationPolicy) -> CancellationPolicy
 def to_tag_dto(tag: Tag) -> TagDTO:
     return TagDTO(
         public_id=tag.public_id, slug=tag.slug, label=tag.label, sort_order=tag.sort_order
+    )
+
+
+def to_activity_schedule_dto(schedule: ActivitySchedule) -> ActivityScheduleDTO:
+    """§16.2's rule, with the mask spelled out and the activity as its UUID.
+
+    `activity.public_id` and not `activity_id`: §7.2 keeps sequential integers
+    off the wire, and the console addresses the parent by the same identifier
+    it used to create the schedule. It is the one attribute here that costs a
+    join, which is why the admin write path selects it.
+    """
+    return ActivityScheduleDTO(
+        public_id=schedule.public_id,
+        activity=schedule.activity.public_id,
+        days=names_of(schedule.weekday_mask),
+        start_time=schedule.start_time,
+        capacity=schedule.capacity,
+        valid_from=schedule.valid_from,
+        valid_to=schedule.valid_to,
+        is_active=schedule.is_active,
     )
 
 

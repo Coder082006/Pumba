@@ -28,6 +28,7 @@ pretend it can answer the other one.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, time, timedelta
 
@@ -36,6 +37,9 @@ __all__ = [
     "ScheduleRule",
     "ScheduleError",
     "EVERY_DAY",
+    "WEEKDAY_NAMES",
+    "mask_of",
+    "names_of",
     "occurs_on",
     "occurrence_dates",
 ]
@@ -50,6 +54,42 @@ WeekdayMask = int
 
 _ALL_DAYS = 0b1111111
 EVERY_DAY: WeekdayMask = _ALL_DAYS
+
+#: Bit order, so index 0 is Monday. The names are the mask's public spelling:
+#: a seed file, a console form and an audit entry all say `["mon", "wed"]`
+#: rather than `5`, because the point of the mask being data is that a person
+#: can check it against a provider's timetable without doing binary arithmetic.
+WEEKDAY_NAMES: tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def mask_of(days: Sequence[str]) -> WeekdayMask:
+    """Day names to a mask. Case-insensitive; refuses a name it cannot place.
+
+    Raises `ScheduleError` for an unknown day and for a set that selects none,
+    so both are refused at the boundary that names the input rather than by the
+    CHECK constraint, which names only the row.
+    """
+    mask = 0
+    for day in days:
+        try:
+            mask |= 1 << WEEKDAY_NAMES.index(day.lower())
+        except ValueError as exc:
+            raise ScheduleError(
+                f"{day!r} is not a weekday; expected one of {list(WEEKDAY_NAMES)}."
+            ) from exc
+    if mask == 0:
+        raise ScheduleError("a schedule must run on at least one day")
+    return mask
+
+
+def names_of(mask: WeekdayMask) -> tuple[str, ...]:
+    """A mask back to day names, Monday first.
+
+    The inverse of `mask_of` over every legal mask, which is what the round-trip
+    test asserts — a display helper that disagreed with the parser would put one
+    set of days in the console and a different set in the boat.
+    """
+    return tuple(name for index, name in enumerate(WEEKDAY_NAMES) if mask & (1 << index))
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,7 +7,7 @@ looks restricted in the console and enforces nothing at booking.
 
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, time, timedelta
 
 import pytest
 
@@ -18,8 +18,11 @@ from apps.catalogue.domain.requirements import (
 )
 from apps.catalogue.domain.schedules import (
     EVERY_DAY,
+    WEEKDAY_NAMES,
     ScheduleError,
     ScheduleRule,
+    mask_of,
+    names_of,
     occurrence_dates,
     occurs_on,
 )
@@ -272,3 +275,69 @@ class TestOccurrenceDates:
         rule = ScheduleRule(EVERY_DAY, time(8), date(2027, 8, 12))
         got = occurrence_dates(rule, start=date(2027, 8, 9), horizon_days=5)
         assert got == (date(2027, 8, 12), date(2027, 8, 13))
+
+
+class TestWeekdayNames:
+    """The mask's public spelling — §16.2, and the seed and console that share it.
+
+    The mask is what `occurs_on` does arithmetic with; day names are what a
+    seed file, a console form and an audit diff are read in. Two conversions
+    would be two chances to disagree about which bit is Monday, and a
+    disagreement there shifts every departure by a day while looking entirely
+    plausible in both places. So there is one pair, and these are its
+    properties.
+    """
+
+    def test_monday_is_bit_zero(self) -> None:
+        """The convention the whole module rests on, stated as a value."""
+        assert mask_of(["mon"]) == 1
+        assert mask_of(["sun"]) == 0b1000000
+
+    def test_the_mask_agrees_with_occurs_on(self) -> None:
+        """The only claim that actually matters: the names pick the days.
+
+        Asserted against `occurs_on` rather than against a literal, because a
+        parser that is self-consistently wrong passes every test written in
+        terms of itself.
+        """
+        wednesday = date(2027, 8, 11)
+        assert wednesday.weekday() == 2
+        rule = ScheduleRule(mask_of(["wed"]), time(8), date(2027, 1, 1))
+        assert occurs_on(rule, wednesday) is True
+        assert occurs_on(rule, wednesday + timedelta(days=1)) is False
+
+    def test_every_name_maps_to_the_weekday_it_names(self) -> None:
+        for index, name in enumerate(WEEKDAY_NAMES):
+            # 2027-08-09 is a Monday, so offsetting by the index lands on the
+            # day the name claims.
+            day = date(2027, 8, 9) + timedelta(days=index)
+            rule = ScheduleRule(mask_of([name]), time(8), date(2027, 1, 1))
+            assert occurs_on(rule, day) is True, name
+
+    @pytest.mark.parametrize("mask", range(1, 0b10000000))
+    def test_names_of_inverts_mask_of_over_every_legal_mask(self, mask: int) -> None:
+        """Exhaustive, because there are only 127 of them.
+
+        A round trip that held for the masks somebody thought to write down and
+        failed for one of the other 120 is exactly the bug this is cheap enough
+        to rule out entirely.
+        """
+        assert mask_of(names_of(mask)) == mask
+
+    def test_names_come_back_monday_first(self) -> None:
+        assert names_of(mask_of(["sun", "mon"])) == ("mon", "sun")
+
+    def test_case_is_ignored(self) -> None:
+        assert mask_of(["MON", "Wed"]) == mask_of(["mon", "wed"])
+
+    def test_an_unknown_day_is_refused_and_named(self) -> None:
+        with pytest.raises(ScheduleError, match="funday"):
+            mask_of(["mon", "funday"])
+
+    def test_no_days_at_all_is_refused(self) -> None:
+        """A mask of zero is a schedule that runs forever and never departs."""
+        with pytest.raises(ScheduleError, match="at least one day"):
+            mask_of([])
+
+    def test_every_day_is_every_name(self) -> None:
+        assert names_of(EVERY_DAY) == WEEKDAY_NAMES

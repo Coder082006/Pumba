@@ -446,6 +446,124 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/admin/activity-schedules:
+    post:
+      operationId: admin_activity_schedules_create
+      description: |-
+        POST one new curated row.
+
+        Deliberately not a `ScopedQuerysetMixin` view. There is no row to scope
+        yet, so a filter here would provably run against nothing while reporting to
+        the §37.2 matrix that ownership was enforced. What stands between a caller
+        and a new row is the role check, and the matrix records that by name in
+        `NO_ROWS_EXPOSED` rather than by an inherited class that does nothing.
+      summary: Create a activity schedule
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityScheduleWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ActivityScheduleWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ActivityScheduleWriteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivitySchedule'
+          description: ''
+  /api/v1/admin/activity-schedules/{public_id}:
+    patch:
+      operationId: admin_activity_schedules_partial_update
+      description: |-
+        A partial update — including the one that opens or closes a market.
+
+        §4.1 wants a destination published and withdrawn without a deployment,
+        and both are `is_active` moving in this one call. There is deliberately
+        no separate activate endpoint, so there is no second path that could
+        record the change differently or not at all.
+      summary: Amend a activity schedule
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedActivityScheduleWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedActivityScheduleWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedActivityScheduleWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivitySchedule'
+          description: ''
+    delete:
+      operationId: admin_activity_schedules_destroy
+      description: §7.7's soft deletion. The row survives; the slug is released.
+      summary: Retire a activity schedule
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/admin/activity-schedules/{public_id}/restore:
+    post:
+      operationId: admin_activity_schedules_restore_create
+      description: |-
+        Undo a soft deletion.
+
+        A POST to its own resource rather than a PATCH setting `deleted_at`.
+        `deleted_at` is not a writable field, and adding it to the update
+        serializer to support this would open the mass-assignment hole that
+        `repositories._WRITABLE` exists to close.
+      summary: Restore a retired activity schedule
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - catalogue-admin
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/admin/attractions:
     post:
       operationId: admin_attractions_create
@@ -2468,6 +2586,99 @@ components:
       - slug
       - summary
       - tags
+    ActivitySchedule:
+      type: object
+      description: |-
+        The rule as the console reads it back — days, never the mask.
+
+        Asymmetry with the write side would be the bug worth having a test for: a
+        form that accepts `["mon"]` and renders `1` cannot round-trip through
+        itself, and every console edit after the first would be made against a
+        field the administrator has to decode by hand.
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        activity:
+          type: string
+          format: uuid
+        days:
+          type: array
+          items:
+            type: string
+        start_time:
+          type: string
+          format: time
+        capacity:
+          type: integer
+        valid_from:
+          type: string
+          format: date
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_active:
+          type: boolean
+      required:
+      - activity
+      - capacity
+      - days
+      - is_active
+      - public_id
+      - start_time
+      - valid_from
+      - valid_to
+    ActivityScheduleWriteRequest:
+      type: object
+      description: |-
+        §16.2's recurring rule, as a console form fills it in.
+
+        **`days`, not `weekday_mask`.** The column is a bitmask and the form is a
+        row of checkboxes; `domain.schedules.mask_of` is the one conversion, shared
+        with the seed loader, so a file that says "sun" and a form that says "sun"
+        cannot come to mean different days. `validate` swaps one for the other, so
+        what reaches `_WRITABLE` — and therefore the §41.13 audit diff — is the
+        column, and what a reviewer reads on the wire is the timetable.
+
+        **Nothing here can oversell anything.** Lowering `capacity` changes what
+        the nightly materialiser generates next; it cannot reach a departure with
+        seats already held or sold. That is why BR-023 guards `inventory`'s
+        departure calendar and not this form — §16.2 keeps the rule and the
+        sellable instant apart precisely so that editing a timetable is safe.
+      properties:
+        activity:
+          type: string
+          format: uuid
+        days:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 16
+        start_time:
+          type: string
+          format: time
+        capacity:
+          type: integer
+          minimum: 1
+        valid_from:
+          type: string
+          format: date
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_active:
+          type: boolean
+      required:
+      - activity
+      - capacity
+      - days
+      - start_time
+      - valid_from
     ActivityWriteRequest:
       type: object
       description: |-
@@ -3859,6 +4070,49 @@ components:
         feature_rank:
           type: integer
           minimum: 1
+        is_active:
+          type: boolean
+    PatchedActivityScheduleWriteRequest:
+      type: object
+      description: |-
+        §16.2's recurring rule, as a console form fills it in.
+
+        **`days`, not `weekday_mask`.** The column is a bitmask and the form is a
+        row of checkboxes; `domain.schedules.mask_of` is the one conversion, shared
+        with the seed loader, so a file that says "sun" and a form that says "sun"
+        cannot come to mean different days. `validate` swaps one for the other, so
+        what reaches `_WRITABLE` — and therefore the §41.13 audit diff — is the
+        column, and what a reviewer reads on the wire is the timetable.
+
+        **Nothing here can oversell anything.** Lowering `capacity` changes what
+        the nightly materialiser generates next; it cannot reach a departure with
+        seats already held or sold. That is why BR-023 guards `inventory`'s
+        departure calendar and not this form — §16.2 keeps the rule and the
+        sellable instant apart precisely so that editing a timetable is safe.
+      properties:
+        activity:
+          type: string
+          format: uuid
+        days:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 16
+        start_time:
+          type: string
+          format: time
+        capacity:
+          type: integer
+          minimum: 1
+        valid_from:
+          type: string
+          format: date
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
         is_active:
           type: boolean
     PatchedActivityWriteRequest:

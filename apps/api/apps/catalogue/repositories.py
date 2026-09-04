@@ -47,6 +47,7 @@ from django.db.models import Model
 from apps.catalogue.dto import (
     AccommodationDTO,
     ActivityDTO,
+    ActivityScheduleDTO,
     AttractionDTO,
     CancellationPolicyDTO,
     CountryDTO,
@@ -58,6 +59,7 @@ from apps.catalogue.dto import (
 from apps.catalogue.models import (
     Accommodation,
     Activity,
+    ActivitySchedule,
     Attraction,
     CancellationPolicy,
     Country,
@@ -69,6 +71,7 @@ from apps.catalogue.models import (
 from apps.catalogue.selectors import (
     to_accommodation_dto,
     to_activity_dto,
+    to_activity_schedule_dto,
     to_attraction_dto,
     to_cancellation_policy_dto,
     to_country_dto,
@@ -95,6 +98,8 @@ __all__ = [
     "update_attraction",
     "create_activity",
     "update_activity",
+    "create_activity_schedule",
+    "update_activity_schedule",
     "create_accommodation",
     "update_accommodation",
     "create_tag",
@@ -232,6 +237,28 @@ _WRITABLE: Mapping[type[Model], frozenset[str]] = {
         }
     ),
     Tag: frozenset({"slug", "label", "sort_order", "is_active"}),
+    # §16.2. `weekday_mask` and not `days`: the column is what an audit entry
+    # records, and `snapshot` reads this set directly. The serializer converts
+    # at the boundary, so the wire says "mon" and the diff says 5 — the same
+    # fact, each in the shape its reader needs.
+    #
+    # `activity` is writable so a rule can be moved between two activities that
+    # turned out to be one boat. It is also the column the provider ownership
+    # rule reaches through (`activity__provider_id`), which is why the console
+    # scopes by ACTIVITY_SCHEDULE rather than by ACTIVITY: in Phase 11 a
+    # provider may not re-parent a schedule onto somebody else's activity, and
+    # a resource that named the child is the one that can express it.
+    ActivitySchedule: frozenset(
+        {
+            "activity",
+            "weekday_mask",
+            "start_time",
+            "capacity",
+            "valid_from",
+            "valid_to",
+            "is_active",
+        }
+    ),
 }
 
 
@@ -532,6 +559,37 @@ def update_cancellation_policy(public_id: UUID, **fields: Any) -> CancellationPo
     confirmation. That is a property of the booking path, not of this write —
     which is exactly why it is safe to let an administrator edit tiers."""
     return to_cancellation_policy_dto(_update(_get(CancellationPolicy, public_id), fields))
+
+
+@transaction.atomic
+def create_activity_schedule(**fields: Any) -> ActivityScheduleDTO:
+    """§16.2's recurring rule.
+
+    `full_clean` inside `_create` runs the three CHECK constraints as Python
+    before they run as SQL, so a mask of zero or a window ending before it
+    begins is a 422 naming the field rather than an IntegrityError naming the
+    constraint. `ScheduleRule` refuses the same two in the domain; both paths
+    exist because the seed loader does not pass through a serializer.
+    """
+    return to_activity_schedule_dto(_create(ActivitySchedule, fields))
+
+
+@transaction.atomic
+def update_activity_schedule(public_id: UUID, **fields: Any) -> ActivityScheduleDTO:
+    """Amend a rule. Changes what is materialised next, never what is sold.
+
+    §16.2 keeps the rule and the departure apart, and this is where that pays:
+    dropping Sunday or lowering `capacity` alters the departures the nightly
+    job has yet to generate and cannot reach one a tourist is holding seats on.
+    Closing *that* is `inventory`'s departure calendar, which is the endpoint
+    BR-023 guards.
+    """
+    return to_activity_schedule_dto(_update(_get(ActivitySchedule, public_id), fields))
+
+
+# ---------------------------------------------------------------------------
+# Tag
+# ---------------------------------------------------------------------------
 
 
 @transaction.atomic

@@ -708,10 +708,37 @@ class TestTheAuditTrailCoversEveryCuratedEntity:
         # The four already created above, plus one of each remaining entity.
         # `market` joined that group with ADR 0018 — `_region` creates one on
         # the way past, so it is audited above rather than here.
-        assert set(bodies) | {"country", "market", "region", "destination"} == set(ENTITIES)
+        # `activity_schedule` is posted after the loop rather than inside it:
+        # it is the one entity whose body names a row created by the same
+        # loop, so it cannot be written down alongside the others.
+        assert set(bodies) | {
+            "country",
+            "market",
+            "region",
+            "destination",
+            "activity_schedule",
+        } == set(ENTITIES)
 
+        created: dict[str, Any] = {}
         for key, (path, body) in bodies.items():
-            assert _post(admin, path, body).status_code == 201, key
+            response = _post(admin, path, body)
+            assert response.status_code == 201, key
+            created[key] = response.json()["data"]
+
+        assert (
+            _post(
+                admin,
+                "/api/v1/admin/activity-schedules",
+                {
+                    "activity": created["activity"]["public_id"],
+                    "days": ["mon", "wed", "fri"],
+                    "start_time": "08:30:00",
+                    "capacity": 6,
+                    "valid_from": "2027-01-01",
+                },
+            ).status_code
+            == 201
+        )
 
         recorded = set(
             AuditLog.objects.filter(action=str(AuditAction.CATALOGUE_CREATED)).values_list(

@@ -161,6 +161,7 @@ NO_ROWS_EXPOSED = {
     "v1:catalogue:admin-cancellation-policy-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-attraction-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-activity-create": "Creates a row; looks none up.",
+    "v1:catalogue:admin-activity-schedule-create": "Creates a row; looks none up.",
     "v1:catalogue:admin-accommodation-create": "Creates a row; looks none up.",
     # §9.4.2's trip collection. GET lists by principal and POST creates, so
     # neither resolves a caller-supplied identifier — there is no id in the

@@ -47,6 +47,7 @@ __all__ = [
     "DestinationDTO",
     "AttractionDTO",
     "ActivityDTO",
+    "ActivityScheduleDTO",
     "AccommodationDTO",
     "SearchHitDTO",
 ]
@@ -301,6 +302,34 @@ class ActivityDTO:
     feature_rank: int
     destination: DestinationDTO
     media: tuple[MediaDTO, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityScheduleDTO:
+    """SRS §16.2's recurring rule, as the console edits it.
+
+    **`days` and not `weekday_mask`.** The column is a bitmask because
+    `domain.schedules` does arithmetic with it; a person deciding whether the
+    Mnemba boat runs on Sunday should not have to. The two are the same fact in
+    two shapes, so only one of them crosses the boundary, and it is the one a
+    reviewer can check against a provider's own timetable.
+
+    **`capacity` is what future materialisation will produce, not what any
+    departure holds.** §16.2 keeps the rule and the sellable instant apart for
+    exactly this reason: lowering it closes seats on departures not yet
+    generated and cannot touch a departure somebody has already paid for.
+    That is why BR-023 lives on the departure endpoint and not on this one —
+    there is nothing here to oversell.
+    """
+
+    public_id: UUID
+    activity: UUID
+    days: tuple[str, ...]
+    start_time: time
+    capacity: int
+    valid_from: date
+    valid_to: date | None
+    is_active: bool
 
 
 @dataclass(frozen=True, slots=True)
