@@ -188,3 +188,52 @@ needs the inventory this phase built, not the reverse — and BR-023's rule
 sold"*) is stated here so that whoever builds it does not have to rediscover
 that the counters it guards are `capacity_held` and `capacity_sold` together,
 not either alone.
+
+## Second addendum — the capability shipped; the principal is what waits
+
+**Date:** 2026-09-04 · **Supersedes the cost stated above**
+
+The addendum above is right about the principal and wrong about the
+consequence. It concluded that because no provider can own an activity, the
+calendar could not be built — and then priced that as *"the ability for an
+operator to close Tuesday's boat for weather without an engineer"*. Those are
+two different things. The rule, the refusal, the row locking and the dates in
+the error are not provider-specific; only the *ownership predicate* is, and
+§26.5's calendar was therefore blocked on a `WHERE` clause rather than on
+itself.
+
+So it is built, on the console that exists:
+
+    GET  /api/v1/admin/activities/{public_id}/departures
+    PUT  /api/v1/admin/activities/{public_id}/departures
+
+behind `CATALOGUE_MANAGE`, §30.2's verified address and satisfied TOTP.
+`inventory.services.edit_departures` locks the window with `FOR UPDATE` in
+ascending primary-key order and evaluates BR-023 against the locked counters;
+`inventory.domain.capacity.reduction_conflicts` is the rule, pure and
+exhaustively tested, and returns every offending date rather than the first.
+`apps/inventory/tests/test_departure_calendar_api.py::TestAQuoteInFlight`
+proves the check is under the lock by holding a real parallel transaction open.
+
+**What Phase 11 inherits.** A route, not a rewrite.
+`_provider_listed(Resource.ACTIVITY_DEPARTURE, "activity__provider_id")` was
+already written in Phase 3 and is already total over `Role x Resource`. The
+portal adds `PUT /provider/activities/{id}/departures`, a filtered activity
+lookup, and the 404-not-403 test that becomes writable the moment a second
+provider can exist. `services.edit_departures` and the domain rule beneath it
+do not move.
+
+**What the deviation costs meanwhile.** §26.4 puts an activity's capacity with
+its operator because it is a claim only the operator can make. Until the portal
+exists, an administrator makes it on their behalf — which is the same
+arrangement §26.4 already accepts for the activity's price, party bounds and
+cut-off, since `AdminActivityCreateView` sets all three today. The calendar is
+now consistent with the listing rather than more restricted than it.
+
+**Recorded honestly:** the endpoint applies no ownership predicate, because
+every role that may reach it is `Scope.GLOBAL` over the resource. That is not
+left to a comment. `tests/test_authorisation_matrix.py` gained a third
+exemption list, `GLOBAL_BY_ROLE`, whose entries name a permission and a
+resource and whose guard re-derives the claim from `OWNERSHIP` on every run —
+so the day Phase 11 gives a provider role `CATALOGUE_MANAGE`, the build fails
+and names this route as one that now needs a filter.
