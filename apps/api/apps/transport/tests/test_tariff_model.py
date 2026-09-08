@@ -246,19 +246,59 @@ class TestTheWaitingRateIsStoredAndUnread:
     def test_the_column_exists_and_defaults_to_zero(self) -> None:
         assert _tariff().waiting_rate_per_minute == Decimal("0.0000")
 
-    def test_no_pricing_code_reads_it(self) -> None:
+    #: Where the column may legitimately appear, and why.
+    #:
+    #: An allow-list rather than a blanket ban, because §27.11's console
+    #: *should* be able to store and show a rate an operator has agreed with a
+    #: provider — what it must not do is charge for it. Every entry here writes
+    #: or renders the number; none computes a fare from it.
+    ALLOWED = {
+        "apps/transport/models.py": "declares the column",
+        "apps/transport/repositories.py": "lists it as administrator-writable",
+        "apps/transport/services.py": "carries it on the console's read DTO",
+        "apps/administration/serializers.py": "accepts it on §27.11's form",
+        "apps/administration/services.py": "renders it back to the console",
+        "apps/transport/tests/test_tariff_model.py": "this test",
+    }
+
+    def test_no_fare_is_computed_from_it(self) -> None:
+        """The narrow claim, which is the one worth keeping.
+
+        A blanket "nothing mentions it" was the first version of this and it
+        was wrong in a way that only showed up when §27.11's console landed: a
+        console that cannot store the column cannot let an operator record a
+        rate at all. What must stay true is that no **fare** is computed from
+        it — §12.4 applies it "after free waiting allowance" and the SRS
+        defines no such allowance anywhere, so charging for waiting means
+        deciding what the allowance is, and recording that decision, first.
+        """
         root = Path(__file__).resolve().parents[3]
-        readers = [
-            path
+        readers = sorted(
+            str(path.relative_to(root)).replace("\\", "/")
             for path in root.rglob("apps/**/*.py")
             if "waiting_rate_per_minute" in path.read_text(encoding="utf-8")
-            and path.name not in {"models.py", "test_tariff_model.py"}
             and "migrations" not in path.parts
-        ]
-        assert readers == [], (
-            "waiting_rate_per_minute is read by "
-            f"{[str(p.relative_to(root)) for p in readers]}. §12.4 applies it "
-            "'after free waiting allowance' and the SRS defines no such "
-            "allowance, so charging for waiting means deciding what the "
-            "allowance is — and recording that decision — first."
         )
+        unexpected = [name for name in readers if name not in self.ALLOWED]
+        assert unexpected == [], (
+            f"waiting_rate_per_minute is read by {unexpected}. None of those "
+            "files merely stores it, so one of them is charging for waiting — "
+            "which needs the free allowance §12.4 assumes and the SRS never "
+            "defines."
+        )
+
+    def test_the_pricing_domain_never_mentions_it(self) -> None:
+        """The sharpest form of the same rule, and the one that cannot be
+        satisfied by editing an allow-list.
+
+        `domain/` is where a fare is computed. If the column reaches it, a
+        price is being derived from a rate whose free allowance nobody has
+        agreed.
+        """
+        domain = Path(__file__).resolve().parents[2] / "domain"
+        offenders = [
+            path.name
+            for path in domain.rglob("*.py")
+            if "waiting_rate_per_minute" in path.read_text(encoding="utf-8")
+        ]
+        assert offenders == [], offenders
