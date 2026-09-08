@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { AccountMenu } from '@/components/shell/account-menu';
 import { CurrencySwitcher } from '@/components/shell/currency-switcher';
+import { enabledCurrencies } from '@/lib/config';
 
 /**
  * The persistent header — SRS §24.
@@ -42,7 +43,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
   );
 }
 
-export function SiteHeader() {
+export async function SiteHeader() {
   return (
     // `sticky` rather than `fixed`: fixed takes the header out of flow and
     // every page below it needs a matching top offset, which is a constant
@@ -60,8 +61,10 @@ export function SiteHeader() {
           <NavLink href="/stays">Where to stay</NavLink>
           {/* §24.1's chooser. A client island for the same reason
               `AccountMenu` is one: the choice lives in the browser and this
-              header is server-rendered. */}
-          <CurrencySwitcher />
+              header is server-rendered. The *options* go the other way — the
+              config module is `server-only`, so the list is fetched here and
+              handed down rather than fetched again from every browser. */}
+          <CurrencySwitcher currencies={await enabledCurrencies()} />
           {/*
             The one part of the header that depends on who is looking. It was a
             permanent "Sign in" button, which stayed on screen after signing in

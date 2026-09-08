@@ -119,7 +119,12 @@ export async function stayLimits(): Promise<StayLimits> {
  * platform cannot convert would produce unconverted prices with no
  * explanation, which is the one outcome ADR 0024 is written to avoid.
  */
-export async function getPublicConfig(): Promise<{ enabled_currencies: string[] }> {
-  const config = await platformConfig();
-  return { enabled_currencies: config.enabled_currencies ?? [] };
+export async function enabledCurrencies(): Promise<string[]> {
+  try {
+    return (await platformConfig()).enabled_currencies ?? [];
+  } catch {
+    // The switcher falls back to its own short list. A config fetch that
+    // failed must not empty a menu on every page of the site.
+    return [];
+  }
 }

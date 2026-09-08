@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 
-import { getPublicConfig } from '@/lib/config';
 import { FALLBACK_CURRENCIES, getCurrency, setCurrency } from '@/lib/currency';
 
 /**
@@ -13,12 +12,21 @@ import { FALLBACK_CURRENCIES, getCurrency, setCurrency } from '@/lib/currency';
  * `X-Currency`. This is where a tourist arriving from Frankfurt stops reading
  * `TZS 45,000` and starts reading `EUR 16.56`.
  *
- * **The options come from the server, not from here.** `GET /config` publishes
+ * **The options come from the server, as a prop.** `GET /config` publishes
  * `enabled_currencies` from the `currency.enabled` setting, so adding CHF is an
- * administrator's edit rather than a release of this file (hard rule 5). The
- * local list is a first-paint fallback and is allowed to be short, never long:
- * offering a currency the platform cannot convert would produce a page of
- * unconverted prices with no explanation.
+ * administrator's edit rather than a release of this file (hard rule 5).
+ *
+ * They arrive as a prop rather than being fetched here, and that is a boundary
+ * rather than a preference: `lib/config.ts` is `server-only` — it reads
+ * `API_INTERNAL_BASE_URL`, which is meaningless in a browser — so importing it
+ * from a client island fails the build. `SiteHeader` is a server component and
+ * already renders on every page, so it does the fetch once and hands the list
+ * down; the alternative is a second round trip from every browser for a list
+ * that changes about never.
+ *
+ * The local list is a first-paint fallback for when none is passed, and is
+ * allowed to be short, never long: offering a currency the platform cannot
+ * convert would produce a page of unconverted prices with no explanation.
  *
  * **"Local prices" is a real option and the default.** A tourist who has made
  * no choice sees what things are priced in, which needs no rate and cannot be
@@ -29,20 +37,15 @@ import { FALLBACK_CURRENCIES, getCurrency, setCurrency } from '@/lib/currency';
  * `localStorage`, which the server has no access to — the same split
  * `AccountMenu` makes for the same reason.
  */
-export function CurrencySwitcher() {
+export function CurrencySwitcher({ currencies }: { currencies?: readonly string[] }) {
   const [choice, setChoice] = useState<string | null>(null);
-  const [options, setOptions] = useState<readonly string[]>(FALLBACK_CURRENCIES);
+  const options = currencies?.length ? currencies : FALLBACK_CURRENCIES;
 
   useEffect(() => {
+    // Read after mount, never during render: the server has no `localStorage`
+    // and a value read during render would differ between the two passes,
+    // which React reports as a hydration mismatch on every page.
     setChoice(getCurrency());
-    getPublicConfig()
-      .then((config) => {
-        if (config.enabled_currencies?.length) setOptions(config.enabled_currencies);
-      })
-      .catch(() => {
-        // The fallback list is already on screen. A config fetch that fails
-        // must not empty a menu the tourist is looking at.
-      });
   }, []);
 
   function choose(value: string) {
