@@ -95,6 +95,8 @@ __all__ = [
     "ActivityFacts",
     "AttractionFacts",
     "place_facts",
+    "TransferPlace",
+    "transfer_places",
     "activity_facts",
     "attraction_facts",
     "opening_status",
@@ -1191,6 +1193,33 @@ class PlaceFacts:
 
 
 @dataclass(frozen=True, slots=True)
+class TransferPlace:
+    """Where a transfer leg starts or ends, priced — SRS §12.2, §12.4.
+
+    §12.2 binds a leg's endpoint to "a destination centroid, an accommodation,
+    an activity meeting point, or an explicit coordinate". Whichever of the
+    first three it is, §12.4 then prices it on facts that live on the
+    **destination**: the region for step 3, the country for step 4, and
+    `is_gateway` for the airport surcharge.
+
+    `transport` may not read any of them — §6.4 gives it `location, provider` —
+    so they are resolved here and handed over on a DTO (ADR 0023). This exists
+    rather than three more columns on `PlaceFacts` because the planner asks for
+    coordinates on every item and would then be carrying a region id it never
+    reads on every stay, attraction and activity in an itinerary.
+    """
+
+    destination_id: int
+    destination_slug: str
+    destination_name: str
+    region_id: int
+    country_id: int
+    is_gateway: bool
+    timezone: str
+    coordinates: Coordinates
+
+
+@dataclass(frozen=True, slots=True)
 class ActivityFacts:
     """§7.5.9, as §10.4's sequencing and §10.6's VR-05, VR-06 and VR-15 read it."""
 
@@ -1268,6 +1297,57 @@ def place_facts(kind: str, ids: Sequence[int]) -> dict[int, PlaceFacts]:
     if not wanted:
         return {}
     return {row.id: _place(row) for row in _rows(model, wanted)}
+
+
+def transfer_places(kind: str, ids: Sequence[int]) -> dict[int, TransferPlace]:
+    """The destination facts §12.4 prices a leg on — one query per kind.
+
+    Keyed by the id that was asked for, not by the destination's: a caller
+    holding `accommodation_id = 41` gets back the destination that property
+    sits in, and does not have to know it was a join.
+
+    A `destination` resolves to itself. That is not a special case so much as
+    the base one — §12.2's first binding is "a destination centroid" — and it
+    is why the lookup is written as one function over `REFERENCEABLE` rather
+    than as a transfer-specific query per table.
+    """
+    try:
+        model = REFERENCEABLE[kind]
+    except KeyError as exc:
+        raise ValidationError(
+            f"{kind!r} is not a referenceable catalogue table; "
+            f"expected one of {sorted(REFERENCEABLE)}."
+        ) from exc
+
+    wanted = {int(value) for value in ids if value is not None}
+    if not wanted:
+        return {}
+
+    queryset = model.objects.filter(pk__in=wanted)
+    queryset = (
+        queryset.select_related("region")
+        if model is Destination
+        else queryset.select_related("destination__region")
+    )
+    return {row.id: _transfer_place(row) for row in queryset}
+
+
+def _transfer_place(row: Any) -> TransferPlace:
+    destination = row if isinstance(row, Destination) else row.destination
+    point = destination.centroid
+    return TransferPlace(
+        destination_id=int(destination.id),
+        destination_slug=destination.slug,
+        destination_name=destination.name,
+        region_id=int(destination.region_id),
+        country_id=int(destination.region.country_id),
+        is_gateway=destination.is_gateway,
+        timezone=destination.timezone,
+        coordinates=Coordinates(
+            lat=Decimal(str(round(point.y, COORDINATE_PRECISION))),
+            lon=Decimal(str(round(point.x, COORDINATE_PRECISION))),
+        ),
+    )
 
 
 def activity_facts(ids: Sequence[int]) -> dict[int, ActivityFacts]:
