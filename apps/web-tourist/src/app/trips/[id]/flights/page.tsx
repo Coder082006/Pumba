@@ -246,7 +246,13 @@ export default function FlightInformationPage({ params }: { params: Promise<{ id
       ) : null}
       {saved ? (
         <p className="rounded-md border border-border bg-accent/10 px-3 py-2 text-sm">
-          Saved. Plan the days again to re-time the transfers around them.
+          Saved. Plan the days again to re-time the transfers around them.{' '}
+          {/* §24.15: "Navigation → Airport Pickup". The moment an arrival is
+              known is the moment a pickup can be quoted, so the next step is
+              offered rather than left to be found. */}
+          <Link href={`/trips/${id}/pickup`} className="font-medium underline">
+            Book your airport pickup
+          </Link>
         </p>
       ) : null}
 
