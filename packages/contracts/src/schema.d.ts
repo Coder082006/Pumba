@@ -1405,6 +1405,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/transport/corridors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List transfer corridors
+         * @description The origin-destination pairs the platform runs transfers between, by vehicle class. No fare: a corridor's price depends on the class and the date, so fares come from POST /transport/quotes (SRS 9.3.4, 12.4).
+         */
+        get: operations["transport_corridors_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transport/quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quote one or more transfer legs
+         * @description Prices each leg for every vehicle class the party fits, using the SRS 12.4 resolution ladder. Returns 422 NO_TARIFF_CONFIGURED when no corridor or fallback tariff matches, and 502 ROUTING_UNAVAILABLE when a metered leg cannot be measured — never a guessed price (SRS 12.6).
+         */
+        post: operations["transport_quotes_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/transport/vehicle-classes": {
         parameters: {
             query?: never;
@@ -1905,6 +1945,25 @@ export interface components {
          * @enum {string}
          */
         ConfirmationModeEnum: "INSTANT" | "ON_REQUEST";
+        /** @description §9.3.4's `GET /transport/corridors`.
+         *
+         *     Where the platform runs transfers, and no fare. A corridor's price depends
+         *     on the class and the date, and this endpoint is public and cacheable; one
+         *     number here would be a price list that goes stale without anything
+         *     happening. */
+        Corridor: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly origin: components["schemas"]["CorridorSide"];
+            readonly target: components["schemas"]["CorridorSide"];
+            readonly vehicle_class: string;
+            readonly is_bidirectional: boolean;
+        };
+        /** @description A corridor endpoint, named rather than numbered (§7.2). */
+        CorridorSide: {
+            readonly slug: string;
+            readonly name: string;
+        };
         Country: {
             /** Format: uuid */
             public_id: string;
@@ -2099,6 +2158,26 @@ export interface components {
          * @enum {string}
          */
         DirectionEnum: "INBOUND" | "OUTBOUND";
+        /** @description §9.4.4's `breakdown`. The four parts sum to the price exactly. */
+        FareBreakdown: {
+            /** Format: decimal */
+            readonly base: string;
+            /** Format: decimal */
+            readonly distance: string;
+            /** Format: decimal */
+            readonly time: string;
+            /** Format: decimal */
+            readonly surcharges: string;
+        };
+        /** @description §9.4.4's `options[]` — one vehicle class the party fits, and its fare. */
+        FareOption: {
+            readonly vehicle_class: string;
+            readonly seats: number;
+            readonly luggage: number;
+            readonly price: components["schemas"]["Money"];
+            readonly breakdown: components["schemas"]["FareBreakdown"];
+            readonly match: components["schemas"]["TariffMatch"];
+        };
         /** @description §10.6's `{code, severity, message, item_ids[], suggested_action}`.
          *
          *     Part of a successful response, not an error channel: §10.2 returns
@@ -2207,6 +2286,27 @@ export interface components {
             readonly currency: string | null;
             readonly is_locked: boolean;
         };
+        /** @description §9.4.4's response element.
+         *
+         *     `estimate_quality` is not in §9.4.4's example and is required by §12.6 and
+         *     ADR 0019: §24.17 must badge a leg whose distance is a haversine estimate,
+         *     and a client cannot badge what it cannot see. It is emitted beside the
+         *     distance rather than instead of it, so the number and the evidence of what
+         *     that number is travel together.
+         *
+         *     `polyline` is null until a routing provider is chosen (Appendix D-2). The
+         *     field is published now because §24.17 draws the leg on a map, and a client
+         *     written against a shape that later grows a field has to be rewritten. */
+        LegQuote: {
+            readonly reference: string;
+            readonly origin: string;
+            readonly target: string;
+            readonly distance_m: number;
+            readonly travel_seconds: number;
+            readonly estimate_quality: string;
+            readonly polyline: string | null;
+            readonly options: components["schemas"]["FareOption"][];
+        };
         /** @description `catalogue.dto.ListingRefDTO` — a row named, never numbered. */
         ListingRef: {
             /** Format: uuid */
@@ -2287,6 +2387,27 @@ export interface components {
          *     a serializer — the seed loader, a management command, a console shell. */
         MfaConfirmRequest: {
             code: string;
+        };
+        /** @description `apps.common.money.Money` on the wire — SRS §9.1, §7.2.
+         *
+         *     `{"amount": "38.00", "currency": "USD"}`, exactly as §9.4.4 writes it.
+         *
+         *     **The amount is a string.** §18.5 prohibits float anywhere on the pricing
+         *     path, and a JSON number is a float in every mainstream client: JavaScript
+         *     parses `38.00` into an IEEE double and `0.1 + 0.2` stops equalling `0.3`
+         *     somewhere between here and a receipt. A decimal string survives the trip
+         *     and is what `Money.parse` reads back.
+         *
+         *     **The currency is never optional.** §7.2: "Every money column is
+         *     accompanied by a currency CHAR(3) column. Never store money without its
+         *     currency." The wire keeps the same rule, because an amount that arrives
+         *     without one is a number a client has to guess the meaning of — and in a
+         *     platform that prices in TZS and shows in EUR, the guess is wrong often
+         *     enough to matter. */
+        Money: {
+            /** Format: decimal */
+            readonly amount: string;
+            readonly currency: string;
         };
         NullEnum: null;
         /** @description §7.5.7 as amended — ADR 0013.
@@ -2742,6 +2863,17 @@ export interface components {
             sort_order?: number;
             is_active?: boolean;
         };
+        /** @description Which rule priced this option, and on which rung of §12.4's ladder.
+         *
+         *     `rule_id` is deliberately absent: it is a sequential integer and §7.2 keeps
+         *     those inside the database. `rule` is its `public_id`, which is what an
+         *     administrator pastes into §27.11's preview tool. */
+        TariffMatch: {
+            readonly kind: string;
+            /** Format: uuid */
+            readonly rule: string;
+            readonly step: number;
+        };
         TouristProfile: {
             /** Format: uuid */
             readonly public_id: string;
@@ -2751,6 +2883,57 @@ export interface components {
             readonly locale: string;
             readonly preferred_currency: string;
             readonly marketing_opt_in: boolean;
+        };
+        /** @description One end of a leg — §12.2's bindings.
+         *
+         *     Exactly one of the four references, and an optional precise point *within*
+         *     it. The point is an addition rather than an alternative: §7.5.11 models a
+         *     transfer as `origin_destination_id` **and** `origin_point`, the first
+         *     deciding which tariff applies and the second where the driver stops. A pin
+         *     moved fifty metres must change a metered distance and must never change the
+         *     rung §12.4 answers on.
+         *
+         *     Named, not numbered, exactly as `AddItemSerializer` is and for the same
+         *     reason: §7.2 forbids a sequential integer reaching a client, so the integer
+         *     a caller would have had to send does not exist outside the database. */
+        TransferEndpointRequest: {
+            destination?: string | null;
+            accommodation?: string | null;
+            activity?: string | null;
+            attraction?: string | null;
+            /** Format: decimal */
+            latitude?: string | null;
+            /** Format: decimal */
+            longitude?: string | null;
+        };
+        /** @description §9.4.4's `legs[]`.
+         *
+         *     `reference` is the client's own handle, echoed back on the answer. §9.4.4
+         *     shows `"leg-1"`; the server never interprets it, which is what lets a
+         *     screen quoting six legs at once match answers to rows without depending on
+         *     ordering. */
+        TransferLegRequest: {
+            reference: string;
+            origin: components["schemas"]["TransferEndpointRequest"];
+            target: components["schemas"]["TransferEndpointRequest"];
+            /** Format: date-time */
+            depart_at: string;
+            pax: number;
+            /** @default 0 */
+            luggage: number;
+        };
+        /** @description `POST /transport/quotes` — §9.4.4.
+         *
+         *     §9.4.4 also shows a top-level `vehicle_class`. It is accepted and echoed as
+         *     a *preference* rather than applied as a filter, because the same section's
+         *     response returns "per-class options" and lists two of them: the field says
+         *     which card to preselect, not which to compute. Filtering on it would make
+         *     §24.16's comparison impossible to render. */
+        TransferQuoteRequestRequest: {
+            /** Format: uuid */
+            trip_id: string;
+            legs: components["schemas"]["TransferLegRequest"][];
+            vehicle_class?: string | null;
         };
         /** @description §24.20's My Trips. Deliberately narrower than `TripSerializer`. */
         Trip: {
@@ -4537,6 +4720,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Tag"][];
+                };
+            };
+        };
+    };
+    transport_corridors_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Corridor"][];
+                };
+            };
+        };
+    };
+    transport_quotes_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferQuoteRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TransferQuoteRequestRequest"];
+                "multipart/form-data": components["schemas"]["TransferQuoteRequestRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegQuote"][];
                 };
             };
         };

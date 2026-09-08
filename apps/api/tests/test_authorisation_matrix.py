@@ -109,6 +109,14 @@ PUBLIC_BY_DESIGN = {
     "v1:transport:vehicle-class-list": (
         "§9.3.4 API-04, auth '—'; capacity only, no price, no rows to scope."
     ),
+    # The second of §9.3.4's two public API-04 routes. Served by `trip` because
+    # a corridor names two destinations and §7.2 keeps their sequential ids in
+    # the database, so rendering one is a catalogue read §6.4 denies
+    # `transport` (ADR 0023). It publishes a route map and no fare, so there is
+    # nothing here a principal would change the answer to.
+    "v1:trip:transport-corridor-list": (
+        "§9.3.4 API-04, auth '—'; a public route map with no price on it."
+    ),
     "schema": "OpenAPI document (§36.2).",
     "swagger-ui": "Renders the OpenAPI document.",
     # The §9.3.2 catalogue. Public because a tourist reads it before signing
@@ -252,6 +260,38 @@ SCOPED_BY_A_SELECTOR = {
     ),
 }
 
+#: Routes that resolve a caller-supplied identifier carried in the **body**
+#: rather than in the path, and scope by it.
+#:
+#: The fourth category exists because the other three would each be a lie about
+#: `POST /transport/quotes`. It resolves a trip, so `NO_ROWS_EXPOSED` is out —
+#: and that list's own guard, "an exempt route accepts no row identifier",
+#: inspects the path and would wave it through, which is exactly the hole this
+#: closes. It is not global, so `GLOBAL_BY_ROLE` is out. And
+#: `SCOPED_BY_A_SELECTOR` requires a path parameter, deliberately, so that
+#: nothing which *could* be checked statically hides there.
+#:
+#: §9.4.4 puts the identifier in the body — `{"trip_id": "9c1e…", "legs": […]}`
+#: — and moving it into the path to satisfy this file would change a published
+#: endpoint to make a test easier, which is the wrong way round.
+#:
+#: Guarded three ways below: the route must take no path parameter, the handler
+#: must read the principal through `tourist_id_of`, and it must raise
+#: `NotFoundError` — because §30.3's answer for somebody else's trip is 404,
+#: and a handler that scoped correctly but answered 403 would still disclose
+#: that the trip exists. The behavioural proof that a stranger and a
+#: nonexistent trip are indistinguishable lives in
+#: `apps/trip/tests/test_transport_quote_api.py`.
+SCOPED_BY_A_BODY_IDENTIFIER = {
+    "v1:trip:transport-quote": (
+        "§9.4.4 carries `trip_id` in the body. The handler loads it through the "
+        "`trip.selectors.trips_of` selector via `services.get_trip(..., "
+        "tourist_id=...)` before resolving or pricing anything, and answers 404 "
+        "when it comes back empty."
+    ),
+}
+
+
 #: Routes that resolve a caller-supplied identifier and deliberately apply
 #: **no** ownership predicate, because every role permitted to reach them holds
 #: `Scope.GLOBAL` over the resource.
@@ -281,7 +321,12 @@ GLOBAL_BY_ROLE: dict[str, tuple[Permission, Resource, str]] = {
 }
 
 #: Every allow-list, for the checks that do not care which one a name is on.
-EXEMPT = {**NO_ROWS_EXPOSED, **SCOPED_BY_A_SELECTOR, **GLOBAL_BY_ROLE}
+EXEMPT = {
+    **NO_ROWS_EXPOSED,
+    **SCOPED_BY_A_SELECTOR,
+    **SCOPED_BY_A_BODY_IDENTIFIER,
+    **GLOBAL_BY_ROLE,
+}
 
 
 def _walk(patterns: Any, prefix: str = "", namespace: str = "") -> list[tuple[str, str, Any]]:
@@ -498,6 +543,46 @@ class TestTheRowlessExemptionCannotBeAbused:
         follow, which makes it indistinguishable from no reason."""
         reason = SCOPED_BY_A_SELECTOR[name]
         assert "selector" in reason and "`" in reason, f"{name}: {reason!r}"
+
+    @pytest.mark.parametrize("name", sorted(SCOPED_BY_A_BODY_IDENTIFIER))
+    def test_a_body_scoped_route_takes_no_path_parameter(self, name: str) -> None:
+        """If the identifier is in the path, this is the wrong list.
+
+        `SCOPED_BY_A_SELECTOR` is checked from the other side — it *requires* a
+        path parameter — so a route with one that landed here would be exempt
+        from both guards at once.
+        """
+        path = ROUTE_PATHS.get(name)
+        assert path is not None, f"{name} is on SCOPED_BY_A_BODY_IDENTIFIER but is not a route"
+        assert not _PATH_PARAMETER.search(path), (
+            f"{name} takes a path parameter ({path!r}), so its identifier can be "
+            "checked the ordinary way. Move it to SCOPED_BY_A_SELECTOR."
+        )
+
+    @pytest.mark.parametrize("name", sorted(SCOPED_BY_A_BODY_IDENTIFIER))
+    def test_a_body_scoped_route_reads_the_principal(self, name: str) -> None:
+        """The claim is that the handler scopes by the caller. This is the
+        cheapest thing that cannot be true if it does not."""
+        view = dict(ROUTE_VIEWS).get(name)
+        assert view is not None, f"{name} has no view class"
+        sources = _handler_source(view)
+        assert any("tourist_id_of(" in source for source in sources.values()), (
+            f"{name} is exempted as scoped by a body identifier, but no handler "
+            "reads the principal. Scope it, or move it to NO_ROWS_EXPOSED."
+        )
+
+    @pytest.mark.parametrize("name", sorted(SCOPED_BY_A_BODY_IDENTIFIER))
+    def test_a_body_scoped_route_answers_404_and_not_403(self, name: str) -> None:
+        """§30.3. A handler that scoped correctly and answered 403 would still
+        tell a stranger that the trip exists, which is the disclosure the whole
+        rule is about."""
+        view = dict(ROUTE_VIEWS).get(name)
+        assert view is not None, f"{name} has no view class"
+        sources = _handler_source(view)
+        assert any("NotFoundError" in source for source in sources.values()), (
+            f"{name} scopes by a body identifier but never raises NotFoundError. "
+            "§30.3 wants 404 for a foreign row, never 403."
+        )
 
     @pytest.mark.parametrize("name", sorted(GLOBAL_BY_ROLE))
     def test_a_globally_scoped_route_really_is_global_for_every_role(self, name: str) -> None:

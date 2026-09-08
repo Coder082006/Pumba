@@ -28,6 +28,8 @@ from __future__ import annotations
 from django.urls import path
 
 from apps.trip.views import (
+    TransportCorridorListView,
+    TransportQuoteView,
     TripCancelView,
     TripDetailView,
     TripFlightsView,
@@ -55,4 +57,13 @@ urlpatterns = [
         name="trip-generate",
     ),
     path("trips/<uuid:public_id>/cancel", TripCancelView.as_view(), name="trip-cancel"),
+    # §9.3.4's other two API-04 routes. They sit under transport/ because that
+    # is where §9.3.4 puts them, and they are served here because both name a
+    # catalogue row and §6.4 forbids transport -> catalogue (ADR 0023).
+    path(
+        "transport/corridors",
+        TransportCorridorListView.as_view(),
+        name="transport-corridor-list",
+    ),
+    path("transport/quotes", TransportQuoteView.as_view(), name="transport-quote"),
 ]

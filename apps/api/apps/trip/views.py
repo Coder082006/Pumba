@@ -20,18 +20,22 @@ re-renders the timeline after every edit anyway.
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.envelope import success_envelope
 from apps.common.errors import NotFoundError
+from apps.common.geo import Coordinates
+from apps.common.throttling import CatalogueReadThrottle
 from apps.trip import serializers as ser
-from apps.trip import services
+from apps.trip import services, transfers
 from apps.trip.permissions import IsTourist, tourist_id_of
 
 __all__ = [
@@ -42,6 +46,8 @@ __all__ = [
     "TripFlightsView",
     "TripGenerateView",
     "TripCancelView",
+    "TransportCorridorListView",
+    "TransportQuoteView",
 ]
 
 
@@ -157,3 +163,115 @@ class TripCancelView(_TouristView):
         a journey that has happened cannot be made not to have happened."""
         trip = services.cancel_trip(public_id, tourist_id=tourist_id_of(request))
         return _trip_response(trip)
+
+
+class TransportCorridorListView(APIView):
+    """`GET /transport/corridors` — §9.3.4, auth column `—`, so public.
+
+    Served by `trip` rather than by `transport` because a corridor names two
+    destinations and §7.2 forbids their sequential ids reaching a client, so
+    rendering one means a `catalogue` read that §6.4 denies `transport`
+    (ADR 0023). The path is exactly as §9.3.4 writes it; only the code lives
+    elsewhere.
+
+    Unpaginated. Appendix C seeds about thirty of these and they are a route
+    map rather than a feed; a cursor would make a client loop to draw a list
+    that fits on one screen.
+    """
+
+    authentication_classes: list[Any] = []
+    permission_classes = [AllowAny]
+    throttle_classes = [CatalogueReadThrottle]
+
+    @extend_schema(
+        responses={200: ser.CorridorSerializer(many=True)},
+        summary="List transfer corridors",
+        description=(
+            "The origin-destination pairs the platform runs transfers between, "
+            "by vehicle class. No fare: a corridor's price depends on the class "
+            "and the date, so fares come from POST /transport/quotes "
+            "(SRS 9.3.4, 12.4)."
+        ),
+        tags=["Transport"],
+    )
+    def get(self, request: Request) -> Response:
+        rows = transfers.corridors()
+        return Response(success_envelope([dict(ser.CorridorSerializer(row).data) for row in rows]))
+
+
+class TransportQuoteView(_TouristView):
+    """`POST /transport/quotes` — §9.4.4.
+
+    §24.16's airport-pickup cards and §24.17's per-leg class selection are both
+    this endpoint. It prices; it reserves nothing. §9.4.5 is explicit that
+    "transfers hold no inventory but reserve a vehicle class, not a specific
+    driver", so there is no hold, no token and no clock here — which is also
+    why it carries no `Idempotency-Key`: a repeated quote costs nothing and
+    changes nothing, and requiring a key would imply otherwise.
+
+    **The trip is named and checked.** §9.4.4's request carries `trip_id`, and
+    a quote for somebody else's trip is §30.3's 404 rather than a 403. The
+    check is `services.get_trip`, which filters by `tourist_id` — the same one
+    place every other trip route depends on.
+    """
+
+    @extend_schema(
+        request=ser.TransferQuoteRequestSerializer,
+        responses={200: ser.LegQuoteSerializer(many=True)},
+        summary="Quote one or more transfer legs",
+        description=(
+            "Prices each leg for every vehicle class the party fits, using the "
+            "SRS 12.4 resolution ladder. Returns 422 NO_TARIFF_CONFIGURED when "
+            "no corridor or fallback tariff matches, and 502 ROUTING_UNAVAILABLE "
+            "when a metered leg cannot be measured — never a guessed price "
+            "(SRS 12.6)."
+        ),
+        tags=["Transport"],
+    )
+    def post(self, request: Request) -> Response:
+        payload = ser.TransferQuoteRequestSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        body = payload.validated_data
+
+        # Ownership, before anything is resolved or priced. A stranger must not
+        # be able to use this endpoint to discover that a trip exists.
+        if services.get_trip(body["trip_id"], tourist_id=tourist_id_of(request)) is None:
+            raise NotFoundError()
+
+        legs = [_leg_spec(leg) for leg in body["legs"]]
+        priced = transfers.quote_legs(legs)
+        return Response(
+            success_envelope([dict(ser.LegQuoteSerializer(leg).data) for leg in priced])
+        )
+
+
+def _endpoint_ref(payload: dict[str, Any]) -> transfers.EndpointRef:
+    """§12.2's binding, from the four mutually exclusive fields.
+
+    The serializer has already established that exactly one is present, so the
+    first match is the only match — but the iteration order is `BINDINGS` and
+    not the payload's, because a dict ordered by whatever the client sent would
+    make the answer depend on JSON key order.
+    """
+    kind = next(key for key in transfers.BINDINGS if payload.get(key))
+    latitude, longitude = payload.get("latitude"), payload.get("longitude")
+    return transfers.EndpointRef(
+        kind=kind,
+        reference=payload[kind],
+        point=(
+            Coordinates(lat=latitude, lon=longitude)
+            if latitude is not None and longitude is not None
+            else None
+        ),
+    )
+
+
+def _leg_spec(payload: dict[str, Any]) -> transfers.LegSpec:
+    return transfers.LegSpec(
+        reference=payload["reference"],
+        origin=_endpoint_ref(payload["origin"]),
+        target=_endpoint_ref(payload["target"]),
+        depart_at=payload["depart_at"],
+        pax=payload["pax"],
+        luggage=payload["luggage"],
+    )

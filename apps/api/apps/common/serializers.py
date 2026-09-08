@@ -16,7 +16,7 @@ from typing import Any
 
 from rest_framework import serializers
 
-__all__ = ["StrictSerializer"]
+__all__ = ["StrictSerializer", "MoneySerializer"]
 
 
 class StrictSerializer(serializers.Serializer[Any]):
@@ -40,3 +40,26 @@ class StrictSerializer(serializers.Serializer[Any]):
                     {field: "Unrecognised field." for field in sorted(unknown)}
                 )
         return super().to_internal_value(data)
+
+
+class MoneySerializer(serializers.Serializer[Any]):
+    """`apps.common.money.Money` on the wire — SRS §9.1, §7.2.
+
+    `{"amount": "38.00", "currency": "USD"}`, exactly as §9.4.4 writes it.
+
+    **The amount is a string.** §18.5 prohibits float anywhere on the pricing
+    path, and a JSON number is a float in every mainstream client: JavaScript
+    parses `38.00` into an IEEE double and `0.1 + 0.2` stops equalling `0.3`
+    somewhere between here and a receipt. A decimal string survives the trip
+    and is what `Money.parse` reads back.
+
+    **The currency is never optional.** §7.2: "Every money column is
+    accompanied by a currency CHAR(3) column. Never store money without its
+    currency." The wire keeps the same rule, because an amount that arrives
+    without one is a number a client has to guess the meaning of — and in a
+    platform that prices in TZS and shows in EUR, the guess is wrong often
+    enough to matter.
+    """
+
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    currency = serializers.CharField(max_length=3, read_only=True)

@@ -2105,6 +2105,59 @@ paths:
                 items:
                   $ref: '#/components/schemas/Tag'
           description: ''
+  /api/v1/transport/corridors:
+    get:
+      operationId: transport_corridors_list
+      description: 'The origin-destination pairs the platform runs transfers between,
+        by vehicle class. No fare: a corridor''s price depends on the class and the
+        date, so fares come from POST /transport/quotes (SRS 9.3.4, 12.4).'
+      summary: List transfer corridors
+      tags:
+      - Transport
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Corridor'
+          description: ''
+  /api/v1/transport/quotes:
+    post:
+      operationId: transport_quotes_create
+      description: Prices each leg for every vehicle class the party fits, using the
+        SRS 12.4 resolution ladder. Returns 422 NO_TARIFF_CONFIGURED when no corridor
+        or fallback tariff matches, and 502 ROUTING_UNAVAILABLE when a metered leg
+        cannot be measured — never a guessed price (SRS 12.6).
+      summary: Quote one or more transfer legs
+      tags:
+      - Transport
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferQuoteRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TransferQuoteRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TransferQuoteRequestRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LegQuote'
+          description: ''
   /api/v1/transport/vehicle-classes:
     get:
       operationId: transport_vehicle_classes_list
@@ -3241,6 +3294,53 @@ components:
       description: |-
         * `INSTANT` - Confirms immediately
         * `ON_REQUEST` - Confirmed by the provider
+    Corridor:
+      type: object
+      description: |-
+        §9.3.4's `GET /transport/corridors`.
+
+        Where the platform runs transfers, and no fare. A corridor's price depends
+        on the class and the date, and this endpoint is public and cacheable; one
+        number here would be a price list that goes stale without anything
+        happening.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        origin:
+          allOf:
+          - $ref: '#/components/schemas/CorridorSide'
+          readOnly: true
+        target:
+          allOf:
+          - $ref: '#/components/schemas/CorridorSide'
+          readOnly: true
+        vehicle_class:
+          type: string
+          readOnly: true
+        is_bidirectional:
+          type: boolean
+          readOnly: true
+      required:
+      - id
+      - is_bidirectional
+      - origin
+      - target
+      - vehicle_class
+    CorridorSide:
+      type: object
+      description: A corridor endpoint, named rather than numbered (§7.2).
+      properties:
+        slug:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+      required:
+      - name
+      - slug
     Country:
       type: object
       properties:
@@ -3674,6 +3774,68 @@ components:
       description: |-
         * `INBOUND` - INBOUND
         * `OUTBOUND` - OUTBOUND
+    FareBreakdown:
+      type: object
+      description: §9.4.4's `breakdown`. The four parts sum to the price exactly.
+      properties:
+        base:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        distance:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        time:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        surcharges:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+      required:
+      - base
+      - distance
+      - surcharges
+      - time
+    FareOption:
+      type: object
+      description: §9.4.4's `options[]` — one vehicle class the party fits, and its
+        fare.
+      properties:
+        vehicle_class:
+          type: string
+          readOnly: true
+        seats:
+          type: integer
+          readOnly: true
+        luggage:
+          type: integer
+          readOnly: true
+        price:
+          allOf:
+          - $ref: '#/components/schemas/Money'
+          readOnly: true
+        breakdown:
+          allOf:
+          - $ref: '#/components/schemas/FareBreakdown'
+          readOnly: true
+        match:
+          allOf:
+          - $ref: '#/components/schemas/TariffMatch'
+          readOnly: true
+      required:
+      - breakdown
+      - luggage
+      - match
+      - price
+      - seats
+      - vehicle_class
     Finding:
       type: object
       description: |-
@@ -3990,6 +4152,58 @@ components:
       - title
       - travel_seconds
       - unit_price
+    LegQuote:
+      type: object
+      description: |-
+        §9.4.4's response element.
+
+        `estimate_quality` is not in §9.4.4's example and is required by §12.6 and
+        ADR 0019: §24.17 must badge a leg whose distance is a haversine estimate,
+        and a client cannot badge what it cannot see. It is emitted beside the
+        distance rather than instead of it, so the number and the evidence of what
+        that number is travel together.
+
+        `polyline` is null until a routing provider is chosen (Appendix D-2). The
+        field is published now because §24.17 draws the leg on a map, and a client
+        written against a shape that later grows a field has to be rewritten.
+      properties:
+        reference:
+          type: string
+          readOnly: true
+        origin:
+          type: string
+          readOnly: true
+        target:
+          type: string
+          readOnly: true
+        distance_m:
+          type: integer
+          readOnly: true
+        travel_seconds:
+          type: integer
+          readOnly: true
+        estimate_quality:
+          type: string
+          readOnly: true
+        polyline:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/FareOption'
+          readOnly: true
+      required:
+      - distance_m
+      - estimate_quality
+      - options
+      - origin
+      - polyline
+      - reference
+      - target
+      - travel_seconds
     ListingRef:
       type: object
       description: '`catalogue.dto.ListingRefDTO` — a row named, never numbered.'
@@ -4178,6 +4392,38 @@ components:
           maxLength: 10
       required:
       - code
+    Money:
+      type: object
+      description: |-
+        `apps.common.money.Money` on the wire — SRS §9.1, §7.2.
+
+        `{"amount": "38.00", "currency": "USD"}`, exactly as §9.4.4 writes it.
+
+        **The amount is a string.** §18.5 prohibits float anywhere on the pricing
+        path, and a JSON number is a float in every mainstream client: JavaScript
+        parses `38.00` into an IEEE double and `0.1 + 0.2` stops equalling `0.3`
+        somewhere between here and a receipt. A decimal string survives the trip
+        and is what `Money.parse` reads back.
+
+        **The currency is never optional.** §7.2: "Every money column is
+        accompanied by a currency CHAR(3) column. Never store money without its
+        currency." The wire keeps the same rule, because an amount that arrives
+        without one is a number a client has to guess the meaning of — and in a
+        platform that prices in TZS and shows in EUR, the guess is wrong often
+        enough to matter.
+      properties:
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+          maxLength: 3
+      required:
+      - amount
+      - currency
     NullEnum:
       type: 'null'
     PatchedAccommodationWriteRequest:
@@ -5164,6 +5410,29 @@ components:
       required:
       - label
       - slug
+    TariffMatch:
+      type: object
+      description: |-
+        Which rule priced this option, and on which rung of §12.4's ladder.
+
+        `rule_id` is deliberately absent: it is a sequential integer and §7.2 keeps
+        those inside the database. `rule` is its `public_id`, which is what an
+        administrator pastes into §27.11's preview tool.
+      properties:
+        kind:
+          type: string
+          readOnly: true
+        rule:
+          type: string
+          format: uuid
+          readOnly: true
+        step:
+          type: integer
+          readOnly: true
+      required:
+      - kind
+      - rule
+      - step
     TouristProfile:
       type: object
       properties:
@@ -5199,6 +5468,114 @@ components:
       - nationality
       - preferred_currency
       - public_id
+    TransferEndpointRequest:
+      type: object
+      description: |-
+        One end of a leg — §12.2's bindings.
+
+        Exactly one of the four references, and an optional precise point *within*
+        it. The point is an addition rather than an alternative: §7.5.11 models a
+        transfer as `origin_destination_id` **and** `origin_point`, the first
+        deciding which tariff applies and the second where the driver stops. A pin
+        moved fifty metres must change a metered distance and must never change the
+        rung §12.4 answers on.
+
+        Named, not numbered, exactly as `AddItemSerializer` is and for the same
+        reason: §7.2 forbids a sequential integer reaching a client, so the integer
+        a caller would have had to send does not exist outside the database.
+      properties:
+        destination:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        accommodation:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        activity:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        attraction:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        latitude:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+        longitude:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+    TransferLegRequest:
+      type: object
+      description: |-
+        §9.4.4's `legs[]`.
+
+        `reference` is the client's own handle, echoed back on the answer. §9.4.4
+        shows `"leg-1"`; the server never interprets it, which is what lets a
+        screen quoting six legs at once match answers to rows without depending on
+        ordering.
+      properties:
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 64
+        origin:
+          $ref: '#/components/schemas/TransferEndpointRequest'
+        target:
+          $ref: '#/components/schemas/TransferEndpointRequest'
+        depart_at:
+          type: string
+          format: date-time
+        pax:
+          type: integer
+          minimum: 1
+        luggage:
+          type: integer
+          minimum: 0
+          default: 0
+      required:
+      - depart_at
+      - origin
+      - pax
+      - reference
+      - target
+    TransferQuoteRequestRequest:
+      type: object
+      description: |-
+        `POST /transport/quotes` — §9.4.4.
+
+        §9.4.4 also shows a top-level `vehicle_class`. It is accepted and echoed as
+        a *preference* rather than applied as a filter, because the same section's
+        response returns "per-class options" and lists two of them: the field says
+        which card to preselect, not which to compute. Filtering on it would make
+        §24.16's comparison impossible to render.
+      properties:
+        trip_id:
+          type: string
+          format: uuid
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransferLegRequest'
+        vehicle_class:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+      required:
+      - legs
+      - trip_id
     Trip:
       type: object
       description: §24.20's My Trips. Deliberately narrower than `TripSerializer`.

@@ -28,6 +28,8 @@ from typing import Any
 
 from rest_framework import serializers
 
+from apps.common.serializers import MoneySerializer
+
 __all__ = [
     "ListingRefSerializer",
     "FindingSerializer",
@@ -42,6 +44,15 @@ __all__ = [
     "UpdateItemSerializer",
     "FlightInputSerializer",
     "SetFlightsSerializer",
+    "TransferEndpointSerializer",
+    "TransferLegSerializer",
+    "TransferQuoteRequestSerializer",
+    "FareBreakdownSerializer",
+    "TariffMatchSerializer",
+    "FareOptionSerializer",
+    "LegQuoteSerializer",
+    "CorridorSideSerializer",
+    "CorridorSerializer",
 ]
 
 
@@ -290,3 +301,173 @@ class SetFlightsSerializer(serializers.Serializer[Any]):
     """
 
     flights = FlightInputSerializer(many=True, allow_empty=True)
+
+
+# ---------------------------------------------------------------------------
+# Transport — §9.3.4's API-04, served here because §12.4 branches on catalogue
+# facts and §6.4 forbids `transport -> catalogue` (ADR 0023).
+# ---------------------------------------------------------------------------
+
+
+class TransferEndpointSerializer(serializers.Serializer[Any]):
+    """One end of a leg — §12.2's bindings.
+
+    Exactly one of the four references, and an optional precise point *within*
+    it. The point is an addition rather than an alternative: §7.5.11 models a
+    transfer as `origin_destination_id` **and** `origin_point`, the first
+    deciding which tariff applies and the second where the driver stops. A pin
+    moved fifty metres must change a metered distance and must never change the
+    rung §12.4 answers on.
+
+    Named, not numbered, exactly as `AddItemSerializer` is and for the same
+    reason: §7.2 forbids a sequential integer reaching a client, so the integer
+    a caller would have had to send does not exist outside the database.
+    """
+
+    destination = serializers.CharField(required=False, allow_null=True)
+    accommodation = serializers.CharField(required=False, allow_null=True)
+    activity = serializers.CharField(required=False, allow_null=True)
+    attraction = serializers.CharField(required=False, allow_null=True)
+
+    latitude = serializers.DecimalField(
+        max_digits=10, decimal_places=7, required=False, allow_null=True
+    )
+    longitude = serializers.DecimalField(
+        max_digits=10, decimal_places=7, required=False, allow_null=True
+    )
+
+    #: The four §12.2 bindings that name a row. Declared once so the validator
+    #: and the error message cannot disagree about what is accepted.
+    NAMED = ("destination", "accommodation", "activity", "attraction")
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        named = [key for key in self.NAMED if attrs.get(key)]
+        if len(named) != 1:
+            raise serializers.ValidationError(
+                "A transfer endpoint names exactly one of " + ", ".join(self.NAMED) + "."
+            )
+        has_lat = attrs.get("latitude") is not None
+        has_lng = attrs.get("longitude") is not None
+        if has_lat != has_lng:
+            raise serializers.ValidationError("A precise point needs both latitude and longitude.")
+        return attrs
+
+
+class TransferLegSerializer(serializers.Serializer[Any]):
+    """§9.4.4's `legs[]`.
+
+    `reference` is the client's own handle, echoed back on the answer. §9.4.4
+    shows `"leg-1"`; the server never interprets it, which is what lets a
+    screen quoting six legs at once match answers to rows without depending on
+    ordering.
+    """
+
+    reference = serializers.CharField(max_length=64)
+    origin = TransferEndpointSerializer()
+    target = TransferEndpointSerializer()
+    depart_at = serializers.DateTimeField()
+    pax = serializers.IntegerField(min_value=1)
+    luggage = serializers.IntegerField(min_value=0, default=0)
+
+
+class TransferQuoteRequestSerializer(serializers.Serializer[Any]):
+    """`POST /transport/quotes` — §9.4.4.
+
+    §9.4.4 also shows a top-level `vehicle_class`. It is accepted and echoed as
+    a *preference* rather than applied as a filter, because the same section's
+    response returns "per-class options" and lists two of them: the field says
+    which card to preselect, not which to compute. Filtering on it would make
+    §24.16's comparison impossible to render.
+    """
+
+    trip_id = serializers.UUIDField()
+    legs = TransferLegSerializer(many=True)
+    vehicle_class = serializers.CharField(required=False, allow_null=True)
+
+    def validate_legs(self, value: list[Any]) -> list[Any]:
+        if not value:
+            raise serializers.ValidationError("A quote needs at least one leg.")
+        references = [leg["reference"] for leg in value]
+        if len(set(references)) != len(references):
+            raise serializers.ValidationError("Each leg needs its own reference.")
+        return value
+
+
+class FareBreakdownSerializer(serializers.Serializer[Any]):
+    """§9.4.4's `breakdown`. The four parts sum to the price exactly."""
+
+    base = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    distance = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    time = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    surcharges = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+
+class TariffMatchSerializer(serializers.Serializer[Any]):
+    """Which rule priced this option, and on which rung of §12.4's ladder.
+
+    `rule_id` is deliberately absent: it is a sequential integer and §7.2 keeps
+    those inside the database. `rule` is its `public_id`, which is what an
+    administrator pastes into §27.11's preview tool.
+    """
+
+    kind = serializers.CharField(read_only=True)
+    rule = serializers.UUIDField(source="rule_public_id", read_only=True)
+    step = serializers.IntegerField(read_only=True)
+
+
+class FareOptionSerializer(serializers.Serializer[Any]):
+    """§9.4.4's `options[]` — one vehicle class the party fits, and its fare."""
+
+    vehicle_class = serializers.CharField(source="vehicle_class.code", read_only=True)
+    seats = serializers.IntegerField(source="vehicle_class.seats", read_only=True)
+    luggage = serializers.IntegerField(source="vehicle_class.luggage_capacity", read_only=True)
+    price = MoneySerializer(read_only=True)
+    breakdown = FareBreakdownSerializer(read_only=True)
+    match = TariffMatchSerializer(read_only=True)
+
+
+class LegQuoteSerializer(serializers.Serializer[Any]):
+    """§9.4.4's response element.
+
+    `estimate_quality` is not in §9.4.4's example and is required by §12.6 and
+    ADR 0019: §24.17 must badge a leg whose distance is a haversine estimate,
+    and a client cannot badge what it cannot see. It is emitted beside the
+    distance rather than instead of it, so the number and the evidence of what
+    that number is travel together.
+
+    `polyline` is null until a routing provider is chosen (Appendix D-2). The
+    field is published now because §24.17 draws the leg on a map, and a client
+    written against a shape that later grows a field has to be rewritten.
+    """
+
+    reference = serializers.CharField(source="quote.reference", read_only=True)
+    origin = serializers.CharField(source="origin_name", read_only=True)
+    target = serializers.CharField(source="target_name", read_only=True)
+    distance_m = serializers.IntegerField(read_only=True)
+    travel_seconds = serializers.IntegerField(read_only=True)
+    estimate_quality = serializers.CharField(read_only=True)
+    polyline = serializers.CharField(read_only=True, allow_null=True, default=None)
+    options = FareOptionSerializer(many=True, read_only=True, source="quote.options")
+
+
+class CorridorSideSerializer(serializers.Serializer[Any]):
+    """A corridor endpoint, named rather than numbered (§7.2)."""
+
+    slug = serializers.CharField(read_only=True)
+    name = serializers.CharField(read_only=True)
+
+
+class CorridorSerializer(serializers.Serializer[Any]):
+    """§9.3.4's `GET /transport/corridors`.
+
+    Where the platform runs transfers, and no fare. A corridor's price depends
+    on the class and the date, and this endpoint is public and cacheable; one
+    number here would be a price list that goes stale without anything
+    happening.
+    """
+
+    id = serializers.UUIDField(read_only=True)
+    origin = CorridorSideSerializer(read_only=True)
+    target = CorridorSideSerializer(read_only=True)
+    vehicle_class = serializers.CharField(read_only=True)
+    is_bidirectional = serializers.BooleanField(read_only=True)
