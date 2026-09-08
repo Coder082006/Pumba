@@ -2105,6 +2105,27 @@ paths:
                 items:
                   $ref: '#/components/schemas/Tag'
           description: ''
+  /api/v1/transport/vehicle-classes:
+    get:
+      operationId: transport_vehicle_classes_list
+      description: 'The vehicle classes a transfer may be quoted for, with seat and
+        luggage capacity. Capacity only: a class has no price of its own — a route
+        priced for a class does — so fares come from POST /transport/quotes, which
+        knows the leg (SRS 12.4, 24.16).'
+      summary: List vehicle classes
+      tags:
+      - Transport
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VehicleClass'
+          description: ''
   /api/v1/trips:
     get:
       operationId: trips_list
@@ -5453,6 +5474,46 @@ components:
       - public_id
       - roles
       - status
+    VehicleClass:
+      type: object
+      description: |-
+        §9.3.4: "Classes with capacity and indicative pricing".
+
+        Capacity, and no price. A class does not have a price — a *route* priced
+        for a class does — so a number here would be a quote nobody asked for and
+        nobody could be held to. §24.16's cards get theirs from
+        `POST /transport/quotes`, which knows the leg.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        code:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        description:
+          type: string
+          readOnly: true
+        seats:
+          type: integer
+          readOnly: true
+        luggage_capacity:
+          type: integer
+          readOnly: true
+        has_air_conditioning:
+          type: boolean
+          readOnly: true
+      required:
+      - code
+      - description
+      - has_air_conditioning
+      - id
+      - luggage_capacity
+      - name
+      - seats
     VerifyEmailCodeRequest:
       type: object
       description: |-

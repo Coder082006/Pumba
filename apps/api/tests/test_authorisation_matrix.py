@@ -101,6 +101,14 @@ PUBLIC_BY_DESIGN = {
     "v1:identity:refresh": "Presents a refresh token; the token is the credential.",
     "v1:identity:password-forgot": "Unauthenticated by necessity (§24.5).",
     "v1:identity:password-reset": "Consumes an emailed token; the token is the credential.",
+    # §9.3.4's auth column is "—" for two of the three API-04 routes. This one
+    # is a closed set of four seeded rows describing seat and luggage capacity,
+    # with no price on it and no principal to scope against — §24.16 shows the
+    # cards to a tourist who has not signed in yet, which is the whole reason
+    # it is reachable before authentication.
+    "v1:transport:vehicle-class-list": (
+        "§9.3.4 API-04, auth '—'; capacity only, no price, no rows to scope."
+    ),
     "schema": "OpenAPI document (§36.2).",
     "swagger-ui": "Renders the OpenAPI document.",
     # The §9.3.2 catalogue. Public because a tourist reads it before signing

@@ -1405,6 +1405,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/transport/vehicle-classes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List vehicle classes
+         * @description The vehicle classes a transfer may be quoted for, with seat and luggage capacity. Capacity only: a class has no price of its own — a route priced for a class does — so fares come from POST /transport/quotes, which knows the leg (SRS 12.4, 24.16).
+         */
+        get: operations["transport_vehicle_classes_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/trips": {
         parameters: {
             query?: never;
@@ -2813,6 +2833,22 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
             readonly profile: components["schemas"]["TouristProfile"] | null;
+        };
+        /** @description §9.3.4: "Classes with capacity and indicative pricing".
+         *
+         *     Capacity, and no price. A class does not have a price — a *route* priced
+         *     for a class does — so a number here would be a quote nobody asked for and
+         *     nobody could be held to. §24.16's cards get theirs from
+         *     `POST /transport/quotes`, which knows the leg. */
+        VehicleClass: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly code: string;
+            readonly name: string;
+            readonly description: string;
+            readonly seats: number;
+            readonly luggage_capacity: number;
+            readonly has_air_conditioning: boolean;
         };
         /** @description §24.3's popup: the address just registered, and the six digits emailed.
          *
@@ -4501,6 +4537,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Tag"][];
+                };
+            };
+        };
+    };
+    transport_vehicle_classes_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VehicleClass"][];
                 };
             };
         };
