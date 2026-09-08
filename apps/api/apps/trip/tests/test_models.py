@@ -295,6 +295,9 @@ class TestTransferCarriesItsProvenance:
             "distance_m": 9_100,
             "travel_seconds": 780,
             "estimate_quality": EstimateQuality.APPROXIMATE,
+            # §12.2's leg definition, NOT NULL on a transfer since ADR 0023.
+            "vehicle_class": "STANDARD",
+            "luggage_count": 2,
         }
         values.update(overrides)
         return make_item(**values)  # type: ignore[arg-type]

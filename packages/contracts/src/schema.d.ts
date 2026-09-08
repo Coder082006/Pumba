@@ -2277,6 +2277,8 @@ export interface components {
             readonly travel_seconds: number | null;
             readonly estimate_quality: string | null;
             readonly is_approximate: boolean;
+            readonly vehicle_class: string | null;
+            readonly luggage_count: number | null;
             readonly quantity: number;
             readonly pax_count: number | null;
             /** Format: decimal */

@@ -72,6 +72,8 @@ def a_trip_with_everything() -> tuple[object, object]:
         distance_m=9100,
         travel_seconds=780,
         estimate_quality="APPROXIMATE",
+        vehicle_class="STANDARD",
+        luggage_count=2,
     )
     make_flight(trip, gateway_destination_id=external_rows.make_destination(is_gateway=True).id)
     return trip, destination

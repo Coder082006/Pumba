@@ -320,6 +320,23 @@ class ItineraryItem(BaseModel):
     distance_m = models.IntegerField(null=True, blank=True, default=None)
     travel_seconds = models.IntegerField(null=True, blank=True, default=None)
 
+    #: §12.2: "A transfer leg is defined by an origin, a target, a departure
+    #: instant, a party size, a luggage count and a vehicle class ... and the
+    #: binding is stored on the itinerary item so that the leg can be re-priced
+    #: identically later."
+    #:
+    #: §7.5.11's column list contains neither, so both are added here under ADR
+    #: 0007's rule for tables the SRS names but does not fully specify — the
+    #: same precedent ADR 0019 used for `estimate_quality`, on this same table.
+    #: Without them §12.2's promise is unkeepable: the inputs to the price
+    #: would not survive the request that computed it.
+    #:
+    #: The class is a code rather than a foreign key, for the reason ADR 0012
+    #: gives about every other cross-module reference here: `vehicle_class`
+    #: belongs to `transport`, which is L2 to this module's L3.
+    vehicle_class = models.CharField(max_length=20, null=True, blank=True, default=None)
+    luggage_count = models.PositiveSmallIntegerField(null=True, blank=True, default=None)
+
     #: ADR 0019. NOT NULL exactly when this is a TRANSFER.
     estimate_quality = models.CharField(
         max_length=20,
@@ -492,6 +509,19 @@ class ItineraryItem(BaseModel):
                 | models.Q(estimate_quality__isnull=True),
                 name="itinerary_item_only_transfers_carry_provenance",
             ),
+            # §12.2's leg definition, in both directions. A transfer without
+            # a class cannot be re-priced identically later, and a non-transfer
+            # carrying one is claiming a vehicle for something nobody drives to.
+            models.CheckConstraint(
+                condition=~models.Q(item_type=ItemType.TRANSFER)
+                | models.Q(vehicle_class__isnull=False, luggage_count__isnull=False),
+                name="itinerary_item_transfer_names_a_vehicle_class",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(item_type=ItemType.TRANSFER)
+                | models.Q(vehicle_class__isnull=True, luggage_count__isnull=True),
+                name="itinerary_item_only_transfers_name_a_vehicle_class",
+            ),
             # §7.2: never money without its currency, in both directions.
             models.CheckConstraint(
                 condition=(
@@ -623,6 +653,23 @@ class ItineraryItemArchive(TimestampedModel):
 
     distance_m = models.IntegerField(null=True, blank=True, default=None)
     travel_seconds = models.IntegerField(null=True, blank=True, default=None)
+
+    #: §12.2: "A transfer leg is defined by an origin, a target, a departure
+    #: instant, a party size, a luggage count and a vehicle class ... and the
+    #: binding is stored on the itinerary item so that the leg can be re-priced
+    #: identically later."
+    #:
+    #: §7.5.11's column list contains neither, so both are added here under ADR
+    #: 0007's rule for tables the SRS names but does not fully specify — the
+    #: same precedent ADR 0019 used for `estimate_quality`, on this same table.
+    #: Without them §12.2's promise is unkeepable: the inputs to the price
+    #: would not survive the request that computed it.
+    #:
+    #: The class is a code rather than a foreign key, for the reason ADR 0012
+    #: gives about every other cross-module reference here: `vehicle_class`
+    #: belongs to `transport`, which is L2 to this module's L3.
+    vehicle_class = models.CharField(max_length=20, null=True, blank=True, default=None)
+    luggage_count = models.PositiveSmallIntegerField(null=True, blank=True, default=None)
     estimate_quality = models.CharField(
         max_length=20, choices=EstimateQuality.choices, null=True, blank=True, default=None
     )

@@ -56,7 +56,7 @@ from apps.common.geo import Coordinates
 from apps.common.money import Money
 from apps.common.state_machine import IllegalTransitionError
 from apps.trip import repositories as repo
-from apps.trip import selectors
+from apps.trip import selectors, transfers
 from apps.trip.domain.costing import PricedItem, TripCost, compute_cost
 from apps.trip.domain.findings import Finding, Severity, worst_severity
 from apps.trip.domain.lifecycle import TRIP_MACHINE, TripState, is_editable
@@ -837,25 +837,107 @@ DEFERRED_INPUTS: dict[str, str] = {
 }
 
 
+def _transfer_fares(
+    planned: Sequence[PlannedItem],
+    facts: _Facts,
+    trip: Trip,
+    *,
+    strict: bool,
+) -> dict[int, transfers.LegFare]:
+    """§10.7's missing arm: what each transfer costs.
+
+    Phase 4 left every transfer unpriced and said so — "§10.7 sources a
+    transfer's line total from §12.4's tariff, which belongs to `transport` and
+    arrives in Phase 6". This is that arrival.
+
+    **The luggage count comes from the flights, not from a guess.** §24.15
+    captures it per direction, and §12.4 filters vehicle classes on it. Where
+    no flight has been entered the party's own size stands in — one bag each,
+    which is the assumption a tourist would make and is the one that errs
+    towards a larger vehicle rather than a smaller one.
+
+    `strict` is ADR 0019's line. See `transfers.fares_for`.
+    """
+    place = facts.destinations.get(trip.destination_id)
+    if place is None:
+        return {}
+    home = catalogue.transfer_places("destination", [trip.destination_id]).get(trip.destination_id)
+    if home is None:
+        return {}
+
+    party = trip.adults + trip.children
+    luggage = max(
+        (flight.luggage_count for flight in trip.flights.all()),
+        default=party,
+    )
+
+    legs = [
+        (
+            entry.item_id,
+            entry.start_location,
+            entry.end_location,
+            entry.distance_m,
+            entry.travel_seconds,
+            entry.estimate_quality,
+        )
+        for entry in planned
+        if entry.kind is Kind.TRANSFER and entry.starts_at is not None
+    ]
+    depart_at = {
+        entry.item_id: entry.starts_at
+        for entry in planned
+        if entry.kind is Kind.TRANSFER and entry.starts_at is not None
+    }
+
+    return transfers.fares_for(
+        legs,
+        trip_destination=home,
+        depart_at=depart_at,
+        pax=party,
+        luggage=luggage,
+        strict=strict,
+    )
+
+
 def _priced(
-    items: Sequence[ItineraryItem], planned: Sequence[PlannedItem], facts: _Facts, party: int
+    items: Sequence[ItineraryItem],
+    planned: Sequence[PlannedItem],
+    facts: _Facts,
+    party: int,
+    fares: Mapping[int, transfers.LegFare] | None = None,
 ) -> list[PricedItem]:
     """§10.7's inputs.
 
-    **A transfer carries no price in Phase 4.** §10.7 sources a transfer's line
-    total from §12.4's tariff, which belongs to `transport` and arrives in
-    Phase 6. So the subtotal is activities only, and a transfer is a timed,
-    labelled leg with no money on it. Worth saying outright, because silence
-    here reads as "transfers are free" — and ADR 0019 forbids quoting an
-    APPROXIMATE leg in any case, so a price would be unusable even if it
-    existed.
+    **A transfer now carries a price, and may still carry none.** §10.7 sources
+    its line total from §12.4's tariff, which `_transfer_fares` resolves
+    through `transport`. Where no corridor covers the route and the road cannot
+    be measured, the leg stays unpriced rather than blocking the plan — ADR
+    0019's line, which lets a tourist arrange days the platform cannot yet
+    quote. A `None` line total therefore means "we have no fare for this",
+    never "this is free", and §24.14's footer says so.
 
     A stay anchor is priced by nothing at all (ADR 0013), and `price_item`
     refuses one that carries a price rather than quietly zeroing it.
     """
     by_id = {i.pk: i for i in items}
+    priced_legs = fares or {}
     out: list[PricedItem] = []
     for entry in planned:
+        fare = priced_legs.get(entry.item_id) if entry.kind is Kind.TRANSFER else None
+        if fare is not None:
+            # A transfer is one vehicle, not one per passenger. §12.4 prices
+            # the leg and §12.4's class table is what decides whether the party
+            # fits in it, so multiplying by the party size here would charge a
+            # family four times for one car.
+            out.append(
+                PricedItem(
+                    item_id=entry.item_id,
+                    kind=entry.kind,
+                    title=entry.title,
+                    group_price=fare.money,
+                )
+            )
+            continue
         row = by_id.get(entry.item_id)
         activity = facts.activities.get(row.activity_id) if row and row.activity_id else None
         if activity is None:
@@ -907,6 +989,7 @@ def _persist(
     cost: TripCost,
     worst: str,
     places: Mapping[str, Coordinates],
+    fares: Mapping[int, transfers.LegFare],
 ) -> None:
     """§10.8's versioning, and §10.7's totals.
 
@@ -940,6 +1023,8 @@ def _persist(
                 distance_m=row.distance_m,
                 travel_seconds=row.travel_seconds,
                 estimate_quality=row.estimate_quality,
+                vehicle_class=row.vehicle_class,
+                luggage_count=row.luggage_count,
                 quantity=row.quantity,
                 pax_count=row.pax_count,
                 unit_price=row.unit_price,
@@ -962,7 +1047,7 @@ def _persist(
 
     for entry in result.items:
         if entry.is_inserted:
-            _write_inserted_transfer(itinerary, entry, places)
+            _write_inserted_transfer(itinerary, entry, places, fares.get(entry.item_id))
             continue
         row = by_id.get(entry.item_id)
         if row is None or row.pk in seen:
@@ -1010,15 +1095,25 @@ def _persist(
 
 
 def _write_inserted_transfer(
-    itinerary: Itinerary, entry: PlannedItem, places: Mapping[str, Coordinates]
+    itinerary: Itinerary,
+    entry: PlannedItem,
+    places: Mapping[str, Coordinates],
+    fare: transfers.LegFare | None,
 ) -> None:
-    """A leg §10.4 invented, given a row.
+    """A leg §10.4 invented, given a row — and, since Phase 6, a price.
 
     `estimate_quality` is non-null by construction here, which is what the
     database constraint requires of a transfer and what §12.6 requires of the
-    screen. The endpoints are points rather than destination ids: a leg from a
-    hotel to an attraction has coordinates at both ends and a destination at
-    neither.
+    screen. The endpoints are points *and* destination ids: the points are
+    where the driver stops — a leg from a hotel to an attraction has
+    coordinates at both ends — and the ids are which tariff applied, which
+    §12.2 requires to be stored "so that the leg can be re-priced identically
+    later".
+
+    An unpriced leg is written with a class and a luggage count anyway,
+    because the database CHECK requires them of every transfer and because
+    §24.17 lets the tourist change the class and ask again. What it lacks is
+    money, and that absence is the honest record of a fare we do not have.
     """
     assert entry.starts_at is not None and entry.ends_at is not None
     ItineraryItem.objects.create(
@@ -1031,10 +1126,27 @@ def _write_inserted_transfer(
         ends_at=entry.ends_at,
         origin_point=_point(entry.start_location, places),
         target_point=_point(entry.end_location, places),
+        origin_destination_id=None if fare is None else fare.origin_destination_id,
+        target_destination_id=None if fare is None else fare.target_destination_id,
         distance_m=entry.distance_m,
         travel_seconds=entry.travel_seconds,
         estimate_quality=entry.estimate_quality,
+        vehicle_class=_DEFAULT_CLASS if fare is None else fare.vehicle_class,
+        luggage_count=0 if fare is None else fare.luggage,
+        unit_price=None if fare is None else fare.money.amount,
+        line_total=None if fare is None else fare.money.amount,
+        currency=None if fare is None else fare.money.currency,
     )
+
+
+#: What an unpriced leg is written with. §12.4's smallest class, because the
+#: column is NOT NULL on a transfer and something has to go there — and because
+#: §24.17 lets the tourist change it, at which point a real quote replaces this.
+#: It is a literal rather than a setting on purpose: it is not a threshold, a
+#: rate or a weight (hard rule 5), it is the name of the row a screen offers to
+#: change, and a `system_setting` naming a vehicle class nobody seeded would be
+#: a worse failure than this.
+_DEFAULT_CLASS = "STANDARD"
 
 
 def _point(key: str | None, places: Mapping[str, Coordinates]) -> Point | None:
@@ -1147,8 +1259,12 @@ def generate_itinerary(public_id: UUID, *, tourist_id: int) -> TripDTO:
         ),
     )
 
+    # Planning tolerates a leg it cannot price (ADR 0019): a tourist arranging
+    # days must not be blocked because a fare is unavailable.
+    fares = _transfer_fares(result.items, facts, trip, strict=False)
+
     cost = compute_cost(
-        _priced(items, result.items, facts, trip.adults + trip.children),
+        _priced(items, result.items, facts, trip.adults + trip.children, fares),
         currency=trip.currency,
         platform_fee_rate=Decimal(str(get_setting("platform_fee_rate"))),
     )
@@ -1160,7 +1276,7 @@ def generate_itinerary(public_id: UUID, *, tourist_id: int) -> TripDTO:
         Severity.ERROR: ValidationState.ERRORS,
     }[severity]
 
-    _persist(trip, itinerary, items, superseded, result, cost, state.value, facts.places)
+    _persist(trip, itinerary, items, superseded, result, cost, state.value, facts.places, fares)
 
     all_findings = (*findings, *result.findings)
     publish(
@@ -1268,7 +1384,12 @@ def mark_priced(
 
     facts = _gather(items, trip)
     cost = compute_cost(
-        _priced_rows(items, facts, trip.adults + trip.children),
+        _priced_rows(
+            items,
+            facts,
+            trip.adults + trip.children,
+            _requoted_transfers(items, facts, trip),
+        ),
         currency=trip.currency,
         platform_fee_rate=Decimal(str(get_setting("platform_fee_rate"))),
     )
@@ -1306,7 +1427,89 @@ def expire_quote(trip_id: int) -> bool:
     return True
 
 
-def _priced_rows(items: Sequence[ItineraryItem], facts: _Facts, party: int) -> list[PricedItem]:
+def _requoted_transfers(
+    items: Sequence[ItineraryItem], facts: _Facts, trip: Trip
+) -> dict[int, transfers.LegFare]:
+    """§9.4.5: "for each transfer item: re-quote using current tariffs".
+
+    Re-quoted rather than re-read. The stored `line_total` is what the last
+    generate computed, and a tariff may have changed since; §9.4.5 says the
+    quote is where the platform commits to a number, so the number has to be
+    the one in force now.
+
+    It works off the stored rows and never re-runs the sequencer: §12.2 had
+    the leg store its own bindings precisely so it "can be re-priced
+    identically later", and re-planning would be a second answer to a question
+    §10.4 already settled.
+
+    **Strict, unlike planning.** A trip whose transfer cannot be priced cannot
+    honestly be totalled, so the error reaches the tourist as
+    `NO_TARIFF_CONFIGURED` or `ROUTING_UNAVAILABLE` rather than as a total with
+    a leg quietly missing from it. That is ADR 0019's line: planning may
+    estimate, quoting may not.
+    """
+    home = catalogue.transfer_places("destination", [trip.destination_id]).get(trip.destination_id)
+    if home is None:
+        return {}
+
+    party = trip.adults + trip.children
+    luggage = max((flight.luggage_count for flight in trip.flights.all()), default=party)
+
+    legs = []
+    depart_at = {}
+    for row in items:
+        if row.item_type != ItemType.TRANSFER or row.starts_at is None:
+            continue
+        legs.append(
+            (
+                row.pk,
+                _destination_key(row.origin_destination_id),
+                _destination_key(row.target_destination_id),
+                row.distance_m,
+                row.travel_seconds,
+                row.estimate_quality,
+            )
+        )
+        depart_at[row.pk] = row.starts_at
+
+    return transfers.fares_for(
+        legs,
+        trip_destination=home,
+        depart_at=depart_at,
+        pax=party,
+        luggage=row_luggage(items, luggage),
+        strict=True,
+    )
+
+
+def _destination_key(destination_id: int | None) -> str | None:
+    """A stored destination id, in the shape `transfers` reads.
+
+    The same `kind:id` spelling `travel.place_key` produces, so one parser
+    serves both the sequencer's keys and the columns §7.5.11 stores. `None`
+    falls through to the trip's own destination, which is what an older row
+    written before Phase 6 carries.
+    """
+    return None if destination_id is None else f"destination:{destination_id}"
+
+
+def row_luggage(items: Sequence[ItineraryItem], default: int) -> int:
+    """The luggage a stored leg was quoted for, or the trip's own default.
+
+    A tourist who chose a van for six suitcases must be re-quoted for six
+    suitcases; falling back to the party size would quietly re-quote them into
+    a car. §12.2 stores the count on the item for exactly this moment.
+    """
+    counts = [row.luggage_count for row in items if row.luggage_count is not None]
+    return max(counts) if counts else default
+
+
+def _priced_rows(
+    items: Sequence[ItineraryItem],
+    facts: _Facts,
+    party: int,
+    fares: Mapping[int, transfers.LegFare] | None = None,
+) -> list[PricedItem]:
     """`_priced`, for a quote rather than a generate.
 
     `generate_itinerary` prices the *planned* items the sequencer returned; a
@@ -1324,6 +1527,13 @@ def _priced_rows(items: Sequence[ItineraryItem], facts: _Facts, party: int) -> l
         # subtotal either way.
         kind = _KIND_FOR_TYPE.get(ItemType(row.item_type))
         if kind is None:
+            continue
+        fare = (fares or {}).get(row.pk)
+        if fare is not None:
+            # One vehicle, not one per passenger — see `_priced`.
+            out.append(
+                PricedItem(item_id=row.pk, kind=kind, title=row.title, group_price=fare.money)
+            )
             continue
         activity = facts.activities.get(row.activity_id) if row.activity_id else None
         if activity is None:

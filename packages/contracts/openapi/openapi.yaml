@@ -4099,6 +4099,16 @@ components:
         is_approximate:
           type: boolean
           readOnly: true
+        vehicle_class:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        luggage_count:
+          type:
+          - integer
+          - 'null'
+          readOnly: true
         quantity:
           type: integer
           readOnly: true
@@ -4142,6 +4152,7 @@ components:
       - is_locked
       - item_type
       - line_total
+      - luggage_count
       - origin_destination
       - pax_count
       - public_id
@@ -4152,6 +4163,7 @@ components:
       - title
       - travel_seconds
       - unit_price
+      - vehicle_class
     LegQuote:
       type: object
       description: |-

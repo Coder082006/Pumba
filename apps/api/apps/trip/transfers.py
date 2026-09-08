@@ -35,7 +35,7 @@ be badged.
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -45,6 +45,7 @@ from django.utils import timezone
 from apps.catalogue import services as catalogue
 from apps.common.errors import NotFoundError, ValidationError
 from apps.common.geo import Coordinates
+from apps.common.money import Money
 from apps.transport import services as transport
 from apps.transport.dto import LegEndpoint, LegQuote, LegRequest
 from apps.trip.domain.sequencing import TravelEstimate
@@ -56,6 +57,9 @@ __all__ = [
     "LegSpec",
     "ResolvedLeg",
     "quote_legs",
+    "LegFare",
+    "fares_for",
+    "corridors",
 ]
 
 #: §12.2's bindings that name a catalogue row, in the order a client is most
@@ -288,3 +292,159 @@ def corridors() -> tuple[Mapping[str, object], ...]:
         }
         for row in rows
     )
+
+
+# ---------------------------------------------------------------------------
+# Pricing the legs §10.4 inserted — SRS §10.7, §12.4, §12.6
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LegFare:
+    """What a planned transfer costs, and the inputs that decided it.
+
+    §12.2 requires the class and the luggage count to be stored on the item so
+    the leg "can be re-priced identically later", and §7.5.11 has the two
+    destination ids for the same reason. All four are carried here so
+    `_persist` writes them in the same breath as the money.
+    """
+
+    money: Money
+    vehicle_class: str
+    luggage: int
+    origin_destination_id: int
+    target_destination_id: int
+
+
+def _parse_key(key: str | None) -> tuple[str, int] | None:
+    """A sequencer location key, split into the row it names.
+
+    `place_key` writes `"accommodation:41"`, and this reads it. The one key it
+    cannot resolve is `"item:<uuid>"` — a free-entry stay anchor, which by
+    definition has no catalogue row (ADR 0013) — so it returns `None` and the
+    caller falls back to the trip's own destination. That is not a guess:
+    BR-010 gives a trip exactly one destination, §10.6 keeps the anchor inside
+    it, and §12.4 prices on "region of origin", which is that destination's
+    region either way.
+    """
+    if not key or ":" not in key:
+        return None
+    kind, _, identifier = key.partition(":")
+    if kind not in BINDINGS or not identifier.isdigit():
+        return None
+    return kind, int(identifier)
+
+
+def _places_for(keys: Iterable[str | None]) -> dict[tuple[str, int], catalogue.TransferPlace]:
+    """Every key resolved, in one query per catalogue table.
+
+    Batched because `generate_itinerary` prices every transfer in an itinerary
+    at once and pins its catalogue-read budget. Resolving a key at a time cost
+    two extra reads per leg and failed
+    `test_catalogue_reads_do_not_scale_with_items` — which is the test doing
+    exactly what it was written for, on the first change that could have
+    broken it.
+    """
+    wanted: dict[str, set[int]] = {}
+    for key in keys:
+        parsed = _parse_key(key)
+        if parsed is not None:
+            wanted.setdefault(parsed[0], set()).add(parsed[1])
+
+    resolved: dict[tuple[str, int], catalogue.TransferPlace] = {}
+    for kind, ids in wanted.items():
+        for identifier, place in catalogue.transfer_places(kind, sorted(ids)).items():
+            resolved[(kind, identifier)] = place
+    return resolved
+
+
+def fares_for(
+    legs: Sequence[tuple[int, str | None, str | None, int | None, int | None, str | None]],
+    *,
+    trip_destination: catalogue.TransferPlace,
+    depart_at: Mapping[int, dt.datetime],
+    pax: int,
+    luggage: int,
+    strict: bool,
+) -> dict[int, LegFare]:
+    """Price a planned itinerary's transfers, by planner item id.
+
+    Each tuple is `(item_id, origin_key, target_key, distance_m,
+    travel_seconds, estimate_quality)` — the sequencer's own output, so this
+    works for a leg it invented as well as one already stored.
+
+    **`strict` is ADR 0019's line, as a parameter.** Planning tolerates a leg
+    it cannot price and leaves it unpriced, exactly as Phase 4 did: a tourist
+    arranging days must not be blocked because a fare is unavailable, and
+    §10.7 already treats a transfer's line total as optional. Quoting does not
+    tolerate it, because a total that silently omitted a leg would be a
+    commitment to a price the platform had not computed.
+    """
+    if not legs:
+        return {}
+
+    known = _places_for(
+        key for _, origin_key, target_key, *_rest in legs for key in (origin_key, target_key)
+    )
+
+    def place(key: str | None) -> catalogue.TransferPlace:
+        parsed = _parse_key(key)
+        return trip_destination if parsed is None else known.get(parsed, trip_destination)
+
+    requests: list[LegRequest] = []
+    endpoints: dict[str, tuple[catalogue.TransferPlace, catalogue.TransferPlace]] = {}
+
+    for item_id, origin_key, target_key, distance_m, travel_seconds, quality in legs:
+        origin = place(origin_key)
+        target = place(target_key)
+        if origin.destination_id == target.destination_id:
+            # §12.2: a leg whose ends resolve to the same place is not a leg.
+            # Within one town both ends share a destination, which is ordinary
+            # and unpriceable by a corridor — the metered fallback is what
+            # §12.4 has for it, and without a measured road there is no fare.
+            continue
+
+        reference = str(item_id)
+        endpoints[reference] = (origin, target)
+        measured = quality is not None and quality != "APPROXIMATE"
+        requests.append(
+            LegRequest(
+                reference=reference,
+                origin=_endpoint(origin),
+                target=_endpoint(target),
+                depart_at=depart_at[item_id],
+                pickup_local=_local(depart_at[item_id], origin.timezone),
+                pax=pax,
+                luggage=luggage,
+                distance_m=distance_m if measured else None,
+                travel_seconds=travel_seconds if measured else None,
+            )
+        )
+
+    if not requests:
+        return {}
+
+    try:
+        quotes = transport.quote_transfer(requests)
+    except (transport.NoTariffConfiguredError, transport.RoutingUnavailableError):
+        if strict:
+            raise
+        # Planning carries on with unpriced legs. §10.7 sources a transfer's
+        # line total from §12.4 and has always allowed it to be absent; what
+        # changes in Phase 6 is that it is usually present.
+        return {}
+
+    fares: dict[int, LegFare] = {}
+    for quote in quotes:
+        option = transport.default_option(quote)
+        if option is None:
+            continue
+        origin, target = endpoints[quote.reference]
+        fares[int(quote.reference)] = LegFare(
+            money=option.price,
+            vehicle_class=option.vehicle_class.code,
+            luggage=luggage,
+            origin_destination_id=origin.destination_id,
+            target_destination_id=target.destination_id,
+        )
+    return fares

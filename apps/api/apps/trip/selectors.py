@@ -139,6 +139,8 @@ def to_item_dto(item: ItineraryItem, refs: _Refs) -> ItineraryItemDTO:
         distance_m=item.distance_m,
         travel_seconds=item.travel_seconds,
         estimate_quality=item.estimate_quality,
+        vehicle_class=item.vehicle_class,
+        luggage_count=item.luggage_count,
         quantity=item.quantity,
         pax_count=item.pax_count,
         unit_price=item.unit_price,

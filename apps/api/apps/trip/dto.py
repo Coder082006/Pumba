@@ -177,6 +177,13 @@ class ItineraryItemDTO:
     travel_seconds: int | None = None
     estimate_quality: str | None = None
 
+    #: TRANSFER only. §12.2 stores the class and the luggage count on the item
+    #: "so that the leg can be re-priced identically later", and §24.17 renders
+    #: the class as a per-leg selector the tourist can change. A client that
+    #: could not read it could not offer the change.
+    vehicle_class: str | None = None
+    luggage_count: int | None = None
+
     quantity: int = 1
     pax_count: int | None = None
     unit_price: Decimal | None = None

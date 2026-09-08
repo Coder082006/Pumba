@@ -133,6 +133,13 @@ class ItineraryItemSerializer(serializers.Serializer[Any]):
     estimate_quality = serializers.CharField(read_only=True, allow_null=True)
     is_approximate = serializers.BooleanField(read_only=True)
 
+    #: §12.2, §24.17. The class this leg was priced for, and the luggage it was
+    #: priced to carry — the two inputs a tourist changes when they want a
+    #: bigger vehicle, and the two that make a re-quote reproduce the same
+    #: number when they do not.
+    vehicle_class = serializers.CharField(read_only=True, allow_null=True)
+    luggage_count = serializers.IntegerField(read_only=True, allow_null=True)
+
     quantity = serializers.IntegerField(read_only=True)
     pax_count = serializers.IntegerField(read_only=True, allow_null=True)
     unit_price = serializers.DecimalField(
