@@ -157,7 +157,12 @@ class TestAQuotedLeg:
         (leg,) = response.json()["data"]
         assert leg["reference"] == "leg-1"
         assert [o["vehicle_class"] for o in leg["options"]] == ["STANDARD"]
-        assert leg["options"][0]["price"] == {"amount": "90000.00", "currency": "NZD"}
+        price = leg["options"][0]["price"]
+        assert price["amount"] == "90000.00"
+        assert price["currency"] == "NZD"
+        # §24.1's conversion, absent because this request asked for no
+        # currency. Null rather than missing — see `MoneySerializer.display`.
+        assert price["display"] is None
 
     def test_the_leg_names_its_endpoints(
         self, tourist: APIClient, classes: dict[str, VehicleClass], gateway: Any, resort: Any

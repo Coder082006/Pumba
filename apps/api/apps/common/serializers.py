@@ -69,10 +69,14 @@ class MoneySerializer(serializers.Serializer[Any]):
     currency = serializers.CharField(max_length=3, read_only=True)
 
     #: What the tourist asked to see it in — §9.1's `X-Currency`, §24.1's
-    #: chooser. **Absent, not null**, when nothing was converted: no currency
-    #: was asked for, the price is already in it, or no rate exists for the
-    #: pair. A null would invite a client to print an empty string where a
-    #: price should be; a missing key makes the branch obvious.
+    #: chooser. **Null** when nothing was converted: no currency was asked for,
+    #: the price is already in it, or no rate exists for the pair.
+    #:
+    #: Null rather than absent, and that is the field's type deciding rather
+    #: than a preference — a `SerializerMethodField` always emits its key. It
+    #: is also the better answer for a typed client: a key that vanished from
+    #: some rows and not others is harder to consume than one that is sometimes
+    #: null, which is the same reasoning `DisplayMoneyField` gives.
     display = serializers.SerializerMethodField()
 
     @extend_schema_field(
