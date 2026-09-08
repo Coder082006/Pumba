@@ -35,6 +35,10 @@ api_v1_patterns = [
     path("", include("apps.transport.urls")),
     path("", include("apps.inventory.urls")),
     path("", include("apps.booking.urls")),
+    # §27.11's tariff console. `administration` has "all (read via interfaces)"
+    # and is the only module that may resolve a `catalogue` name into the id a
+    # `transport` table stores (ADR 0023).
+    path("", include("apps.administration.urls")),
 ]
 
 urlpatterns = [

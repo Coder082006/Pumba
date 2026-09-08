@@ -1469,6 +1469,171 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/admin/transport/corridors:
+    post:
+      operationId: admin_transport_corridors_create
+      description: |-
+        §5.2: `CATALOGUE_ADMIN` manages "countries, regions, destinations,
+        attractions, activities, **tariffs**, policies", globally.
+      summary: Create a transfer corridor
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorridorWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CorridorWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CorridorWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorridorRead'
+          description: ''
+  /api/v1/admin/transport/corridors/{public_id}:
+    patch:
+      operationId: admin_transport_corridors_partial_update
+      description: |-
+        A partial update — including the one that retires a corridor.
+
+        §27.11 has no separate deactivate action and this needs none:
+        withdrawing a price is `is_active` moving in this one call, which means
+        there is no second path that could record the change differently or not
+        at all.
+      summary: Amend a transfer corridor
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCorridorWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCorridorWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCorridorWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorridorRead'
+          description: ''
+  /api/v1/admin/transport/quote-preview:
+    post:
+      operationId: admin_transport_quote_preview_create
+      description: Runs the tourist's own SRS 12.4 resolution ladder and reports which
+        rule answered and on which rung. A fare that fell through to the country default
+        when a corridor was expected is a misconfiguration indistinguishable from
+        a correct answer without that information.
+      summary: Preview what a route would be quoted at, and why
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuotePreviewRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/QuotePreviewRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/QuotePreviewRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotePreviewResult'
+          description: ''
+  /api/v1/admin/transport/tariffs:
+    post:
+      operationId: admin_transport_tariffs_create
+      description: |-
+        §5.2: `CATALOGUE_ADMIN` manages "countries, regions, destinations,
+        attractions, activities, **tariffs**, policies", globally.
+      summary: Create a metered transfer tariff
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TariffWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TariffWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TariffWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TariffRead'
+          description: ''
+  /api/v1/admin/transport/tariffs/{public_id}:
+    patch:
+      operationId: admin_transport_tariffs_partial_update
+      description: |-
+        §5.2: `CATALOGUE_ADMIN` manages "countries, regions, destinations,
+        attractions, activities, **tariffs**, policies", globally.
+      summary: Amend a metered transfer tariff
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTariffWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTariffWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTariffWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TariffRead'
+          description: ''
   /api/v1/attractions:
     get:
       operationId: attractions_list
@@ -1978,6 +2143,39 @@ paths:
         identifier to get wrong. The URL-conf audit lists it for that reason.
       tags:
       - me
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+    patch:
+      operationId: me_partial_update
+      description: |-
+        §24.28: "Language, presentment currency".
+
+        The currency here is what prices are *shown* in — §9.1's `X-Currency`
+        applies per request, this is the standing preference behind it. It is
+        never what the tourist is charged in: that is `trip.currency`, taken
+        from the destination and locked at first pricing (BR-016), and §18.4
+        gives it an entirely separate mechanism (ADR 0024).
+      summary: Change your language or the currency prices are shown in
+      tags:
+      - me
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUpdateProfileRequest'
       security:
       - bearerAuth: []
       responses:
@@ -2649,9 +2847,18 @@ components:
       description: |-
         §16.1.
 
-        No converted price appears here. §18.4 puts conversion at quote time, and
-        a display conversion is an `IndicativeAmount` applied over this — which is
-        a different thing with a different label and a different half-life.
+        **A converted price appears here now, and the distinction it used to be
+        protected by is kept in the type instead.** This docstring previously said
+        no conversion belonged on a listing, because §18.4 puts the *charged*
+        conversion at quote time. That is still true and is still a different
+        thing: `price_per_person` is what a provider charges, and
+        `price_per_person_display` is an `IndicativeAmount` — a figure that refuses
+        to take part in arithmetic by construction, carrying the rate, its source
+        and its timestamp so it cannot be mistaken for the first (ADR 0024).
+
+        Excluding it entirely was the wrong protection. §24.11 wants a tourist to
+        compare a price "against prices at home", and a browser that shows only
+        TZS to somebody arriving from Frankfurt protects them from nothing.
       properties:
         public_id:
           type: string
@@ -2690,6 +2897,52 @@ components:
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         currency:
           type: string
+        price_per_person_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
+        price_per_group_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
         min_pax:
           type: integer
         max_pax:
@@ -2744,7 +2997,9 @@ components:
       - min_pax
       - name
       - price_per_group
+      - price_per_group_display
       - price_per_person
+      - price_per_person_display
       - public_id
       - rating_avg
       - rating_count
@@ -3054,6 +3309,29 @@ components:
           type:
           - string
           - 'null'
+        entrance_fee_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
         visit_minutes:
           type:
           - integer
@@ -3077,6 +3355,7 @@ components:
       - description
       - destination
       - entrance_fee
+      - entrance_fee_display
       - feature_rank
       - fee_currency
       - latitude
@@ -3328,6 +3607,58 @@ components:
       - origin
       - target
       - vehicle_class
+    CorridorRead:
+      type: object
+      description: What the console gets back. Ids are `public_id`s (§7.2).
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        origin_destination:
+          type: string
+          readOnly: true
+        target_destination:
+          type: string
+          readOnly: true
+        vehicle_class:
+          type: string
+          readOnly: true
+        fixed_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        is_bidirectional:
+          type: boolean
+          readOnly: true
+        valid_from:
+          type: string
+          format: date
+          readOnly: true
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+      required:
+      - currency
+      - fixed_price
+      - id
+      - is_active
+      - is_bidirectional
+      - origin_destination
+      - target_destination
+      - valid_from
+      - valid_to
+      - vehicle_class
     CorridorSide:
       type: object
       description: A corridor endpoint, named rather than numbered (§7.2).
@@ -3341,6 +3672,39 @@ components:
       required:
       - name
       - slug
+    CorridorWriteRequest:
+      type: object
+      description: §12.4's fixed-price route, as §27.11's form submits it.
+      properties:
+        origin_destination:
+          type: string
+          minLength: 1
+        target_destination:
+          type: string
+          minLength: 1
+        vehicle_class:
+          type: string
+          minLength: 1
+        fixed_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        currency:
+          type: string
+          minLength: 1
+          maxLength: 3
+        is_bidirectional:
+          type: boolean
+        valid_from:
+          type: string
+          format: date
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_active:
+          type: boolean
     Country:
       type: object
       properties:
@@ -4124,6 +4488,29 @@ components:
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
+        line_total_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
         line_total:
           type:
           - string
@@ -4152,6 +4539,7 @@ components:
       - is_locked
       - item_type
       - line_total
+      - line_total_display
       - luggage_count
       - origin_destination
       - pax_count
@@ -4433,9 +4821,27 @@ components:
           type: string
           readOnly: true
           maxLength: 3
+        display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          readOnly: true
       required:
       - amount
       - currency
+      - display
     NullEnum:
       type: 'null'
     PatchedAccommodationWriteRequest:
@@ -4732,6 +5138,39 @@ components:
             $ref: '#/components/schemas/CancellationPolicyTierRequest'
         is_active:
           type: boolean
+    PatchedCorridorWriteRequest:
+      type: object
+      description: §12.4's fixed-price route, as §27.11's form submits it.
+      properties:
+        origin_destination:
+          type: string
+          minLength: 1
+        target_destination:
+          type: string
+          minLength: 1
+        vehicle_class:
+          type: string
+          minLength: 1
+        fixed_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        currency:
+          type: string
+          minLength: 1
+          maxLength: 3
+        is_bidirectional:
+          type: boolean
+        valid_from:
+          type: string
+          format: date
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_active:
+          type: boolean
     PatchedCountryWriteRequest:
       type: object
       description: |-
@@ -4928,6 +5367,87 @@ components:
           type: integer
         is_active:
           type: boolean
+    PatchedTariffWriteRequest:
+      type: object
+      description: |-
+        §12.4's metered fallback.
+
+        `region` and `country` are both optional and exactly one is required, which
+        the service enforces rather than this: the rule is "a tariff answers on one
+        rung", the database says so with a CHECK, and a third statement of it here
+        would be a third place to disagree.
+
+        `waiting_rate_per_minute` is accepted and stored and read by nothing —
+        §12.4 applies it "after free waiting allowance" and defines no such
+        allowance. `apps/transport/tests/test_tariff_model.py` asserts the silence.
+      properties:
+        scope:
+          $ref: '#/components/schemas/ScopeEnum'
+        region:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        country:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        vehicle_class:
+          type: string
+          minLength: 1
+        base_fare:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        per_km_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,4})?$
+        per_minute_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,4})?$
+        minimum_fare:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        night_surcharge_pct:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+        night_from:
+          type:
+          - string
+          - 'null'
+          format: time
+        night_to:
+          type:
+          - string
+          - 'null'
+          format: time
+        airport_surcharge:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        waiting_rate_per_minute:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,4})?$
+        currency:
+          type: string
+          minLength: 1
+          maxLength: 3
+        valid_from:
+          type: string
+          format: date
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_active:
+          type: boolean
     PatchedUpdateItemRequest:
       type: object
       description: '`PATCH /trips/{id}/items/{item_id}` — "modify an unlocked item".'
@@ -4948,6 +5468,23 @@ components:
         ends_at:
           type: string
           format: date-time
+    PatchedUpdateProfileRequest:
+      type: object
+      description: |-
+        `PATCH /me` — §24.28's settings screen.
+
+        Two fields, because they are the two §24.28 lists that are the tourist's
+        own presentation preferences rather than their identity: "Language,
+        presentment currency". A name change is a different operation with
+        different consequences and is not offered here.
+      properties:
+        locale:
+          type: string
+          minLength: 1
+          maxLength: 10
+        preferred_currency:
+          type: string
+          minLength: 1
     PatchedUpdateTripRequest:
       type: object
       description: |-
@@ -4985,6 +5522,52 @@ components:
         * `IOS` - IOS
         * `ANDROID` - ANDROID
         * `WEB` - WEB
+    PreviewOption:
+      type: object
+      description: |-
+        One class, its fare, and **which rung answered**.
+
+        `step` is what makes this a diagnostic rather than a second price display.
+        A fare that fell through to the country default when a corridor was
+        expected is a misconfiguration indistinguishable from a correct answer
+        without it — which is the whole reason §27.11 asks for the tool.
+      properties:
+        vehicle_class:
+          type: string
+          readOnly: true
+        seats:
+          type: integer
+          readOnly: true
+        luggage:
+          type: integer
+          readOnly: true
+        price:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        breakdown:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        matched_kind:
+          type: string
+          readOnly: true
+        matched_rule:
+          type: string
+          format: uuid
+          readOnly: true
+        matched_step:
+          type: integer
+          readOnly: true
+      required:
+      - breakdown
+      - luggage
+      - matched_kind
+      - matched_rule
+      - matched_step
+      - price
+      - seats
+      - vehicle_class
     Principal:
       type: object
       properties:
@@ -5116,6 +5699,62 @@ components:
       - tax_amount
       - total_amount
       - trip_public_id
+    QuotePreviewRequest:
+      type: object
+      description: |-
+        §27.11's "quote-preview tool for any origin-destination-class
+        combination".
+
+        `pickup_at` is not in §27.11's one-line description and is accepted anyway.
+        §12.4's night surcharge is evaluated against "pickup_at local time", so a
+        preview with no instant could not show an administrator the surcharged
+        price at all — which is the price most worth previewing, because it is the
+        one a tourist queries.
+      properties:
+        origin_destination:
+          type: string
+          minLength: 1
+        target_destination:
+          type: string
+          minLength: 1
+        pax:
+          type: integer
+          minimum: 1
+          default: 2
+        luggage:
+          type: integer
+          minimum: 0
+          default: 2
+        pickup_at:
+          type: string
+          format: date-time
+        distance_m:
+          type: integer
+          minimum: 0
+        travel_seconds:
+          type: integer
+          minimum: 0
+      required:
+      - origin_destination
+      - target_destination
+    QuotePreviewResult:
+      type: object
+      properties:
+        origin:
+          type: string
+          readOnly: true
+        target:
+          type: string
+          readOnly: true
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreviewOption'
+          readOnly: true
+      required:
+      - options
+      - origin
+      - target
     RefreshRequest:
       type: object
       description: |-
@@ -5297,6 +5936,14 @@ components:
       required:
       - new_password
       - token
+    ScopeEnum:
+      enum:
+      - REGION
+      - COUNTRY
+      type: string
+      description: |-
+        * `REGION` - REGION
+        * `COUNTRY` - COUNTRY
     SearchHit:
       type: object
       description: |-
@@ -5445,6 +6092,192 @@ components:
       - kind
       - rule
       - step
+    TariffRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        scope:
+          type: string
+          readOnly: true
+        region:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        country:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        vehicle_class:
+          type: string
+          readOnly: true
+        base_fare:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        per_km_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,4})?$
+          readOnly: true
+        per_minute_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,4})?$
+          readOnly: true
+        minimum_fare:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        night_surcharge_pct:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          readOnly: true
+        night_from:
+          type:
+          - string
+          - 'null'
+          format: time
+          readOnly: true
+        night_to:
+          type:
+          - string
+          - 'null'
+          format: time
+          readOnly: true
+        airport_surcharge:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        waiting_rate_per_minute:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,4})?$
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        valid_from:
+          type: string
+          format: date
+          readOnly: true
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+      required:
+      - airport_surcharge
+      - base_fare
+      - country
+      - currency
+      - id
+      - is_active
+      - minimum_fare
+      - night_from
+      - night_surcharge_pct
+      - night_to
+      - per_km_rate
+      - per_minute_rate
+      - region
+      - scope
+      - valid_from
+      - valid_to
+      - vehicle_class
+      - waiting_rate_per_minute
+    TariffWriteRequest:
+      type: object
+      description: |-
+        §12.4's metered fallback.
+
+        `region` and `country` are both optional and exactly one is required, which
+        the service enforces rather than this: the rule is "a tariff answers on one
+        rung", the database says so with a CHECK, and a third statement of it here
+        would be a third place to disagree.
+
+        `waiting_rate_per_minute` is accepted and stored and read by nothing —
+        §12.4 applies it "after free waiting allowance" and defines no such
+        allowance. `apps/transport/tests/test_tariff_model.py` asserts the silence.
+      properties:
+        scope:
+          $ref: '#/components/schemas/ScopeEnum'
+        region:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        country:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+        vehicle_class:
+          type: string
+          minLength: 1
+        base_fare:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        per_km_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,4})?$
+        per_minute_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,4})?$
+        minimum_fare:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        night_surcharge_pct:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+        night_from:
+          type:
+          - string
+          - 'null'
+          format: time
+        night_to:
+          type:
+          - string
+          - 'null'
+          format: time
+        airport_surcharge:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        waiting_rate_per_minute:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,4})?$
+        currency:
+          type: string
+          minLength: 1
+          maxLength: 3
+        valid_from:
+          type: string
+          format: date
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_active:
+          type: boolean
     TouristProfile:
       type: object
       properties:
@@ -5636,6 +6469,29 @@ components:
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
+        total_amount_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
         subtotal_amount:
           type: string
           format: decimal
@@ -5650,6 +6506,75 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        subtotal_amount_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
+        fee_amount_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
+        tax_amount_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
           readOnly: true
         priced_at:
           type:
@@ -5697,6 +6622,7 @@ components:
       - destination
       - end_date
       - fee_amount
+      - fee_amount_display
       - flights
       - infants
       - itinerary
@@ -5707,9 +6633,12 @@ components:
       - start_date
       - status
       - subtotal_amount
+      - subtotal_amount_display
       - tax_amount
+      - tax_amount_display
       - title
       - total_amount
+      - total_amount_display
       - version
     TripFlight:
       type: object
@@ -5806,6 +6735,29 @@ components:
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
+        total_amount_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
       required:
       - adults
       - children
@@ -5819,6 +6771,7 @@ components:
       - status
       - title
       - total_amount
+      - total_amount_display
     User:
       type: object
       description: '§9.1: `public_id` only. Never `id`, never a credential.'

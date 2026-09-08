@@ -200,6 +200,18 @@ NO_ROWS_EXPOSED = {
     # path for an ownership predicate to be wrong about. The same shape as
     # `identity:device-list`.
     "v1:trip:trip-list": "Lists by principal and creates; there is no id to supply.",
+    # §27.11's tariff console. A POST to a collection resolves no row, so there
+    # is nothing for an ownership predicate to filter — the same shape as the
+    # catalogue console's create endpoints, and listed one per route for the
+    # same reason.
+    "v1:administration:admin-corridor-create": "Creates a row; looks none up.",
+    "v1:administration:admin-tariff-create": "Creates a row; looks none up.",
+    # The preview is a read that resolves two destinations by slug and returns
+    # a price. No row of its own is fetched, nothing is written, and the
+    # destinations it names are public catalogue rows anybody may already read
+    # through §9.3.2 — what is administrator-only is the *fare*, which the role
+    # check gates.
+    "v1:administration:admin-quote-preview": "Prices a route; resolves no protected row.",
 }
 
 #: Views that *do* resolve a caller-supplied identifier, but filter by
@@ -309,6 +321,28 @@ SCOPED_BY_A_BODY_IDENTIFIER = {
 #: narrower scope — which is exactly what Phase 11 does — the build fails here
 #: and names the route that has to grow a filter.
 GLOBAL_BY_ROLE: dict[str, tuple[Permission, Resource, str]] = {
+    # §27.11's corridor and tariff amendments. §12.4 makes these
+    # administrator-owned outright — "transfer prices are not provider-quoted
+    # per booking; they come from an administrator-managed tariff table" — and
+    # §26.4 states the provider half: "transfer pricing is platform-managed and
+    # is displayed read-only". So unlike ACTIVITY, these never acquire a
+    # provider rule, and the guard below re-derives that from `OWNERSHIP` on
+    # every run rather than trusting this sentence.
+    "v1:administration:admin-corridor-detail": (
+        Permission.CATALOGUE_MANAGE,
+        Resource.TRANSFER_CORRIDOR,
+        "§27.11's tariff console. Every role that may reach it holds "
+        "`Scope.GLOBAL` over `TRANSFER_CORRIDOR`, because §12.4 gives a corridor "
+        "no owner but the platform. A `ScopedQuerysetMixin` here would match "
+        "every row while reporting a control to this matrix.",
+    ),
+    "v1:administration:admin-tariff-detail": (
+        Permission.CATALOGUE_MANAGE,
+        Resource.TRANSFER_TARIFF,
+        "§27.11's tariff console, and the same reasoning as the corridor above: "
+        "§26.4 makes transfer pricing platform-managed and read-only to a "
+        "provider, so there is no principal a filter could scope by.",
+    ),
     "v1:inventory:admin-activity-departures": (
         Permission.CATALOGUE_MANAGE,
         Resource.ACTIVITY_DEPARTURE,

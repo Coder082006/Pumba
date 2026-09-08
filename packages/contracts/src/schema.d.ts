@@ -942,6 +942,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/transport/corridors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a transfer corridor
+         * @description §5.2: `CATALOGUE_ADMIN` manages "countries, regions, destinations,
+         *     attractions, activities, **tariffs**, policies", globally.
+         */
+        post: operations["admin_transport_corridors_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/transport/corridors/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Amend a transfer corridor
+         * @description A partial update — including the one that retires a corridor.
+         *
+         *     §27.11 has no separate deactivate action and this needs none:
+         *     withdrawing a price is `is_active` moving in this one call, which means
+         *     there is no second path that could record the change differently or not
+         *     at all.
+         */
+        patch: operations["admin_transport_corridors_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/transport/quote-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview what a route would be quoted at, and why
+         * @description Runs the tourist's own SRS 12.4 resolution ladder and reports which rule answered and on which rung. A fare that fell through to the country default when a corridor was expected is a misconfiguration indistinguishable from a correct answer without that information.
+         */
+        post: operations["admin_transport_quote_preview_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/transport/tariffs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a metered transfer tariff
+         * @description §5.2: `CATALOGUE_ADMIN` manages "countries, regions, destinations,
+         *     attractions, activities, **tariffs**, policies", globally.
+         */
+        post: operations["admin_transport_tariffs_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/transport/tariffs/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Amend a metered transfer tariff
+         * @description §5.2: `CATALOGUE_ADMIN` manages "countries, regions, destinations,
+         *     attractions, activities, **tariffs**, policies", globally.
+         */
+        patch: operations["admin_transport_tariffs_partial_update"];
+        trace?: never;
+    };
     "/api/v1/attractions": {
         parameters: {
             query?: never;
@@ -1330,7 +1438,17 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Change your language or the currency prices are shown in
+         * @description §24.28: "Language, presentment currency".
+         *
+         *     The currency here is what prices are *shown* in — §9.1's `X-Currency`
+         *     applies per request, this is the standing preference behind it. It is
+         *     never what the tourist is charged in: that is `trip.currency`, taken
+         *     from the destination and locked at first pricing (BR-016), and §18.4
+         *     gives it an entirely separate mechanism (ADR 0024).
+         */
+        patch: operations["me_partial_update"];
         trace?: never;
     };
     "/api/v1/me/devices": {
@@ -1683,9 +1801,18 @@ export interface components {
         };
         /** @description §16.1.
          *
-         *     No converted price appears here. §18.4 puts conversion at quote time, and
-         *     a display conversion is an `IndicativeAmount` applied over this — which is
-         *     a different thing with a different label and a different half-life. */
+         *     **A converted price appears here now, and the distinction it used to be
+         *     protected by is kept in the type instead.** This docstring previously said
+         *     no conversion belonged on a listing, because §18.4 puts the *charged*
+         *     conversion at quote time. That is still true and is still a different
+         *     thing: `price_per_person` is what a provider charges, and
+         *     `price_per_person_display` is an `IndicativeAmount` — a figure that refuses
+         *     to take part in arithmetic by construction, carrying the rate, its source
+         *     and its timestamp so it cannot be mistaken for the first (ADR 0024).
+         *
+         *     Excluding it entirely was the wrong protection. §24.11 wants a tourist to
+         *     compare a price "against prices at home", and a browser that shows only
+         *     TZS to somebody arriving from Frankfurt protects them from nothing. */
         Activity: {
             /** Format: uuid */
             public_id: string;
@@ -1704,6 +1831,22 @@ export interface components {
             /** Format: decimal */
             price_per_group: string | null;
             currency: string;
+            readonly price_per_person_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
+            readonly price_per_group_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
             min_pax: number;
             max_pax: number;
             min_age: number | null;
@@ -1855,6 +1998,14 @@ export interface components {
             /** Format: decimal */
             entrance_fee: string | null;
             fee_currency: string | null;
+            readonly entrance_fee_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
             visit_minutes: number | null;
             tags: string[];
             accessibility_notes: string;
@@ -1959,10 +2110,42 @@ export interface components {
             readonly vehicle_class: string;
             readonly is_bidirectional: boolean;
         };
+        /** @description What the console gets back. Ids are `public_id`s (§7.2). */
+        CorridorRead: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly origin_destination: string;
+            readonly target_destination: string;
+            readonly vehicle_class: string;
+            /** Format: decimal */
+            readonly fixed_price: string;
+            readonly currency: string;
+            readonly is_bidirectional: boolean;
+            /** Format: date */
+            readonly valid_from: string;
+            /** Format: date */
+            readonly valid_to: string | null;
+            readonly is_active: boolean;
+        };
         /** @description A corridor endpoint, named rather than numbered (§7.2). */
         CorridorSide: {
             readonly slug: string;
             readonly name: string;
+        };
+        /** @description §12.4's fixed-price route, as §27.11's form submits it. */
+        CorridorWriteRequest: {
+            origin_destination?: string;
+            target_destination?: string;
+            vehicle_class?: string;
+            /** Format: decimal */
+            fixed_price?: string;
+            currency?: string;
+            is_bidirectional?: boolean;
+            /** Format: date */
+            valid_from?: string;
+            /** Format: date */
+            valid_to?: string | null;
+            is_active?: boolean;
         };
         Country: {
             /** Format: uuid */
@@ -2283,6 +2466,14 @@ export interface components {
             readonly pax_count: number | null;
             /** Format: decimal */
             readonly unit_price: string | null;
+            readonly line_total_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
             /** Format: decimal */
             readonly line_total: string | null;
             readonly currency: string | null;
@@ -2410,6 +2601,14 @@ export interface components {
             /** Format: decimal */
             readonly amount: string;
             readonly currency: string;
+            readonly display: {
+                amount?: string;
+                currency?: string;
+                rate?: string;
+                /** Format: date-time */
+                as_of?: string;
+                source?: string;
+            } | null;
         };
         NullEnum: null;
         /** @description §7.5.7 as amended — ADR 0013.
@@ -2542,6 +2741,21 @@ export interface components {
             tiers?: components["schemas"]["CancellationPolicyTierRequest"][];
             is_active?: boolean;
         };
+        /** @description §12.4's fixed-price route, as §27.11's form submits it. */
+        PatchedCorridorWriteRequest: {
+            origin_destination?: string;
+            target_destination?: string;
+            vehicle_class?: string;
+            /** Format: decimal */
+            fixed_price?: string;
+            currency?: string;
+            is_bidirectional?: boolean;
+            /** Format: date */
+            valid_from?: string;
+            /** Format: date */
+            valid_to?: string | null;
+            is_active?: boolean;
+        };
         /** @description §7.3's `country`.
          *
          *     `min_latitude`, `min_longitude`, `max_latitude` and `max_longitude` are the
@@ -2635,6 +2849,46 @@ export interface components {
             sort_order?: number;
             is_active?: boolean;
         };
+        /** @description §12.4's metered fallback.
+         *
+         *     `region` and `country` are both optional and exactly one is required, which
+         *     the service enforces rather than this: the rule is "a tariff answers on one
+         *     rung", the database says so with a CHECK, and a third statement of it here
+         *     would be a third place to disagree.
+         *
+         *     `waiting_rate_per_minute` is accepted and stored and read by nothing —
+         *     §12.4 applies it "after free waiting allowance" and defines no such
+         *     allowance. `apps/transport/tests/test_tariff_model.py` asserts the silence. */
+        PatchedTariffWriteRequest: {
+            scope?: components["schemas"]["ScopeEnum"];
+            region?: string | null;
+            country?: string | null;
+            vehicle_class?: string;
+            /** Format: decimal */
+            base_fare?: string;
+            /** Format: decimal */
+            per_km_rate?: string;
+            /** Format: decimal */
+            per_minute_rate?: string;
+            /** Format: decimal */
+            minimum_fare?: string;
+            /** Format: decimal */
+            night_surcharge_pct?: string;
+            /** Format: time */
+            night_from?: string | null;
+            /** Format: time */
+            night_to?: string | null;
+            /** Format: decimal */
+            airport_surcharge?: string;
+            /** Format: decimal */
+            waiting_rate_per_minute?: string;
+            currency?: string;
+            /** Format: date */
+            valid_from?: string;
+            /** Format: date */
+            valid_to?: string | null;
+            is_active?: boolean;
+        };
         /** @description `PATCH /trips/{id}/items/{item_id}` — "modify an unlocked item". */
         PatchedUpdateItemRequest: {
             day_number?: number;
@@ -2644,6 +2898,16 @@ export interface components {
             starts_at?: string;
             /** Format: date-time */
             ends_at?: string;
+        };
+        /** @description `PATCH /me` — §24.28's settings screen.
+         *
+         *     Two fields, because they are the two §24.28 lists that are the tourist's
+         *     own presentation preferences rather than their identity: "Language,
+         *     presentment currency". A name change is a different operation with
+         *     different consequences and is not offered here. */
+        PatchedUpdateProfileRequest: {
+            locale?: string;
+            preferred_currency?: string;
         };
         /** @description `PATCH /trips/{id}`. Every field optional — a PATCH that required them
          *     all would be a PUT wearing the wrong verb. */
@@ -2664,6 +2928,27 @@ export interface components {
          * @enum {string}
          */
         PlatformEnum: "IOS" | "ANDROID" | "WEB";
+        /** @description One class, its fare, and **which rung answered**.
+         *
+         *     `step` is what makes this a diagnostic rather than a second price display.
+         *     A fare that fell through to the country default when a corridor was
+         *     expected is a misconfiguration indistinguishable from a correct answer
+         *     without it — which is the whole reason §27.11 asks for the tool. */
+        PreviewOption: {
+            readonly vehicle_class: string;
+            readonly seats: number;
+            readonly luggage: number;
+            readonly price: {
+                [key: string]: unknown;
+            };
+            readonly breakdown: {
+                [key: string]: unknown;
+            };
+            readonly matched_kind: string;
+            /** Format: uuid */
+            readonly matched_rule: string;
+            readonly matched_step: number;
+        };
         Principal: {
             /** Format: uuid */
             readonly public_id: string;
@@ -2717,6 +3002,31 @@ export interface components {
             readonly fee_amount: string;
             readonly tax_amount: string;
             readonly total_amount: string;
+        };
+        /** @description §27.11's "quote-preview tool for any origin-destination-class
+         *     combination".
+         *
+         *     `pickup_at` is not in §27.11's one-line description and is accepted anyway.
+         *     §12.4's night surcharge is evaluated against "pickup_at local time", so a
+         *     preview with no instant could not show an administrator the surcharged
+         *     price at all — which is the price most worth previewing, because it is the
+         *     one a tourist queries. */
+        QuotePreviewRequest: {
+            origin_destination: string;
+            target_destination: string;
+            /** @default 2 */
+            pax: number;
+            /** @default 2 */
+            luggage: number;
+            /** Format: date-time */
+            pickup_at?: string;
+            distance_m?: number;
+            travel_seconds?: number;
+        };
+        QuotePreviewResult: {
+            readonly origin: string;
+            readonly target: string;
+            readonly options: components["schemas"]["PreviewOption"][];
         };
         /** @description Rejects unknown fields — SRS §30.6.
          *
@@ -2810,6 +3120,12 @@ export interface components {
             token: string;
             new_password: string;
         };
+        /**
+         * @description * `REGION` - REGION
+         *     * `COUNTRY` - COUNTRY
+         * @enum {string}
+         */
+        ScopeEnum: "REGION" | "COUNTRY";
         /** @description One result row. Thin on purpose — §24.7 renders a kind, a name and a
          *     link, and a hit carrying the whole entity would fan out four
          *     `select_related` trees to draw a line of text. */
@@ -2875,6 +3191,78 @@ export interface components {
             /** Format: uuid */
             readonly rule: string;
             readonly step: number;
+        };
+        TariffRead: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly scope: string;
+            readonly region: string | null;
+            readonly country: string | null;
+            readonly vehicle_class: string;
+            /** Format: decimal */
+            readonly base_fare: string;
+            /** Format: decimal */
+            readonly per_km_rate: string;
+            /** Format: decimal */
+            readonly per_minute_rate: string;
+            /** Format: decimal */
+            readonly minimum_fare: string;
+            /** Format: decimal */
+            readonly night_surcharge_pct: string;
+            /** Format: time */
+            readonly night_from: string | null;
+            /** Format: time */
+            readonly night_to: string | null;
+            /** Format: decimal */
+            readonly airport_surcharge: string;
+            /** Format: decimal */
+            readonly waiting_rate_per_minute: string;
+            readonly currency: string;
+            /** Format: date */
+            readonly valid_from: string;
+            /** Format: date */
+            readonly valid_to: string | null;
+            readonly is_active: boolean;
+        };
+        /** @description §12.4's metered fallback.
+         *
+         *     `region` and `country` are both optional and exactly one is required, which
+         *     the service enforces rather than this: the rule is "a tariff answers on one
+         *     rung", the database says so with a CHECK, and a third statement of it here
+         *     would be a third place to disagree.
+         *
+         *     `waiting_rate_per_minute` is accepted and stored and read by nothing —
+         *     §12.4 applies it "after free waiting allowance" and defines no such
+         *     allowance. `apps/transport/tests/test_tariff_model.py` asserts the silence. */
+        TariffWriteRequest: {
+            scope?: components["schemas"]["ScopeEnum"];
+            region?: string | null;
+            country?: string | null;
+            vehicle_class?: string;
+            /** Format: decimal */
+            base_fare?: string;
+            /** Format: decimal */
+            per_km_rate?: string;
+            /** Format: decimal */
+            per_minute_rate?: string;
+            /** Format: decimal */
+            minimum_fare?: string;
+            /** Format: decimal */
+            night_surcharge_pct?: string;
+            /** Format: time */
+            night_from?: string | null;
+            /** Format: time */
+            night_to?: string | null;
+            /** Format: decimal */
+            airport_surcharge?: string;
+            /** Format: decimal */
+            waiting_rate_per_minute?: string;
+            currency?: string;
+            /** Format: date */
+            valid_from?: string;
+            /** Format: date */
+            valid_to?: string | null;
+            is_active?: boolean;
         };
         TouristProfile: {
             /** Format: uuid */
@@ -2955,12 +3343,44 @@ export interface components {
             readonly currency: string;
             /** Format: decimal */
             readonly total_amount: string;
+            readonly total_amount_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
             /** Format: decimal */
             readonly subtotal_amount: string;
             /** Format: decimal */
             readonly fee_amount: string;
             /** Format: decimal */
             readonly tax_amount: string;
+            readonly subtotal_amount_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
+            readonly fee_amount_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
+            readonly tax_amount_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
             /** Format: date-time */
             readonly priced_at: string | null;
             /** Format: date-time */
@@ -3004,6 +3424,14 @@ export interface components {
             readonly currency: string;
             /** Format: decimal */
             readonly total_amount: string;
+            readonly total_amount_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
         };
         /** @description §9.1: `public_id` only. Never `id`, never a credential. */
         User: {
@@ -4162,6 +4590,135 @@ export interface operations {
             };
         };
     };
+    admin_transport_corridors_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CorridorWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CorridorWriteRequest"];
+                "multipart/form-data": components["schemas"]["CorridorWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorridorRead"];
+                };
+            };
+        };
+    };
+    admin_transport_corridors_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedCorridorWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedCorridorWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedCorridorWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorridorRead"];
+                };
+            };
+        };
+    };
+    admin_transport_quote_preview_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuotePreviewRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["QuotePreviewRequest"];
+                "multipart/form-data": components["schemas"]["QuotePreviewRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuotePreviewResult"];
+                };
+            };
+        };
+    };
+    admin_transport_tariffs_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TariffWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TariffWriteRequest"];
+                "multipart/form-data": components["schemas"]["TariffWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TariffRead"];
+                };
+            };
+        };
+    };
+    admin_transport_tariffs_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedTariffWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedTariffWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedTariffWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TariffRead"];
+                };
+            };
+        };
+    };
     attractions_list: {
         parameters: {
             query?: {
@@ -4610,6 +5167,31 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+        };
+    };
+    me_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedUpdateProfileRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedUpdateProfileRequest"];
+                "multipart/form-data": components["schemas"]["PatchedUpdateProfileRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {

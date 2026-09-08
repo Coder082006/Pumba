@@ -33,10 +33,12 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from datetime import date, time
+from decimal import Decimal
+from typing import Any, cast
 from uuid import UUID
 
-from apps.common.errors import ExternalServiceError, ValidationError
+from apps.common.errors import ExternalServiceError, NotFoundError, ValidationError
 from apps.transport import repositories as repo
 from apps.transport.domain import tariffs as domain
 from apps.transport.dto import (
@@ -62,6 +64,12 @@ __all__ = [
     "load_vehicle_class_seed",
     "load_tariff_seed",
     "load_corridor_seed",
+    "CorridorAdminDTO",
+    "TariffAdminDTO",
+    "create_corridor",
+    "update_corridor",
+    "create_tariff",
+    "update_tariff",
 ]
 
 
@@ -533,3 +541,136 @@ def default_option(quote: LegQuote) -> FareOption | None:
     if not quote.options:
         return None
     return min(quote.options, key=lambda option: option.price.amount)
+
+
+# -- §27.11's console -------------------------------------------------------
+#
+# The write half of the tariff console. `administration` calls these, having
+# already turned the names an administrator typed into ids (ADR 0023): a
+# corridor names two `catalogue` destinations and this module may not read one.
+#
+# **They return dictionaries, not rows.** §6.5 rule 5 keeps ORM instances
+# inside the module that owns them, and the reason bites here specifically:
+# `administration` renders these straight into a response, and a model instance
+# would put `id` — a sequential integer §7.2 keeps in the database — one
+# `getattr` away from the wire.
+
+
+@dataclass(frozen=True, slots=True)
+class CorridorAdminDTO:
+    """One corridor as the console reads it back. Ids are `public_id`s."""
+
+    public_id: UUID
+    origin_destination_id: int
+    target_destination_id: int
+    vehicle_class: str
+    fixed_price: Decimal
+    currency: str
+    is_bidirectional: bool
+    valid_from: date
+    valid_to: date | None
+    is_active: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TariffAdminDTO:
+    public_id: UUID
+    scope: str
+    region_id: int | None
+    country_id: int | None
+    vehicle_class: str
+    base_fare: Decimal
+    per_km_rate: Decimal
+    per_minute_rate: Decimal
+    minimum_fare: Decimal
+    night_surcharge_pct: Decimal
+    night_from: time | None
+    night_to: time | None
+    airport_surcharge: Decimal
+    waiting_rate_per_minute: Decimal
+    currency: str
+    valid_from: date
+    valid_to: date | None
+    is_active: bool
+
+
+def _corridor_admin_dto(row: TransferCorridor) -> CorridorAdminDTO:
+    return CorridorAdminDTO(
+        public_id=row.public_id,
+        origin_destination_id=row.origin_destination_id,
+        target_destination_id=row.target_destination_id,
+        vehicle_class=row.vehicle_class.code,
+        fixed_price=row.fixed_price,
+        currency=row.currency,
+        is_bidirectional=row.is_bidirectional,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        is_active=row.is_active,
+    )
+
+
+def _tariff_admin_dto(row: TransferTariff) -> TariffAdminDTO:
+    return TariffAdminDTO(
+        public_id=row.public_id,
+        scope=str(row.scope),
+        region_id=row.region_id,
+        country_id=row.country_id,
+        vehicle_class=row.vehicle_class.code,
+        base_fare=row.base_fare,
+        per_km_rate=row.per_km_rate,
+        per_minute_rate=row.per_minute_rate,
+        minimum_fare=row.minimum_fare,
+        night_surcharge_pct=row.night_surcharge_pct,
+        night_from=row.night_from,
+        night_to=row.night_to,
+        airport_surcharge=row.airport_surcharge,
+        waiting_rate_per_minute=row.waiting_rate_per_minute,
+        currency=row.currency,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        is_active=row.is_active,
+    )
+
+
+def _with_class(fields: dict[str, Any]) -> dict[str, Any]:
+    """Turn the class *code* an administrator chose into the row it names.
+
+    A code rather than a `public_id` because that is what §12.4's table is
+    written in and what a console form shows — and because a class is
+    reference data an administrator recognises by name, unlike a corridor.
+    """
+    resolved = dict(fields)
+    code = resolved.get("vehicle_class")
+    if isinstance(code, str):
+        resolved["vehicle_class"] = _class_for(code)
+    return resolved
+
+
+def create_corridor(**fields: Any) -> CorridorAdminDTO:
+    return _corridor_admin_dto(repo.create_corridor(**_with_class(fields)))
+
+
+def update_corridor(public_id: UUID, **fields: Any) -> CorridorAdminDTO:
+    # `all_objects` on a `SoftDeleteModel` is declared on the abstract base, so
+    # it types as that base rather than as this model. The cast states what the
+    # queryset already is; the alternative is a second manager declared on every
+    # concrete model for the type checker's benefit alone.
+    row = cast(
+        "TransferCorridor | None", TransferCorridor.all_objects.filter(public_id=public_id).first()
+    )
+    if row is None:
+        raise NotFoundError()
+    return _corridor_admin_dto(repo.update_corridor(row, **_with_class(fields)))
+
+
+def create_tariff(**fields: Any) -> TariffAdminDTO:
+    return _tariff_admin_dto(repo.create_tariff(**_with_class(fields)))
+
+
+def update_tariff(public_id: UUID, **fields: Any) -> TariffAdminDTO:
+    row = cast(
+        "TransferTariff | None", TransferTariff.all_objects.filter(public_id=public_id).first()
+    )
+    if row is None:
+        raise NotFoundError()
+    return _tariff_admin_dto(repo.update_tariff(row, **_with_class(fields)))

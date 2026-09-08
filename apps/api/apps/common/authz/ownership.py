@@ -82,6 +82,17 @@ class Resource(StrEnum):
     ACTIVITY_DEPARTURE = "ACTIVITY_DEPARTURE"
     MEDIA = "MEDIA"
 
+    # Phase 6 - transport (§27.11). Administrator-owned, and §12.4 says so
+    # outright: "transfer prices are not provider-quoted per booking; they come
+    # from an administrator-managed tariff table so that the tourist sees a
+    # consistent price and the platform controls margin". §26.4 states the
+    # provider half — "transfer pricing is platform-managed and is displayed
+    # read-only" — so these three never acquire a provider rule, which makes
+    # them unlike ACTIVITY and unlike ACTIVITY_DEPARTURE.
+    VEHICLE_CLASS = "VEHICLE_CLASS"
+    TRANSFER_CORRIDOR = "TRANSFER_CORRIDOR"
+    TRANSFER_TARIFF = "TRANSFER_TARIFF"
+
 
 class Scope(StrEnum):
     OWNED = "OWNED"
@@ -272,6 +283,15 @@ OWNERSHIP: Mapping[tuple[Role, Resource], OwnershipRule] = MappingProxyType(
         # `media` row is whatever `(owner_type, owner_id)` points at.
         # Administered until Phase 11 gives the portal a resolved rule.
         **_administered(Resource.MEDIA),
+        # --- transport (§27.11) ------------------------------------------------
+        # Administered and never provider-listed, unlike every other priced
+        # thing in the catalogue. §12.4 puts these in an administrator's hands
+        # on purpose: a corridor is what the *platform* charges to drive a
+        # route, and a provider quoting its own would be the surge pricing §3.5
+        # forbids arriving through the back door.
+        **_administered(Resource.VEHICLE_CLASS),
+        **_administered(Resource.TRANSFER_CORRIDOR),
+        **_administered(Resource.TRANSFER_TARIFF),
     }
 )
 
