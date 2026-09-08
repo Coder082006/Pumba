@@ -32,6 +32,7 @@ again whenever somebody corrects a coordinate.
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from apps.catalogue import services as catalogue
+from apps.transport import services as transport
 
 __all__ = ["Command", "find_seed_root", "DEFAULT_ROOT"]
 
@@ -94,7 +96,8 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        root: Path = options["root"] / "catalogue"
+        seeds: Path = options["root"]
+        root: Path = seeds / "catalogue"
         if not root.is_dir():
             raise CommandError(f"no seed directory at {root}")
 
@@ -103,7 +106,12 @@ class Command(BaseCommand):
         # it looks loaded.
         try:
             with transaction.atomic():
-                results = [self._load(root, stem, key) for stem, key in catalogue.SEED_FILES]
+                # Typed as the two loaders' union rather than one of them:
+                # both report the same three fields and neither may import the
+                # other's class, which is the §6.4 boundary showing through.
+                results: list[catalogue.SeedResult | transport.SeedResult] = [
+                    self._load(root, stem, key) for stem, key in catalogue.SEED_FILES
+                ]
                 # Media last and through its own loader: it is not a
                 # `CatalogueEntity` (see `load_media_seed` for why), and every
                 # row names an owner that the files above have to have created.
@@ -112,6 +120,10 @@ class Command(BaseCommand):
                 # not a `CatalogueEntity` (see `load_schedule_seed` for why).
                 results.append(self._load_schedules(root))
                 results.append(self._load_media(root))
+                # Transport last: a corridor names two destinations and a
+                # tariff names a country, so every row it resolves has to have
+                # been written by the files above it.
+                results.extend(self._load_transport(seeds))
                 if options["dry_run"]:
                     self.stdout.write(self.style.WARNING("dry run — rolling back"))
                     transaction.set_rollback(True)
@@ -145,6 +157,75 @@ class Command(BaseCommand):
         if not isinstance(rows, list):
             raise CommandError(f"{path} must hold a JSON array")
         return catalogue.load_media_seed(rows)
+
+    # -- transport ----------------------------------------------------------
+    #
+    # Appendix C's corridors and tariffs. This is the second module the loader
+    # writes, and the first time its "later phases add transfer corridors,
+    # tariffs" note comes true.
+    #
+    # **The catalogue references are resolved here.** A corridor row names
+    # `"nungwi"` and a tariff row names `"TZ"`, because a seed file is written
+    # by a person; the tables store ids (ADR 0012), and §6.4 gives `transport`
+    # no way to turn one into the other. `administration` has "all (read via
+    # interfaces)", so it does the resolving and hands `transport` integers —
+    # the same division ADR 0023 makes for the quote endpoint.
+
+    def _load_transport(self, root: Path) -> list[transport.SeedResult]:
+        directory = root / "transport"
+        if not directory.is_dir():
+            # Optional in the way media is. A checkout without it has a
+            # catalogue that plans but cannot price a transfer, which is a
+            # legitimate state and exactly what Phase 5 shipped.
+            return []
+
+        classes = transport.load_vehicle_class_seed(
+            self._rows(directory / "01-vehicle-classes.json")
+        )
+        tariffs = transport.load_tariff_seed(
+            [self._scoped(row) for row in self._rows(directory / "02-transfer-tariffs.json")]
+        )
+        corridors = transport.load_corridor_seed(
+            [self._routed(row) for row in self._rows(directory / "03-transfer-corridors.json")]
+        )
+        return [classes, tariffs, corridors]
+
+    def _rows(self, path: Path) -> list[dict[str, Any]]:
+        if not path.is_file():
+            raise CommandError(f"missing seed file {path}")
+        rows = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(rows, list):
+            raise CommandError(f"{path} must hold a JSON array")
+        return rows
+
+    def _scoped(self, row: dict[str, Any]) -> dict[str, Any]:
+        """A tariff row's `region` or `country` key, resolved to an id."""
+        resolved = dict(row)
+        for kind in ("region", "country"):
+            key = resolved.pop(kind, None)
+            if key is None:
+                continue
+            found = catalogue.resolve_scope_ref(kind, key)
+            if found is None:
+                raise CommandError(
+                    f"tariff names {kind} {key!r}, which the catalogue has no row for"
+                )
+            resolved[f"{kind}_id"] = found
+        return resolved
+
+    def _routed(self, row: dict[str, Any]) -> dict[str, Any]:
+        """A corridor row's two destination slugs, resolved to ids."""
+        resolved = dict(row)
+        for end in ("origin", "target"):
+            slug = resolved.pop(f"{end}_destination")
+            ref = catalogue.resolve_planning_ref(slug, today=date.today())  # noqa: DTZ011
+            if ref is None:
+                raise CommandError(
+                    f"corridor names destination {slug!r}, which the catalogue has no "
+                    "live row for. Corridors load after 04-destinations.json."
+                )
+            resolved[f"{end}_destination_id"] = ref.storage_id
+        return resolved
 
     def _load(self, root: Path, stem: str, entity_key: str) -> catalogue.SeedResult:
         path = root / f"{stem}.json"

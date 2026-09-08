@@ -97,6 +97,7 @@ __all__ = [
     "place_facts",
     "TransferPlace",
     "transfer_places",
+    "resolve_scope_ref",
     "activity_facts",
     "attraction_facts",
     "opening_status",
@@ -1348,6 +1349,32 @@ def _transfer_place(row: Any) -> TransferPlace:
             lon=Decimal(str(round(point.x, COORDINATE_PRECISION))),
         ),
     )
+
+
+def resolve_scope_ref(kind: str, natural_key: str) -> int | None:
+    """A country or a region, by the key a human writes — SRS §12.4 steps 3-4.
+
+    §12.4's metered fallback is scoped to a region, and below that to the
+    country default. Both are `catalogue` rows and `transport` may read
+    neither (§6.4), so a tariff row names `"TZ"` or `"zanzibar-north"` and
+    somebody allowed to look — the seed loader, the §27.11 console — turns it
+    into the id the tariff table stores (ADR 0012).
+
+    Deliberately narrow. It resolves two tables by their natural key and
+    returns an integer, which is the whole of what a tariff needs; the
+    alternative was a `PlaceFacts`-shaped DTO carrying a name and a coordinate
+    that no caller would read.
+
+    `None` rather than an exception, so the caller chooses between a 404 and a
+    field-level validation error — the same contract as `resolve_listing_ref`.
+    """
+    if kind == "country":
+        row = Country.objects.filter(iso_code=natural_key.upper()).only("id").first()
+    elif kind == "region":
+        row = Region.objects.filter(slug=natural_key).only("id").first()
+    else:
+        raise ValidationError(f"{kind!r} is not a tariff scope; expected 'country' or 'region'.")
+    return None if row is None else int(row.id)
 
 
 def activity_facts(ids: Sequence[int]) -> dict[int, ActivityFacts]:

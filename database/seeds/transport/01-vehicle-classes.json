@@ -1,0 +1,42 @@
+[
+  {
+    "code": "STANDARD",
+    "name": "Standard",
+    "description": "A saloon car for a couple or a short hop, with room for three large bags.",
+    "seats": 4,
+    "luggage_capacity": 3,
+    "has_air_conditioning": false,
+    "display_order": 1,
+    "is_active": true
+  },
+  {
+    "code": "COMFORT",
+    "name": "Comfort",
+    "description": "The same capacity as Standard in a higher-specification, air-conditioned vehicle.",
+    "seats": 4,
+    "luggage_capacity": 3,
+    "has_air_conditioning": true,
+    "display_order": 2,
+    "is_active": true
+  },
+  {
+    "code": "VAN",
+    "name": "Van",
+    "description": "Seven seats and six large bags — families and long airport runs.",
+    "seats": 7,
+    "luggage_capacity": 6,
+    "has_air_conditioning": true,
+    "display_order": 3,
+    "is_active": true
+  },
+  {
+    "code": "MINIBUS",
+    "name": "Minibus",
+    "description": "Fourteen seats for groups and multi-family parties.",
+    "seats": 14,
+    "luggage_capacity": 12,
+    "has_air_conditioning": true,
+    "display_order": 4,
+    "is_active": true
+  }
+]

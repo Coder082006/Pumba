@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from apps.common.errors import ExternalServiceError, ValidationError
@@ -55,6 +57,11 @@ __all__ = [
     "vehicle_classes",
     "corridors",
     "preview",
+    "default_option",
+    "SeedResult",
+    "load_vehicle_class_seed",
+    "load_tariff_seed",
+    "load_corridor_seed",
 ]
 
 
@@ -370,3 +377,159 @@ def today_in(zone: dt.tzinfo) -> dt.date:
     evening in one of them.
     """
     return dt.datetime.now(tz=zone).date()
+
+
+# -- the seed ---------------------------------------------------------------
+#
+# §12.4's tables are "administrator-managed", and Appendix C ships a starting
+# set. The rows arrive with every `catalogue` reference **already resolved to
+# an id** — `administration` does that, because it is allowed to look and this
+# module is not (§6.4, ADR 0023). What is left here is what a row means.
+
+
+@dataclass(frozen=True, slots=True)
+class SeedResult:
+    """What one file did. Reported per entity so a re-run is legible.
+
+    The same shape as `catalogue.services.SeedResult` and not the same class:
+    §6.4 gives `transport -> location, provider`, so importing the catalogue's
+    would be the forbidden edge for the sake of three fields.
+    """
+
+    entity: str
+    created: int
+    updated: int
+
+    def __str__(self) -> str:
+        return f"{self.entity}: {self.created} created, {self.updated} updated"
+
+
+def load_vehicle_class_seed(rows: Sequence[Mapping[str, Any]]) -> SeedResult:
+    """Appendix C's four classes, identified by `code`.
+
+    Idempotent, like every other loader: this runs on a fresh checkout, in CI,
+    and again whenever somebody corrects a luggage figure. An existing row is
+    updated rather than duplicated, which is what the partial unique index on
+    `code` would enforce anyway — better to mean it than to be stopped by it.
+    """
+    created = updated = 0
+    for row in rows:
+        fields = dict(row)
+        code = fields.pop("code", None)
+        if not code:
+            raise ValidationError("a vehicle class seed row needs a code")
+        _, was_created = VehicleClass.objects.update_or_create(code=code, defaults=fields)
+        created, updated = (created + 1, updated) if was_created else (created, updated + 1)
+    return SeedResult("vehicle_class", created, updated)
+
+
+def load_tariff_seed(rows: Sequence[Mapping[str, Any]]) -> SeedResult:
+    """§12.4's metered fallback, identified by (scope, region/country, class).
+
+    That triple is the tariff's identity because it is what the ladder looks it
+    up by: a second row for the same one is not a new tariff, it is a correction
+    to the existing one, and the exclusion constraint says so too.
+    """
+    created = updated = 0
+    for row in rows:
+        fields = dict(row)
+        klass = _class_for(fields.pop("vehicle_class", ""))
+        key = {
+            "scope": fields.pop("scope"),
+            "region_id": fields.pop("region_id", None),
+            "country_id": fields.pop("country_id", None),
+            "vehicle_class": klass,
+        }
+        _, was_created = TransferTariff.objects.update_or_create(**key, defaults=fields)
+        created, updated = (created + 1, updated) if was_created else (created, updated + 1)
+    return SeedResult("transfer_tariff", created, updated)
+
+
+def load_corridor_seed(rows: Sequence[Mapping[str, Any]]) -> SeedResult:
+    """§12.4's fixed-price routes, identified by (origin, target, class).
+
+    **A bidirectional corridor is identified by the unordered pair.** The row
+    answers both ways, so "the airport to Nungwi" and "Nungwi to the airport"
+    are one route with one price; matching on the written direction alone would
+    mean that editing a seed file to swap two endpoints — which is a
+    presentation change, not a pricing one — left the old row live beside the
+    new one. That happened while this loader was being written: reordering the
+    file so gateways read as origins turned 144 corridors into 176, and both
+    directions then answered for the same journey with prices that could drift
+    apart. A one-way corridor keeps its direction in its identity, because for
+    it the direction *is* the route.
+    """
+    created = updated = 0
+    for row in rows:
+        fields = dict(row)
+        origin = fields.pop("origin_destination_id")
+        target = fields.pop("target_destination_id")
+        klass = _class_for(fields.pop("vehicle_class", ""))
+
+        existing = _corridor_for(
+            origin, target, klass, bidirectional=fields.get("is_bidirectional", True)
+        )
+        if existing is None:
+            TransferCorridor.objects.create(
+                origin_destination_id=origin,
+                target_destination_id=target,
+                vehicle_class=klass,
+                **fields,
+            )
+            created += 1
+            continue
+
+        for name, value in {
+            "origin_destination_id": origin,
+            "target_destination_id": target,
+            **fields,
+        }.items():
+            setattr(existing, name, value)
+        existing.save()
+        updated += 1
+
+    return SeedResult("transfer_corridor", created, updated)
+
+
+def _corridor_for(
+    origin: int, target: int, klass: VehicleClass, *, bidirectional: bool
+) -> TransferCorridor | None:
+    forward = TransferCorridor.objects.filter(
+        origin_destination_id=origin, target_destination_id=target, vehicle_class=klass
+    ).first()
+    if forward is not None or not bidirectional:
+        return forward
+    return TransferCorridor.objects.filter(
+        origin_destination_id=target,
+        target_destination_id=origin,
+        vehicle_class=klass,
+        is_bidirectional=True,
+    ).first()
+
+
+def _class_for(code: str) -> VehicleClass:
+    row = repo.vehicle_class_by_code(code)
+    if row is None:
+        raise ValidationError(
+            f"{code!r} is not a configured vehicle class. Load "
+            "01-vehicle-classes.json before the tariffs that reference it."
+        )
+    return row
+
+
+def default_option(quote: LegQuote) -> FareOption | None:
+    """The class a planner inserts a leg with — ADR 0023 decision 5.
+
+    The cheapest that fits, and a starting point rather than an answer: §12.4
+    is explicit that capacity *filters* rather than selects, and §24.17 gives
+    the tourist per-leg selection. This exists because the sequencer has to
+    write some class onto the row it creates.
+
+    Ties break on the order the options arrived in, which `eligible` fixed to
+    `display_order` then `code`. TC-902 wants byte-identical totals from two
+    generations of the same trip, and STANDARD and COMFORT cost the same on
+    many corridors — a tie broken by dictionary order would not deliver them.
+    """
+    if not quote.options:
+        return None
+    return min(quote.options, key=lambda option: option.price.amount)

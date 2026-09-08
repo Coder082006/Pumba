@@ -1,0 +1,1298 @@
+[
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "kendwa",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "143000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "kendwa",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "193000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "kendwa",
+    "vehicle_class": "VAN",
+    "fixed_price": "228500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "kendwa",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "314500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "103500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "140000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "VAN",
+    "fixed_price": "166000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "228000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "matemwe",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "117000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "matemwe",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "158000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "matemwe",
+    "vehicle_class": "VAN",
+    "fixed_price": "187500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "matemwe",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "257500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "michamvi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "61000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "michamvi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "82000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "michamvi",
+    "vehicle_class": "VAN",
+    "fixed_price": "97500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "michamvi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "134000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "nungwi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "144000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "nungwi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "194500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "nungwi",
+    "vehicle_class": "VAN",
+    "fixed_price": "230500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "nungwi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "317000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "paje",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "38000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "paje",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "51500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "paje",
+    "vehicle_class": "VAN",
+    "fixed_price": "61000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "paje",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "83500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "stone-town",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "99000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "stone-town",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "133500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "stone-town",
+    "vehicle_class": "VAN",
+    "fixed_price": "158500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "jambiani",
+    "target_destination": "stone-town",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "218000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "jambiani",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "89500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "jambiani",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "121000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "jambiani",
+    "vehicle_class": "VAN",
+    "fixed_price": "143000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "jambiani",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "197000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "69000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "93500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "VAN",
+    "fixed_price": "111000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "152500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "matemwe",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "56000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "matemwe",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "75500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "matemwe",
+    "vehicle_class": "VAN",
+    "fixed_price": "89500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "matemwe",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "123000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "michamvi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "112000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "michamvi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "151500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "michamvi",
+    "vehicle_class": "VAN",
+    "fixed_price": "179500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "michamvi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "247000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "nungwi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "32000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "nungwi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "43500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "nungwi",
+    "vehicle_class": "VAN",
+    "fixed_price": "51500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "nungwi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "70500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "paje",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "135000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "paje",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "182500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "paje",
+    "vehicle_class": "VAN",
+    "fixed_price": "216000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "paje",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "297000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "stone-town",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "109000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "stone-town",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "147000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "stone-town",
+    "vehicle_class": "VAN",
+    "fixed_price": "174500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kendwa",
+    "target_destination": "stone-town",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "240000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "kendwa",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "118500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "kendwa",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "159500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "kendwa",
+    "vehicle_class": "VAN",
+    "fixed_price": "189500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "kendwa",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "260500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "matemwe",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "43500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "matemwe",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "58500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "matemwe",
+    "vehicle_class": "VAN",
+    "fixed_price": "69500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "matemwe",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "95500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "michamvi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "73000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "michamvi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "98500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "michamvi",
+    "vehicle_class": "VAN",
+    "fixed_price": "116500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "michamvi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "160500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "nungwi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "70500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "nungwi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "95000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "nungwi",
+    "vehicle_class": "VAN",
+    "fixed_price": "112500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "nungwi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "155000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "paje",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "96000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "paje",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "129500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "paje",
+    "vehicle_class": "VAN",
+    "fixed_price": "153500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "paje",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "210500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "stone-town",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "84000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "stone-town",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "113500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "stone-town",
+    "vehicle_class": "VAN",
+    "fixed_price": "134500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "kiwengwa",
+    "target_destination": "stone-town",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "185000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "89000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "120500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "VAN",
+    "fixed_price": "143000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "kiwengwa",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "196500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "michamvi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "86500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "michamvi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "116500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "michamvi",
+    "vehicle_class": "VAN",
+    "fixed_price": "138000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "michamvi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "190000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "nungwi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "57000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "nungwi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "77000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "nungwi",
+    "vehicle_class": "VAN",
+    "fixed_price": "91000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "nungwi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "125500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "paje",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "109000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "paje",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "147500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "paje",
+    "vehicle_class": "VAN",
+    "fixed_price": "174500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "paje",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "240000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "stone-town",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "90500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "stone-town",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "122500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "stone-town",
+    "vehicle_class": "VAN",
+    "fixed_price": "145000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "matemwe",
+    "target_destination": "stone-town",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "199500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "matemwe",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "98000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "matemwe",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "132000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "matemwe",
+    "vehicle_class": "VAN",
+    "fixed_price": "156500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "matemwe",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "215000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "nungwi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "113500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "nungwi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "153000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "nungwi",
+    "vehicle_class": "VAN",
+    "fixed_price": "181500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "nungwi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "249500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "paje",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "53000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "paje",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "71500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "paje",
+    "vehicle_class": "VAN",
+    "fixed_price": "84500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "paje",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "116500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "stone-town",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "82500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "stone-town",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "111500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "stone-town",
+    "vehicle_class": "VAN",
+    "fixed_price": "132500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "michamvi",
+    "target_destination": "stone-town",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "182000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "michamvi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "78000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "michamvi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "105500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "michamvi",
+    "vehicle_class": "VAN",
+    "fixed_price": "125000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "michamvi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "171500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "nungwi",
+    "target_destination": "paje",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "136000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "nungwi",
+    "target_destination": "paje",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "184000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "nungwi",
+    "target_destination": "paje",
+    "vehicle_class": "VAN",
+    "fixed_price": "218000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "nungwi",
+    "target_destination": "paje",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "299500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "nungwi",
+    "target_destination": "stone-town",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "111000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "nungwi",
+    "target_destination": "stone-town",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "150000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "nungwi",
+    "target_destination": "stone-town",
+    "vehicle_class": "VAN",
+    "fixed_price": "177500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "nungwi",
+    "target_destination": "stone-town",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "244000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "nungwi",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "120000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "nungwi",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "162500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "nungwi",
+    "vehicle_class": "VAN",
+    "fixed_price": "192500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "nungwi",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "264500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "paje",
+    "target_destination": "stone-town",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "94500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "paje",
+    "target_destination": "stone-town",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "127500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "paje",
+    "target_destination": "stone-town",
+    "vehicle_class": "VAN",
+    "fixed_price": "151000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "paje",
+    "target_destination": "stone-town",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "207500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "paje",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "86000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "paje",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "116000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "paje",
+    "vehicle_class": "VAN",
+    "fixed_price": "137500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "paje",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "189000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "stone-town",
+    "vehicle_class": "STANDARD",
+    "fixed_price": "42500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "stone-town",
+    "vehicle_class": "COMFORT",
+    "fixed_price": "57500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "stone-town",
+    "vehicle_class": "VAN",
+    "fixed_price": "68000.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  },
+  {
+    "origin_destination": "znz-airport",
+    "target_destination": "stone-town",
+    "vehicle_class": "MINIBUS",
+    "fixed_price": "93500.00",
+    "currency": "TZS",
+    "is_bidirectional": true,
+    "valid_from": "2026-01-01"
+  }
+]
