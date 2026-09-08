@@ -97,7 +97,24 @@ function ItemRow({
 
           {item.line_total && item.currency ? (
             <p className="mt-1 text-sm font-medium">
-              <Money value={{ amount: item.line_total, currency: item.currency }} />
+              {/* `compact`: a timeline row is dense, and the second "charged
+                  as" line belongs on the total rather than on every card. The
+                  charged currency is named in the footer, which is where a
+                  tourist looks before paying. */}
+              <Money
+                value={{ amount: item.line_total, currency: item.currency }}
+                display={item.line_total_display}
+                compact
+              />
+            </p>
+          ) : isTransfer && item.vehicle_class ? (
+            // §12.6, and a distinction §24.17 has to make on screen: a leg with
+            // no fare is one we have no configured price for, never a free
+            // one. Naming the class is what makes it actionable — §24.17 lets
+            // the tourist ask for a different vehicle, which may have a price
+            // where this one does not.
+            <p className="mt-1 text-sm text-muted-foreground">
+              {item.vehicle_class.toLowerCase()} · no fare configured for this route yet
             </p>
           ) : null}
 

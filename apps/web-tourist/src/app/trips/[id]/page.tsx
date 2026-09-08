@@ -216,6 +216,18 @@ export default function TripPlannerPage({ params }: { params: Promise<{ id: stri
           <Link href={`/trips/${id}/flights`} className="font-medium text-primary hover:underline">
             Flights
           </Link>
+          {/* §24.15 navigates to §24.16, and §24.14 to §24.17. Both are
+              reachable from here because a tourist who has just added a stay
+              is exactly the person who wants to arrange the drive to it. */}
+          <Link href={`/trips/${id}/pickup`} className="font-medium text-primary hover:underline">
+            Airport pickup
+          </Link>
+          <Link
+            href={`/trips/${id}/transport`}
+            className="font-medium text-primary hover:underline"
+          >
+            Getting around
+          </Link>
           <Link
             href={`/trips/${id}/itinerary`}
             className="font-medium text-primary hover:underline"
@@ -291,6 +303,7 @@ export default function TripPlannerPage({ params }: { params: Promise<{ id: stri
         items={itinerary?.items ?? []}
         amount={trip.total_amount}
         currency={trip.currency}
+        display={trip.total_amount_display}
         summaryHref={`/trips/${id}/summary`}
         status={trip.status}
         expiresAt={trip.quote_expires_at}

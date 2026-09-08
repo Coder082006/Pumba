@@ -10,7 +10,12 @@ from collections.abc import Callable
 from django.http import HttpRequest, HttpResponse
 from django.utils.cache import patch_vary_headers
 
-from apps.common.context import reset_context, set_actor_id, set_request_id
+from apps.common.context import (
+    reset_context,
+    set_actor_id,
+    set_display_currency,
+    set_request_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +86,13 @@ class LocaleMiddleware:
         request.locale = (  # type: ignore[attr-defined]
             request.META.get("HTTP_ACCEPT_LANGUAGE", "en").split(",")[0].strip() or "en"
         )
-        request.presentment_currency = self._currency(request)  # type: ignore[attr-defined]
+        currency = self._currency(request)
+        request.presentment_currency = currency  # type: ignore[attr-defined]
+        # Also on the context variable, because every money field in every
+        # module needs it and threading serializer context through forty
+        # constructions means the one that was missed renders in the listing
+        # currency with nothing to say so (`apps.common.presentment`).
+        set_display_currency(currency)
 
         response = self.get_response(request)
         patch_vary_headers(response, ("Accept-Language", "X-Currency"))

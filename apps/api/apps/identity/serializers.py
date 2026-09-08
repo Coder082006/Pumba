@@ -17,6 +17,7 @@ from typing import Any, ClassVar
 
 from rest_framework import serializers
 
+from apps.common.presentment import enabled_currencies, is_enabled
 from apps.common.serializers import StrictSerializer
 
 __all__ = [
@@ -58,7 +59,7 @@ class RegisterSerializer(StrictSerializer):
         return None if value is None else value.upper()
 
     def validate_preferred_currency(self, value: str) -> str:
-        return value.upper()
+        return _an_enabled_currency(value)
 
 
 class VerifyEmailSerializer(StrictSerializer):
@@ -189,3 +190,41 @@ class DeviceSerializer(serializers.Serializer[Any]):
     platform = serializers.CharField(read_only=True)
     device_name = serializers.CharField(read_only=True)
     last_seen_at = serializers.DateTimeField(read_only=True)
+
+
+def _an_enabled_currency(value: str) -> str:
+    """§9.4.1: "preferred_currency in the enabled set".
+
+    The rule was written down and never checked, so a tourist could store a
+    preference for a currency the platform cannot show — and every page would
+    then render in the listing currency with nothing to explain why. It is
+    checked at the boundary rather than at render time because the answer to
+    "why is this in shillings" has to be available at the moment somebody makes
+    the mistake, not three screens later.
+
+    The set is `currency.enabled`, a `system_setting` row, so adding CHF is an
+    administrator's edit rather than a deployment (hard rule 5).
+    """
+    code = value.upper()
+    if not is_enabled(code):
+        raise serializers.ValidationError(
+            f"{code} is not one of the currencies this platform can show: "
+            f"{', '.join(enabled_currencies())}."
+        )
+    return code
+
+
+class UpdateProfileSerializer(StrictSerializer):
+    """`PATCH /me` — §24.28's settings screen.
+
+    Two fields, because they are the two §24.28 lists that are the tourist's
+    own presentation preferences rather than their identity: "Language,
+    presentment currency". A name change is a different operation with
+    different consequences and is not offered here.
+    """
+
+    locale = serializers.CharField(max_length=10, required=False)
+    preferred_currency = serializers.CharField(required=False)
+
+    def validate_preferred_currency(self, value: str) -> str:
+        return _an_enabled_currency(value)

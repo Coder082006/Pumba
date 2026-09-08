@@ -48,7 +48,7 @@ from apps.catalogue.models import (
     PropertyType,
 )
 from apps.common.geo import COORDINATE_PRECISION
-from apps.common.serializers import StrictSerializer
+from apps.common.serializers import DisplayMoneyField, StrictSerializer
 
 __all__ = [
     "CountryWriteSerializer",
@@ -549,6 +549,14 @@ class AttractionSerializer(serializers.Serializer[Any]):
     opening_hours = serializers.JSONField(allow_null=True)
     entrance_fee = _money(allow_null=True)
     fee_currency = serializers.CharField(allow_null=True)
+
+    #: §15.3's gate fee, converted. The platform does not collect this and
+    #: §24.21 keeps it out of every subtotal — which makes it exactly the
+    #: figure a tourist most needs in their own currency, because it is the one
+    #: they will hand over in cash.
+    entrance_fee_display = DisplayMoneyField(
+        amount_field="entrance_fee", currency_field="fee_currency"
+    )
     visit_minutes = serializers.IntegerField(allow_null=True)
     tags = serializers.ListField(child=serializers.CharField())
     accessibility_notes = serializers.CharField()
@@ -560,9 +568,18 @@ class AttractionSerializer(serializers.Serializer[Any]):
 class ActivitySerializer(serializers.Serializer[Any]):
     """§16.1.
 
-    No converted price appears here. §18.4 puts conversion at quote time, and
-    a display conversion is an `IndicativeAmount` applied over this — which is
-    a different thing with a different label and a different half-life.
+    **A converted price appears here now, and the distinction it used to be
+    protected by is kept in the type instead.** This docstring previously said
+    no conversion belonged on a listing, because §18.4 puts the *charged*
+    conversion at quote time. That is still true and is still a different
+    thing: `price_per_person` is what a provider charges, and
+    `price_per_person_display` is an `IndicativeAmount` — a figure that refuses
+    to take part in arithmetic by construction, carrying the rate, its source
+    and its timestamp so it cannot be mistaken for the first (ADR 0024).
+
+    Excluding it entirely was the wrong protection. §24.11 wants a tourist to
+    compare a price "against prices at home", and a browser that shows only
+    TZS to somebody arriving from Frankfurt protects them from nothing.
     """
 
     public_id = serializers.UUIDField()
@@ -577,6 +594,11 @@ class ActivitySerializer(serializers.Serializer[Any]):
     price_per_person = _money()
     price_per_group = _money(allow_null=True)
     currency = serializers.CharField()
+
+    #: §24.1's chooser reaching the catalogue. Null when nothing was converted
+    #: — no currency asked for, already in it, or no rate for the pair.
+    price_per_person_display = DisplayMoneyField(amount_field="price_per_person")
+    price_per_group_display = DisplayMoneyField(amount_field="price_per_group")
     min_pax = serializers.IntegerField()
     max_pax = serializers.IntegerField()
     min_age = serializers.IntegerField(allow_null=True)

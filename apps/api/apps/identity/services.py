@@ -1003,3 +1003,24 @@ def get_principal(*, user_id: int, mfa_satisfied: bool = False) -> Principal | N
         .first()
     )
     return None if user is None else repo.principal_for(user, mfa_satisfied=mfa_satisfied)
+
+
+def update_profile(
+    *, user_id: int, locale: str | None = None, preferred_currency: str | None = None
+) -> None:
+    """§24.28's settings screen: language and presentment currency.
+
+    Only these two, and only the caller's own row — the `user_id` comes from
+    the principal and is never a value the request supplied, so there is no
+    identifier here to get wrong (§30.3).
+
+    Silently does nothing when neither field is given, which is what a
+    `PATCH` with an empty body means. The alternative — a 422 — would make an
+    idempotent client retry look like a bug.
+    """
+    fields: dict[str, object] = {}
+    if locale is not None:
+        fields["locale"] = locale
+    if preferred_currency is not None:
+        fields["preferred_currency"] = preferred_currency.upper()
+    repo.update_tourist_profile(user_id=user_id, **fields)

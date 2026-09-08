@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Money } from '@pumba/ui';
+import { Money, type DisplayMoneyValue } from '@pumba/ui';
 
 import type { ItineraryItem } from '@/lib/trips';
 
@@ -23,11 +23,13 @@ import type { ItineraryItem } from '@/lib/trips';
  *     because "free" and "not priced" are different claims;
  *   - an ATTRACTION's entry is paid at the gate and §15.3 excludes it from any
  *     subtotal;
- *   - a TRANSFER has no fare until §12.4's tariff, which is the transport
- *     module;
+ *   - a TRANSFER had no fare until §12.4's tariff arrived in Phase 6, and now
+ *     usually has one — usually, because a route with no configured corridor
+ *     is left unpriced rather than guessed (§12.6), so `null` still means "we
+ *     have no fare for this" and never "this is free";
  *
- * which leaves ACTIVITY as the only kind that moves the number. So a tourist
- * who plans two days of stays and attractions has a correct, complete,
+ * which leaves ACTIVITY and TRANSFER as the kinds that move the number. So a
+ * tourist who plans two days of stays and attractions has a correct, complete,
  * well-formed itinerary whose total is 0.00 — and a footer reading
  * *"Estimated so far · TZS 0.00"* tells them that in a way indistinguishable
  * from broken pricing. Reporting a true figure that reads as a false one is
@@ -49,6 +51,7 @@ export function RunningTotal({
   items,
   amount,
   currency,
+  display,
   summaryHref,
   status,
   expiresAt,
@@ -58,6 +61,14 @@ export function RunningTotal({
   items: readonly ItineraryItem[];
   amount: string;
   currency: string;
+  /**
+   * The same total in the currency the tourist chose — §24.1, ADR 0024.
+   *
+   * Beside the charged figure, never instead of it: this footer is one press
+   * away from a payment, and a number a tourist reads here has to be the one
+   * they recognise on their statement.
+   */
+  display?: DisplayMoneyValue | null | undefined;
   summaryHref: string;
   /** §20.5's state. `PRICED` means the seats are held and the clock is running. */
   status?: string;
@@ -80,7 +91,7 @@ export function RunningTotal({
           {quoted ? (
             <p>
               <span className="font-medium text-foreground">
-                <Money value={{ amount, currency }} />
+                <Money value={{ amount, currency }} display={display} />
               </span>
               <span className="block text-xs">
                 <Countdown until={expiresAt ?? null} holding={holdable} />
@@ -90,7 +101,7 @@ export function RunningTotal({
             <p>
               Estimated so far ·{' '}
               <span className="font-medium text-foreground">
-                <Money value={{ amount, currency }} />
+                <Money value={{ amount, currency }} display={display} />
               </span>
               <span className="block text-xs">
                 Nothing is held until you ask for a price.
@@ -102,7 +113,7 @@ export function RunningTotal({
               <span className="block text-xs">
                 {items.length === 0
                   ? 'Add a stay or something to do, then plan the days.'
-                  : 'Stays and attraction entry are paid where you go — activities are the part we cost.'}
+                  : 'Stays and attraction entry are paid where you go — activities and transfers are the part we cost.'}
               </span>
             </p>
           )}

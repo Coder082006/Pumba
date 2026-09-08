@@ -433,3 +433,18 @@ def register_device(
 def revoke_device(device: Device, *, now: datetime) -> None:
     device.revoked_at = now
     device.save(update_fields=["revoked_at"])
+
+
+def update_tourist_profile(*, user_id: int, **fields: object) -> None:
+    """§24.28's settings, written by the row's own owner.
+
+    A repository function rather than a `.save()` in the service, for the
+    reason every other write here is one: `models.py` is data access, and a
+    service that reached into it directly would be the first of several.
+    """
+    profile = TouristProfile.objects.filter(user_id=user_id).first()
+    if profile is None or not fields:
+        return
+    for name, value in fields.items():
+        setattr(profile, name, value)
+    profile.save(update_fields=[*fields, "updated_at"])

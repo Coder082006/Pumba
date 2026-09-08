@@ -28,7 +28,7 @@ from typing import Any
 
 from rest_framework import serializers
 
-from apps.common.serializers import MoneySerializer
+from apps.common.serializers import DisplayMoneyField, MoneySerializer
 
 __all__ = [
     "ListingRefSerializer",
@@ -145,6 +145,11 @@ class ItineraryItemSerializer(serializers.Serializer[Any]):
     unit_price = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True, allow_null=True
     )
+
+    #: §24.1, §24.11, ADR 0024. What this line costs in the currency the
+    #: tourist asked to read, beside — never instead of — what it costs in the
+    #: currency it will be charged in.
+    line_total_display = DisplayMoneyField(amount_field="line_total")
     line_total = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True, allow_null=True
     )
@@ -179,11 +184,22 @@ class TripSummarySerializer(serializers.Serializer[Any]):
     currency = serializers.CharField(read_only=True)
     total_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
 
+    #: The total again, in the tourist's own currency (§24.1, ADR 0024).
+    #: Derived from the total rather than from the lines: converting each line
+    #: and summing would produce a number a few cents from this one, and that
+    #: discrepancy would be defended forever as a rounding quirk.
+    total_amount_display = DisplayMoneyField(amount_field="total_amount")
+
 
 class TripSerializer(TripSummarySerializer):
     subtotal_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     fee_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     tax_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+    #: §24.21 itemises the breakdown, so each part is converted too.
+    subtotal_amount_display = DisplayMoneyField(amount_field="subtotal_amount")
+    fee_amount_display = DisplayMoneyField(amount_field="fee_amount")
+    tax_amount_display = DisplayMoneyField(amount_field="tax_amount")
     priced_at = serializers.DateTimeField(read_only=True, allow_null=True)
     quote_expires_at = serializers.DateTimeField(read_only=True, allow_null=True)
     confirmed_at = serializers.DateTimeField(read_only=True, allow_null=True)

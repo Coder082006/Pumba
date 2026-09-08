@@ -143,10 +143,12 @@ export default function TripSummaryPage({ params }: { params: Promise<{ id: stri
             <li key={day} className="flex gap-3 border-b border-border pb-2">
               <span className="w-16 shrink-0 font-medium">Day {day}</span>
               <span className="text-muted-foreground">
-                {items
-                  .filter((i) => i.item_type !== 'TRANSFER')
-                  .map((i) => i.title)
-                  .join(' · ') || 'Nothing planned'}
+                {/* Transfers used to be filtered out of this line, because a
+                    leg with no price on it read as clutter. Now that §12.4
+                    prices them they are part of what the day costs, and a
+                    summary that hid them would leave a tourist unable to see
+                    where a third of their total went. */}
+                {items.map((i) => i.title).join(' · ') || 'Nothing planned'}
               </span>
             </li>
           ))}
@@ -176,6 +178,8 @@ export default function TripSummaryPage({ params }: { params: Promise<{ id: stri
                       </span>
                       <Money
                         value={{ amount: item.line_total ?? '0', currency: item.currency ?? currency }}
+                        display={item.line_total_display}
+                        compact
                       />
                     </li>
                   ))}
@@ -189,7 +193,10 @@ export default function TripSummaryPage({ params }: { params: Promise<{ id: stri
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Subtotal</dt>
             <dd>
-              <Money value={{ amount: trip.subtotal_amount, currency }} />
+              <Money
+                value={{ amount: trip.subtotal_amount, currency }}
+                display={trip.subtotal_amount_display}
+              />
             </dd>
           </div>
           <div className="flex justify-between">
@@ -200,26 +207,36 @@ export default function TripSummaryPage({ params }: { params: Promise<{ id: stri
               </span>
             </dt>
             <dd>
-              <Money value={{ amount: trip.fee_amount, currency }} />
+              <Money
+                value={{ amount: trip.fee_amount, currency }}
+                display={trip.fee_amount_display}
+              />
             </dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Taxes</dt>
             <dd>
-              <Money value={{ amount: trip.tax_amount, currency }} />
+              <Money
+                value={{ amount: trip.tax_amount, currency }}
+                display={trip.tax_amount_display}
+              />
             </dd>
           </div>
           <div className="flex justify-between border-t border-border pt-2 text-base font-semibold">
             <dt>Total</dt>
             <dd>
-              <Money value={{ amount: trip.total_amount, currency }} />
+              <Money
+                value={{ amount: trip.total_amount, currency }}
+                display={trip.total_amount_display}
+              />
             </dd>
           </div>
         </dl>
 
         <p className="mt-3 text-xs text-muted-foreground">
-          Transfers are timed but not yet priced — fares arrive with the transport module. Nothing
-          here is charged until you pay.
+          A transfer with no fare beside it is one we have no configured price for, not one
+          that is free — tell support and we will quote it. Nothing here is charged until you
+          pay.
         </p>
 
         {hasAttractions ? (

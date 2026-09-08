@@ -15,6 +15,8 @@
 
 import type { ApiEnvelope, ApiError } from '@pumba/contracts';
 
+import { currencyHeaders } from './currency';
+
 /**
  * Where the API lives — which is two different places.
  *
@@ -77,6 +79,10 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     ...rest,
     headers: {
       'Content-Type': 'application/json',
+      // §9.1's display currency, on every request rather than at each call
+      // site: a forgotten one renders in shillings with nothing on the page to
+      // explain why, which is indistinguishable from the feature not existing.
+      ...currencyHeaders(),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       ...headers,
     },
@@ -133,7 +139,7 @@ export async function apiFetchPage<T>(path: string, options: RequestOptions = {}
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...rest,
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json', ...currencyHeaders(), ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { AccountMenu } from '@/components/shell/account-menu';
+import { CurrencySwitcher } from '@/components/shell/currency-switcher';
 
 /**
  * The persistent header — SRS §24.
@@ -57,6 +58,10 @@ export function SiteHeader() {
         <nav aria-label="Main" className="flex items-center gap-6 text-sm font-medium">
           <NavLink href="/explore">Explore</NavLink>
           <NavLink href="/stays">Where to stay</NavLink>
+          {/* §24.1's chooser. A client island for the same reason
+              `AccountMenu` is one: the choice lives in the browser and this
+              header is server-rendered. */}
+          <CurrencySwitcher />
           {/*
             The one part of the header that depends on who is looking. It was a
             permanent "Sign in" button, which stayed on screen after signing in

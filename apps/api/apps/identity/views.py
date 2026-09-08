@@ -382,6 +382,27 @@ class MeView(APIView):
             raise NotFoundError()
         return Response(success_envelope(_user_payload(user)))
 
+    @extend_schema(
+        request=ser.UpdateProfileSerializer,
+        responses={200: ser.UserSerializer},
+        summary="Change your language or the currency prices are shown in",
+    )
+    def patch(self, request: Request) -> Response:
+        """§24.28: "Language, presentment currency".
+
+        The currency here is what prices are *shown* in — §9.1's `X-Currency`
+        applies per request, this is the standing preference behind it. It is
+        never what the tourist is charged in: that is `trip.currency`, taken
+        from the destination and locked at first pricing (BR-016), and §18.4
+        gives it an entirely separate mechanism (ADR 0024).
+        """
+        principal = principal_from_request(request)
+        assert principal is not None
+        payload = ser.UpdateProfileSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        services.update_profile(user_id=principal.user_id, **payload.validated_data)
+        return self.get(request)
+
 
 class DeviceListCreateView(APIView):
     permission_classes = [IsAuthenticatedPrincipal]

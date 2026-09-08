@@ -1,6 +1,11 @@
 export { Button, buttonVariants, type ButtonProps } from './components/button';
 export { StatusBadge, type StatusBadgeProps, type StatusTone } from './components/status-badge';
-export { Money, type MoneyProps, type MoneyValue } from './components/money';
+export {
+  Money,
+  type MoneyProps,
+  type MoneyValue,
+  type DisplayMoneyValue,
+} from './components/money';
 export { LocalTime, type LocalTimeProps } from './components/local-time';
 export { Map, type MapProps, type MapPin } from './components/map';
 export {

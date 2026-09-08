@@ -102,3 +102,24 @@ export async function stayLimits(): Promise<StayLimits> {
   const config = await platformConfig();
   return { maxNights: config.stay_max_nights };
 }
+
+
+/**
+ * §24.1's currency chooser, from `currency.enabled`.
+ *
+ * A fallback *is* offered here, unlike `mapConfig` and `stayLimits`, and the
+ * difference is what a wrong answer costs. A missing tile URL renders no map
+ * and a missing night limit lets a form submit something the API refuses —
+ * both visible. A missing currency list empties a `<select>` the tourist is
+ * looking at, which reads as "this platform shows one currency" rather than as
+ * a failure. So the switcher keeps its short local list and this replaces it
+ * when the server answers.
+ *
+ * The fallback is allowed to be short, never long: offering a currency the
+ * platform cannot convert would produce unconverted prices with no
+ * explanation, which is the one outcome ADR 0024 is written to avoid.
+ */
+export async function getPublicConfig(): Promise<{ enabled_currencies: string[] }> {
+  const config = await platformConfig();
+  return { enabled_currencies: config.enabled_currencies ?? [] };
+}
