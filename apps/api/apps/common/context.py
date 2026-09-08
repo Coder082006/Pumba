@@ -73,3 +73,9 @@ def reset_context() -> None:
     # currency left behind would render the *next* request's prices in the
     # previous tourist's currency, on a worker that happened to reuse the task.
     _display_currency.set(None)
+    # The rates fetched for that currency go with it. Imported here rather than
+    # at module level because `presentment` reads this module — `common` is a
+    # leaf and may not have a cycle inside it.
+    from apps.common.presentment import reset_rate_cache
+
+    reset_rate_cache()

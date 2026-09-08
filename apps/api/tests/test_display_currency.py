@@ -22,6 +22,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 from typing import Any
+from unittest import mock
 
 import pytest
 from rest_framework.test import APIClient
@@ -246,3 +247,67 @@ class TestTheDisplayFigureRefusesToBeMoney:
 
         with pytest.raises(TypeError):
             _ = Money(Decimal("1.00"), "EUR") + indicative  # type: ignore[operator]
+
+
+class TestTheRateIsFetchedOncePerRequest:
+    """A response carries many prices and at most a handful of pairs.
+
+    Free against the in-memory fake and one HTTP request each against the feed
+    that eventually replaces it — the N+1 that only appears in production, on
+    the endpoint a tourist reloads most.
+    """
+
+    def test_one_call_serves_every_price_on_a_page(self, activity: Any) -> None:
+        from apps.common import presentment
+        from apps.common.context import set_display_currency
+        from ports.fakes import FakeExchangeRates
+
+        fake = FakeExchangeRates()
+        presentment.reset_rate_cache()
+        set_display_currency("EUR")
+        try:
+            with mock.patch("apps.common.presentment.get_exchange_rate_port", return_value=fake):
+                for _ in range(5):
+                    assert presentment.display_of(Decimal("1000.00"), "TZS") is not None
+            assert fake.calls == [("TZS", "EUR")]
+        finally:
+            presentment.reset_rate_cache()
+            set_display_currency(None)
+
+    def test_an_unavailable_pair_is_not_retried_per_price(self, activity: Any) -> None:
+        """A `None` is cached as deliberately as a rate. Asking again once per
+        price would turn one upstream failure into forty."""
+        from apps.common import presentment
+        from apps.common.context import set_display_currency
+
+        class Silent:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str]] = []
+
+            def indicative_rate(self, *, base: str, quote: str) -> None:
+                self.calls.append((base, quote))
+                return None
+
+        port = Silent()
+        presentment.reset_rate_cache()
+        set_display_currency("EUR")
+        try:
+            with mock.patch("apps.common.presentment.get_exchange_rate_port", return_value=port):
+                for _ in range(5):
+                    assert presentment.display_of(Decimal("1000.00"), "TZS") is None
+            assert len(port.calls) == 1
+        finally:
+            presentment.reset_rate_cache()
+            set_display_currency(None)
+
+    def test_the_cache_does_not_outlive_the_request(self) -> None:
+        """§18.4 gives the charged conversion its own frozen rate; a display
+        rate that outlived the response it was fetched for would be the stale
+        figure ADR 0024 refuses to show."""
+        from apps.common import presentment
+        from apps.common.context import reset_context, set_display_currency
+
+        set_display_currency("EUR")
+        assert presentment.display_of(Decimal("1000.00"), "TZS") is not None
+        reset_context()
+        assert presentment._rates.get() is None

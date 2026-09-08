@@ -27,6 +27,7 @@ figure a tourist could mistake for fact is never fabricated.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from decimal import Decimal
 
 from apps.common.config import get_setting
@@ -34,8 +35,31 @@ from apps.common.context import get_display_currency
 from apps.common.display_money import IndicativeAmount, convert_for_display
 from apps.common.money import Money
 from apps.common.ports_registry import get_exchange_rate_port
+from ports.exchange_rate import IndicativeRate
 
-__all__ = ["enabled_currencies", "is_enabled", "shown_in", "display_of"]
+__all__ = ["enabled_currencies", "is_enabled", "shown_in", "display_of", "reset_rate_cache"]
+
+#: Rates already fetched during this request, keyed by `(base, quote)`.
+#:
+#: **A response carries many prices and at most a handful of pairs.** A trip
+#: payload has four totals and a line total per item; a catalogue list has a
+#: price per row. Without this, each of them is a separate call to the rate
+#: port — free against the in-memory fake and one HTTP request each against the
+#: feed that eventually replaces it, which is the N+1 that only appears in
+#: production.
+#:
+#: A `ContextVar` rather than a module-level dict for the reason
+#: `apps.common.context` gives: the API runs under ASGI, one thread interleaves
+#: many requests, and a shared dict would hand one tourist's rate to another —
+#: harmless while every request wants the same pair and wrong the moment two
+#: do not. Cleared with the rest of the per-request context.
+#:
+#: It is a *request* cache and never a longer one. §18.4 gives the charged
+#: conversion its own frozen rate; a display rate that outlived the response it
+#: was fetched for would be the stale figure ADR 0024 refuses to show.
+_rates: ContextVar[dict[tuple[str, str], IndicativeRate | None] | None] = ContextVar(
+    "display_rates", default=None
+)
 
 
 def enabled_currencies() -> tuple[str, ...]:
@@ -90,7 +114,29 @@ def display_of(amount: Decimal | None, currency: str | None) -> IndicativeAmount
     target = shown_in(currency)
     if target is None:
         return None
-    rate = get_exchange_rate_port().indicative_rate(base=currency.upper(), quote=target)
+    rate = _rate_for(currency.upper(), target)
     if rate is None:
         return None
     return convert_for_display(Money(amount, currency), rate=rate)
+
+
+def _rate_for(base: str, quote: str) -> IndicativeRate | None:
+    """One call to the port per pair per request.
+
+    A `None` is cached as deliberately as a rate. An unavailable pair is
+    unavailable for the whole response, and asking again once per price would
+    turn one upstream failure into forty.
+    """
+    cache = _rates.get()
+    if cache is None:
+        cache = {}
+        _rates.set(cache)
+    key = (base, quote)
+    if key not in cache:
+        cache[key] = get_exchange_rate_port().indicative_rate(base=base, quote=quote)
+    return cache[key]
+
+
+def reset_rate_cache() -> None:
+    """Called with the rest of the per-request context — see `_rates`."""
+    _rates.set(None)
