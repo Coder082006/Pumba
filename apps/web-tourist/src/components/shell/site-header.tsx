@@ -2,6 +2,8 @@ import Link from 'next/link';
 
 import { AccountMenu } from '@/components/shell/account-menu';
 import { CurrencySwitcher } from '@/components/shell/currency-switcher';
+import { NavLink } from '@/components/shell/nav-link';
+import { TripsNavLink } from '@/components/shell/trips-nav-link';
 import { enabledCurrencies } from '@/lib/config';
 
 /**
@@ -24,24 +26,6 @@ import { enabledCurrencies } from '@/lib/config';
  * Separate per-kind index listings are not screens the SRS asks for; if they
  * are wanted, they are an addition to the plan rather than a repair.
  */
-/** One nav link, with the underline that grows rather than blinks on. */
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className="group relative py-1 text-foreground/80 transition-colors duration-fast ease-out hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
-    >
-      {children}
-      {/* A transform, never a layout property — a hover that changes width or
-          padding reflows the row, which is a CLS cost paid on every pointer
-          move. `scale-x` is composited. */}
-      <span
-        aria-hidden
-        className="absolute inset-x-0 -bottom-0.5 h-px origin-left scale-x-0 bg-primary transition-transform duration-base ease-out group-hover:scale-x-100 group-focus-visible:scale-x-100"
-      />
-    </Link>
-  );
-}
 
 export async function SiteHeader() {
   return (
@@ -59,6 +43,9 @@ export async function SiteHeader() {
         <nav aria-label="Main" className="flex items-center gap-6 text-sm font-medium">
           <NavLink href="/explore">Explore</NavLink>
           <NavLink href="/stays">Where to stay</NavLink>
+          {/* Third and last, so the two links every visitor can use keep their
+              positions whether or not somebody is signed in. */}
+          <TripsNavLink />
           {/* §24.1's chooser. A client island for the same reason
               `AccountMenu` is one: the choice lives in the browser and this
               header is server-rendered. The *options* go the other way — the
