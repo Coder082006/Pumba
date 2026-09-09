@@ -21,10 +21,9 @@
   {
     "code": "STRICT_14D",
     "name": "Strict",
-    "description": "Full refund up to 14 days before. Half refund between 14 and 7 days. No refund thereafter.",
+    "description": "Half refund up to 14 days before. No refund thereafter.",
     "tiers": [
-      { "hours_before": 336, "refund_percent": 100 },
-      { "hours_before": 168, "refund_percent": 50 }
+      { "hours_before": 336, "refund_percent": 50 }
     ],
     "is_active": true
   },

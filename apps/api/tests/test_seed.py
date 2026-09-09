@@ -300,6 +300,42 @@ class TestTheCommittedFiles:
             assert refunds == sorted(refunds, reverse=True), row["code"]
             assert all(0 <= percent <= 100 for percent in refunds), row["code"]
 
+    def test_every_ladder_is_the_one_section_14_6_describes(self) -> None:
+        """The rules, transcribed from §14.6, tier by tier.
+
+        The two tests above check that the codes are present and that each
+        ladder descends. `STRICT_14D` passed both while shipping
+        `[{336, 100}, {168, 50}]` against a specification that reads **"50%
+        refund > 14 days; none thereafter"** — a whole extra tier, and full
+        rather than half at the top. It was a well-formed ladder for a policy
+        nobody wrote down, and it over-refunded: the Two-Tank Dive carries this
+        policy at 580,000 TZS, so a cancellation a fortnight out returned all
+        of it instead of half.
+
+        Shape assertions could not catch that, and neither could a reviewer
+        reading the seed alone — the row's own description agreed with the row.
+        So the expectation here is the SRS sentence, quoted beside the numbers
+        it becomes, and the seed is what has to move.
+        """
+        expected: dict[str, list[tuple[int, int]]] = {
+            # "Full refund if cancelled more than 48 h before check-in; no
+            # refund thereafter"
+            "FLEX_48H": [(48, 100)],
+            # "Full refund > 7 days; 50% between 7 days and 48 h; none
+            # thereafter"
+            "MODERATE_7D": [(168, 100), (48, 50)],
+            # "50% refund > 14 days; none thereafter"
+            "STRICT_14D": [(336, 50)],
+            # "No refund at any time"
+            "NON_REFUNDABLE": [],
+        }
+
+        actual = {
+            row["code"]: [(t["hours_before"], t["refund_percent"]) for t in row["tiers"]]
+            for row in _rows("cancellation_policy")
+        }
+        assert actual == expected
+
     def test_pemba_ships_inactive(self) -> None:
         """§4.1: *"Deferred; record created but is_active = false"*.
 
