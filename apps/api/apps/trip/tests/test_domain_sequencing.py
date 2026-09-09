@@ -212,6 +212,48 @@ class TestTransferInsertion:
         assert leg.ends_at == at(13, 45)  # 14:00 less the 15-minute buffer
         assert leg.starts_at == at(13, 0)  # less 45 minutes of driving
 
+    def test_it_never_departs_before_the_item_it_departs_from_ends(self) -> None:
+        """The gap is narrower than the drive, so timing backwards overshoots.
+
+        Found in a real trip: snorkelling ran 05:30-09:30 and the transfer away
+        from it was scheduled at 05:30, inside the activity it was leaving. The
+        plan is infeasible either way and VR-02 and VR-03 report it — but the
+        item they name has to be one that could exist, so the departure is
+        clamped to the moment the origin actually ends.
+        """
+        result = sequence_day(
+            [
+                item(1, Kind.ACTIVITY, hour=9, minutes=240, where="beach"),
+                item(2, Kind.STAY_CHECK_OUT, hour=11, where="hotel"),
+            ],
+            travel_time=fixed_travel(90),
+            buffers=Buffers(),
+        )
+        leg = next(i for i in result.items if i.kind is Kind.TRANSFER)
+
+        assert leg.starts_at == at(13, 0)  # the activity ends at 13:00, not before
+        assert leg.ends_at == at(14, 30)  # and the drive still takes its 90 minutes
+
+    def test_a_leg_with_room_is_still_timed_backwards(self) -> None:
+        """The clamp is a floor, not a reschedule.
+
+        Without this the fix above could be satisfied by always departing when
+        the earlier item ends, which would drop §10.4's arrive-in-time promise
+        and leave every tourist waiting at the destination instead.
+        """
+        result = sequence_day(
+            [
+                item(1, Kind.ACTIVITY, hour=9, minutes=60, where="hotel"),
+                item(2, Kind.ACTIVITY, hour=14, where="beach"),
+            ],
+            travel_time=fixed_travel(45),
+            buffers=Buffers(activity_minutes=15),
+        )
+        leg = next(i for i in result.items if i.kind is Kind.TRANSFER)
+
+        assert leg.starts_at == at(13, 0)  # not 10:00, when the activity ended
+        assert leg.ends_at == at(13, 45)
+
     def test_it_carries_the_estimate_and_its_provenance(self) -> None:
         """ADR 0019: the quality the caller resolved travels into the item,
         and this module neither sets nor inspects it."""

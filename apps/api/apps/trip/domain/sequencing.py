@@ -279,6 +279,26 @@ def sequence_day(
         )
         starts_at = ends_at - timedelta(seconds=estimate.seconds)
 
+        # A leg may not depart before the item it departs from has ended.
+        #
+        # Timing backwards from `later` is right whenever the gap is wide
+        # enough, and it is what §10.4 line 14 asks for. When the gap is *too
+        # narrow* it walks straight past `earlier` and produces a drive that
+        # leaves before the activity it is leaving — a snorkelling trip running
+        # 05:30-09:30 and a transfer away from it at 05:30, which is how this
+        # was found. The plan is genuinely infeasible in that case and VR-02 and
+        # VR-03 say so; the point here is that the item they are describing
+        # should be a real one, so the tourist reads "you finish at 09:30, the
+        # drive is 90 minutes, you are due to check out at 07:00" rather than a
+        # leg that appears to travel backwards through its own origin.
+        #
+        # `ends_at` moves with it: the duration is the travel time, and holding
+        # the arrival fixed while pushing the departure later would quietly
+        # shorten the drive to fit.
+        if earlier.ends_at is not None and starts_at < earlier.ends_at:
+            starts_at = earlier.ends_at
+            ends_at = starts_at + timedelta(seconds=estimate.seconds)
+
         item_id = _next_inserted_id(used_ids)
         used_ids.append(item_id)
         inserted.append(
