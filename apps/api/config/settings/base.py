@@ -11,6 +11,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from corsheaders.defaults import default_headers as cors_default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -135,6 +136,38 @@ MIDDLEWARE = [
 # from the environment and defaults to empty, so a missing variable denies
 # every origin rather than allowing one.
 CORS_ALLOW_CREDENTIALS = True
+
+# SRS §9.1's `X-Currency`, which is not one of django-cors-headers' defaults.
+#
+# The same failure as `CORS_ALLOW_CREDENTIALS` above, one header along, and it
+# is worth stating plainly because the symptom misdirects: the preflight
+# answers `200` and the browser then refuses to send the real request, so the
+# server log shows an `OPTIONS` with nothing after it and no error anywhere.
+# Every endpoint looks healthy under curl and every test passes, because a test
+# client does not enforce CORS — and the whole application stops working the
+# moment a tourist picks a currency, because `apiFetch` attaches the header to
+# every request from that point on.
+#
+# Extending the defaults rather than replacing them: `authorization` and
+# `content-type` are in that tuple, and a literal list here would drop them the
+# first time someone added a header without checking what they had overwritten.
+# `x-request-id` joins it because `RequestIdMiddleware` propagates a
+# client-supplied correlation id when one arrives — a feature no browser could
+# use, since it could not send the header. Safe: the value is length-capped and
+# sanitised there before it reaches a log line.
+CORS_ALLOW_HEADERS = (*cors_default_headers, "x-currency", "x-request-id")
+
+# `X-Request-Id` is on every response and was readable by nobody.
+#
+# A cross-origin response exposes four headers to script and no others, so
+# `response.headers.get('X-Request-Id')` returned `null` in all three places the
+# clients report it — which is exactly the field a tourist would quote to
+# support and the one that finds the log line. Same-origin it works, so it
+# would have looked correct behind a shared domain and been blank in dev.
+# The literal rather than an import: settings load before the app registry,
+# so `apps.common.middleware` cannot be imported here. `test_cors.py` asserts
+# this equals `REQUEST_ID_RESPONSE_HEADER` so the two cannot drift apart.
+CORS_EXPOSE_HEADERS = ["X-Request-Id"]
 
 TEMPLATES = [
     {
