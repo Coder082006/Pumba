@@ -302,3 +302,31 @@ checkout whether a component confirms instantly, and an operator switching the
 listing afterwards must not turn that promise into a wait nobody agreed to — the
 same reasoning BR-041 and §26.4 apply to policy and price.
 
+## Addendum — 2026-09-15: what fails at capture, and what happens to the trip
+
+§20.8 step 9 fails "that single booking" when its hold expired in flight and the
+capacity is gone, and confirms the rest. Implementing it surfaced three
+questions the SRS does not answer.
+
+**1. A provider that stopped being sellable between the basket and the capture.**
+BR-037 requires VERIFIED "at the moment of confirmation"; §20.2's PENDING →
+FAILED guard names only a failed payment or an expired hold. **Decision:** the
+guard also accepts `provider_unsellable`, and such a component fails exactly as
+a component whose capacity was lost does — its held seats released, a refund
+obligation published. Refusing the whole trip for one suspended operator is the
+outcome §20.8 argues against.
+
+**2. Re-acquiring a dead hold ignores the booking cut-off.** §20.8 says
+"attempt to re-acquire capacity … if capacity is available, proceed". The
+tourist met the cut-off when the seats were first held; a payment that outlasted
+the hold is not a late booking. Re-acquisition checks capacity and that the
+departure is OPEN, and nothing else.
+
+**3. When nothing could be secured.** A trip cannot be CONFIRMED with no
+component confirmed, and cannot return to PRICED once paid. **Decision:**
+PENDING_PAYMENT → CANCELLED, which §20.5 draws for "all component bookings end
+cancelled". Every failed component publishes
+`booking.component_failed_after_capture` carrying the amounts to refund; Phase 8
+subscribes. The tourist is refunded the component's gross, fee share and tax
+share, since none of it was delivered.
+

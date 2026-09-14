@@ -70,6 +70,7 @@ __all__ = [
     "BookingConfirmed",
     "ConfirmationDTO",
     "confirm_trip",
+    "ComponentFailedAfterCapture",
 ]
 
 
@@ -538,6 +539,27 @@ class BookingConfirmed(DomainEvent):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ComponentFailedAfterCapture(DomainEvent):
+    """§20.8 step 9: "initiate an automatic partial refund for the failed
+    component, notifying the tourist with alternatives".
+
+    Phase 7 has no payment to refund, so the obligation is published rather
+    than performed; Phase 8's refund handler subscribes. Every figure a refund
+    needs travels as a string (§8.9: primitives only, and a float loses a cent).
+    """
+
+    name = "booking.component_failed_after_capture"
+    booking_public_id: str = ""
+    reference: str = ""
+    trip_id: int = 0
+    reason: str = ""
+    gross_amount: str = "0"
+    fee_amount: str = "0"
+    tax_amount: str = "0"
+    currency: str = ""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ConfirmationDTO:
     """What the routine did. Empty lists and `moved=False` for a repeat run."""
 
@@ -545,6 +567,7 @@ class ConfirmationDTO:
     moved: bool
     confirmed: tuple[str, ...] = ()
     awaiting_provider: tuple[str, ...] = ()
+    failed: tuple[str, ...] = ()
 
 
 def _commission(row: Booking) -> tuple[Decimal, Decimal]:
@@ -580,39 +603,109 @@ def confirm_trip(
 
     2.  Idempotent: a trip with no PENDING booking left is a no-op.
     5.  Every PENDING booking locked, ascending id (hard rule 12).
-    7-11. The trip's holds committed — `inventory.commit`, which re-checks
-        each hold under the counter lock and refuses a dead one (BR-026).
-    12. Each booking CONFIRMED, or AWAITING_PROVIDER for an on-request activity
-        with its deadline stamped (ADR 0025 decision 7).
-    13. `confirmed_at`.
-    14. Commission amount and net from the frozen rate.
-    15. A history row each.
-    16-17. The trip CONFIRMED and its booked items locked.
-    18. Events queued, dispatched only after commit.
-
-    Step 3 (payment captured, settlement amount, FX rate) is Phase 8's table.
-    Step 9's hard case — a hold that expired while payment was in flight — is
-    not yet partial: `inventory.commit` refuses the whole trip. The next commit
-    makes it fail that one booking and confirm the rest, as §20.8 requires.
+    6.  The guard is evaluated before anything moves: without a captured payment
+        nothing is sold (BR-030).
+    7-11. Capacity settled per departure (`inventory.settle_capture`), including
+        **step 9's hard case**: a hold that died while payment was in flight is
+        re-acquired if the seats are still there, and if not, *that component*
+        fails — "failing the entire trip because one activity sold out would be
+        a worse outcome for everyone".
+    12. Each surviving booking CONFIRMED, or AWAITING_PROVIDER for an on-request
+        activity, with its deadline stamped. A component whose provider is no
+        longer sellable fails here too (BR-037, ADR 0025's third addendum).
+    13-15. `confirmed_at`, commission from the frozen rate, a history row.
+    16-17. The trip CONFIRMED and its booked items locked — or CANCELLED if not
+        one component could be secured.
+    18. Events queued, dispatched only after commit, including the refund
+        obligation for every failed component.
     """
     now = now or timezone.now()
     rows = repo.lock_of_trip(trip_id, statuses=[BookingState.PENDING.value])
     if not rows:
         return ConfirmationDTO(trip_id=trip_id, moved=False)
 
-    inventory.commit(trip_id=trip_id, now=now)
-
-    modes = dict(
-        BookingActivity.objects.filter(booking__in=rows).values_list(
-            "booking_id", "confirmation_mode"
+    if forced_by is None and not payment_captured:
+        # Refused before any capacity moves. `apply` would say the same thing
+        # per booking, but only after `settle_capture` had already sold seats.
+        apply(
+            BookingState.PENDING,
+            BookingState.CONFIRMED,
+            actor=Actor.SYSTEM,
+            context={"payment_captured": False},
         )
-    )
+
+    subtypes: dict[int, tuple[str, int | None]] = {
+        booking_id: (mode, departure_id)
+        for booking_id, mode, departure_id in BookingActivity.objects.filter(
+            booking__in=rows
+        ).values_list("booking_id", "confirmation_mode", "activity_departure_id")
+    }
+    sellers = provider.providers_by_id(sorted({row.provider_id for row in rows}))
+    unsellable = {
+        row.pk
+        for row in rows
+        if row.provider_id not in sellers or not sellers[row.provider_id].is_sellable
+    }
+
+    claims: dict[int, int] = {}
+    for row in rows:
+        if row.pk in subtypes and row.pk not in unsellable:
+            departure_id = subtypes[row.pk][1]
+            if departure_id is not None:
+                claims[departure_id] = claims.get(departure_id, 0) + row.pax_count
+
+    settled = inventory.settle_capture(trip_id=trip_id, claims=claims, now=now)
     window = timedelta(hours=int(get_setting("provider_response_hours")))
 
     confirmed: list[str] = []
     awaiting: list[str] = []
+    failed: list[str] = []
     for row in rows:
-        mode = modes.get(row.pk, "INSTANT")
+        default: tuple[str, int | None] = ("INSTANT", None)
+        mode, departure_id = subtypes.get(row.pk, default)
+        why_failed = (
+            "PROVIDER_NOT_VERIFIED"
+            if row.pk in unsellable
+            else settled.lost.get(departure_id)
+            if departure_id is not None
+            else None
+        )
+
+        if why_failed is not None:
+            target = apply(
+                BookingState.PENDING,
+                BookingState.FAILED,
+                actor=Actor.SYSTEM,
+                context={
+                    "hold_expired": row.pk not in unsellable,
+                    "provider_unsellable": row.pk in unsellable,
+                },
+            )
+            repo.set_status(row, target.value)
+            repo.record_transition(
+                row,
+                from_status=BookingState.PENDING.value,
+                to_status=target.value,
+                actor_role=Actor.SYSTEM.value,
+                actor_user_id=None,
+                reason=f"Could not be secured at payment ({why_failed}); a refund is due.",
+                occurred_at=now,
+            )
+            publish(
+                ComponentFailedAfterCapture(
+                    booking_public_id=str(row.public_id),
+                    reference=row.reference,
+                    trip_id=trip_id,
+                    reason=why_failed,
+                    gross_amount=str(row.gross_amount),
+                    fee_amount=str(row.fee_amount),
+                    tax_amount=str(row.tax_amount),
+                    currency=row.currency,
+                )
+            )
+            failed.append(row.reference)
+            continue
+
         wanted = BookingState.AWAITING_PROVIDER if mode == "ON_REQUEST" else BookingState.CONFIRMED
         if forced_by is not None:
             target = force(BookingState(row.status), wanted)
@@ -656,10 +749,16 @@ def confirm_trip(
             )
         )
 
-    trip_services.mark_confirmed(trip_id, booking_ids=[row.pk for row in rows], now=now)
+    if confirmed or awaiting:
+        kept = [row.pk for row in rows if row.reference in set(confirmed) | set(awaiting)]
+        trip_services.mark_confirmed(trip_id, booking_ids=kept, now=now)
+    else:
+        trip_services.mark_unfulfillable(trip_id)
+
     return ConfirmationDTO(
         trip_id=trip_id,
         moved=True,
         confirmed=tuple(confirmed),
         awaiting_provider=tuple(awaiting),
+        failed=tuple(failed),
     )

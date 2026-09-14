@@ -104,6 +104,7 @@ __all__ = [
     "open_payment",
     "abandon_payment",
     "mark_confirmed",
+    "mark_unfulfillable",
     "TripConfirmed",
     "PriceChangedError",
     "mark_priced",
@@ -1627,6 +1628,26 @@ def mark_confirmed(trip_id: int, *, booking_ids: Sequence[int], now: datetime) -
             row.save(update_fields=["is_locked", "updated_at"])
 
     publish(TripConfirmed(trip_public_id=str(trip.public_id), tourist_id=trip.tourist_id))
+    return True
+
+
+@transaction.atomic
+def mark_unfulfillable(trip_id: int) -> bool:
+    """A paid basket none of whose components could be secured.
+
+    §20.8 fails one component and confirms the rest; when there is no rest, a
+    trip cannot become CONFIRMED with nothing confirmed in it, and it cannot go
+    back to PRICED because the tourist has paid. §20.5's "any state -> CANCELLED
+    (… all component bookings end cancelled)" is the edge that describes it.
+    The refund is Phase 8's, raised by the event `booking` publishes for each
+    failed component.
+    """
+    trip = Trip.objects.select_for_update().filter(pk=trip_id).first()
+    if trip is None or TripState(trip.status) is not TripState.PENDING_PAYMENT:
+        return False
+    trip.status = TRIP_MACHINE.transition(TripState(trip.status), TripState.CANCELLED)
+    trip.version += 1
+    trip.save(update_fields=["status", "version", "updated_at"])
     return True
 
 

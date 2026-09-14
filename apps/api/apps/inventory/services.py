@@ -31,7 +31,7 @@ grows a cache round trip later.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -41,6 +41,7 @@ from apps.catalogue import services as catalogue
 from apps.common.errors import ConflictError, InventoryUnavailableError, ValidationError
 from apps.inventory import repositories as repo
 from apps.inventory.domain.capacity import (
+    DepartureState,
     PartyRules,
     Unbookable,
     reduction_conflicts,
@@ -56,6 +57,7 @@ from apps.inventory.dto import (
     HoldDTO,
     HoldRequest,
     ProviderDepartureDTO,
+    SettlementDTO,
 )
 from apps.inventory.models import ActivityDeparture, HoldStatus, InventoryHold
 
@@ -71,6 +73,7 @@ __all__ = [
     "commit",
     "extend_holds",
     "held_departures",
+    "settle_capture",
     "release",
     "release_expired",
     "reconcile",
@@ -617,6 +620,81 @@ def extend_holds(*, trip_id: int, until: datetime, now: datetime) -> int:
         if row.expires_at < until:
             repo.extend_hold(row, expires_at=until)
     return len(live)
+
+
+@transaction.atomic
+def settle_capture(*, trip_id: int, claims: Mapping[int, int], now: datetime) -> SettlementDTO:
+    """§20.8 steps 7-11, with step 9's hard case handled per departure.
+
+    `claims` maps each departure the paid basket needs to the seats it needs.
+    For each, in ascending departure id (hard rule 12):
+
+    - **The hold is live** → it is committed: `*_held -= qty; *_sold += qty`.
+    - **The hold died while payment was in flight** → §20.8: "attempt to
+      re-acquire capacity immediately under the same lock; if capacity is
+      available, proceed". Any dead HELD hold is expired first, returning its
+      seats, and then the shortfall is claimed afresh against what the counter
+      says *now*. If the seats are there they are committed.
+    - **They are not** → the departure is reported lost and nothing is sold on
+      it. `booking` fails that one component and confirms the rest.
+
+    Held capacity on a departure **not** in `claims` is released: it belonged to
+    a component the caller has already decided not to confirm (BR-037 at
+    capture), and leaving it held would strand seats until the sweeper noticed.
+
+    Re-acquiring checks capacity and that the departure is still OPEN, and
+    deliberately not the booking cut-off. The tourist met the cut-off when the
+    seats were first held; a payment that took longer than the hold is not a
+    late booking.
+    """
+    held = repo.live_holds_of_trip(trip_id, for_update=True)
+    departures = sorted(set(claims) | {row.resource_id for row in held})
+    locked = {row.id: row for row in repo.lock_departures(departures)}
+
+    committed: set[int] = set()
+    lost: dict[int, str] = {}
+    for departure_id in departures:
+        mine = [row for row in held if row.resource_id == departure_id]
+        need = claims.get(departure_id)
+
+        if need is None:
+            for row in mine:
+                _finish(row, state=HoldState.RELEASED)
+            continue
+
+        live = [row for row in mine if row.is_live(now=now)]
+        for row in mine:
+            if row not in live:
+                _finish(row, state=HoldState.EXPIRED)
+
+        departure = locked.get(departure_id)
+        shortfall = need - sum(row.quantity for row in live)
+        if shortfall > 0:
+            if departure is None:
+                lost[departure_id] = "NOT_FOUND"
+                for row in live:
+                    _finish(row, state=HoldState.RELEASED)
+                continue
+            departure.refresh_from_db()
+            remaining = departure.capacity_total - departure.capacity_held - departure.capacity_sold
+            if departure.status != DepartureState.OPEN.value or remaining < shortfall:
+                is_open = departure.status == DepartureState.OPEN.value
+                lost[departure_id] = "SOLD_OUT" if is_open else str(departure.status)
+                for row in live:
+                    _finish(row, state=HoldState.RELEASED)
+                continue
+            repo.add_held(departure_id, quantity=shortfall)
+            live.append(
+                repo.create_hold(
+                    trip_id=trip_id, departure_id=departure_id, quantity=shortfall, expires_at=now
+                )
+            )
+
+        for row in live:
+            _finish(row, state=HoldState.COMMITTED)
+        committed.add(departure_id)
+
+    return SettlementDTO(committed=frozenset(committed), lost=lost)
 
 
 @transaction.atomic

@@ -29,6 +29,7 @@ inside the database.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -38,6 +39,7 @@ from uuid import UUID
 from apps.inventory.domain.capacity import Unbookable
 
 __all__ = [
+    "SettlementDTO",
     "AvailabilityBasis",
     "DepartureDTO",
     "ProviderDepartureDTO",
@@ -176,3 +178,16 @@ class DriftDTO:
     departure_public_id: UUID
     capacity_held: int
     held_by_live_holds: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SettlementDTO:
+    """What `settle_capture` did, per departure.
+
+    `lost` maps a departure's storage id to the reason its capacity could not be
+    secured — §20.8 step 9's hard case, which `booking` turns into one FAILED
+    component rather than a failed trip.
+    """
+
+    committed: frozenset[int]
+    lost: Mapping[int, str]

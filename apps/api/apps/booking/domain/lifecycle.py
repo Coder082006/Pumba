@@ -101,8 +101,18 @@ def captured_on_request(context: Mapping[str, object]) -> bool:
 
 
 def payment_failed_or_hold_expired(context: Mapping[str, object]) -> bool:
-    """PENDING → FAILED: "Payment failed or hold expired"."""
-    return _flag(context, "payment_failed") or _flag(context, "hold_expired")
+    """PENDING → FAILED: "Payment failed or hold expired".
+
+    Plus one condition ADR 0025's third addendum adds: the component's provider
+    was no longer sellable at capture. BR-037 requires the provider be VERIFIED
+    "at the moment of confirmation", and §20.8's answer to a component that
+    cannot be supplied at that moment is to fail it and confirm the rest.
+    """
+    return (
+        _flag(context, "payment_failed")
+        or _flag(context, "hold_expired")
+        or _flag(context, "provider_unsellable")
+    )
 
 
 def within_response_window(context: Mapping[str, object]) -> bool:

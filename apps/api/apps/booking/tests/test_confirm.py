@@ -21,7 +21,6 @@ from django.utils import timezone
 from apps.booking import services
 from apps.booking.models import Booking, BookingStatusHistory
 from apps.booking.tests import scenario
-from apps.common.errors import InventoryUnavailableError
 from apps.common.state_machine import GuardFailedError
 
 pytestmark = pytest.mark.django_db
@@ -165,14 +164,119 @@ class TestItNeedsAPayment:
         assert last.reason == "Paid by bank transfer."
 
 
-class TestAnExpiredHoldStopsTheRoutine:
-    def test_nothing_is_confirmed_on_a_dead_hold(self) -> None:
-        """BR-026 via `inventory.commit`. The partial-confirmation handling of
-        §20.8 step 9 is the next commit; until then the routine refuses whole."""
-        built = in_basket()
+class TestStep9TheHardCase:
+    """§20.8: "Failure at step 9 (a hold expired while the payment was in
+    flight) is the one genuinely hard case" — re-acquire if possible, otherwise
+    fail that one booking and confirm the rest."""
+
+    def _expire_holds(self) -> None:
         django_apps.get_model("inventory", "InventoryHold").objects.update(
             expires_at=timezone.now() - timedelta(seconds=1)
         )
-        with pytest.raises(InventoryUnavailableError):
+
+    def test_a_dead_hold_with_seats_still_free_is_re_acquired_and_confirms(self) -> None:
+        built = in_basket(adults=2, capacity=12)
+        self._expire_holds()
+        result = services.confirm_trip(built.trip_id, payment_captured=True)
+        assert result.confirmed and not result.failed
+        assert Booking.objects.get().status == "CONFIRMED"
+        departure = _departure(built)
+        assert (departure.capacity_held, departure.capacity_sold) == (0, 2)  # type: ignore[attr-defined]
+
+    def test_a_dead_hold_whose_seats_the_sweeper_gave_away_fails_that_booking(self) -> None:
+        """The sweeper expired the hold and somebody else took the seats."""
+        built = in_basket(adults=2, capacity=2)
+        self._expire_holds()
+        # A sweep that released the seats while payment was in flight, and a
+        # second tourist who bought them.
+        django_apps.get_model("inventory", "InventoryHold").objects.update(status="EXPIRED")
+        django_apps.get_model("inventory", "ActivityDeparture").objects.filter(
+            id=built.departure_id
+        ).update(capacity_held=0, capacity_sold=2)
+
+        result = services.confirm_trip(built.trip_id, payment_captured=True)
+
+        assert result.failed == (Booking.objects.get().reference,)
+        assert Booking.objects.get().status == "FAILED"
+
+    def test_the_failed_component_publishes_its_refund(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        django_capture_on_commit_callbacks: object,
+    ) -> None:
+        """§20.8: "initiate an automatic partial refund for the failed component".
+        Phase 8 subscribes; here the obligation is observed leaving."""
+        from apps.common import events
+
+        received: list[object] = []
+        monkeypatch.setattr(
+            events,
+            "_subscribers",
+            {services.ComponentFailedAfterCapture: [received.append]},
+        )
+        built = in_basket(adults=2, capacity=2)
+        django_apps.get_model("inventory", "InventoryHold").objects.update(
+            status="EXPIRED", expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        django_apps.get_model("inventory", "ActivityDeparture").objects.filter(
+            id=built.departure_id
+        ).update(capacity_held=0, capacity_sold=2)
+
+        with django_capture_on_commit_callbacks(execute=True):  # type: ignore[operator]
             services.confirm_trip(built.trip_id, payment_captured=True)
-        assert Booking.objects.get().status == "PENDING"
+
+        [event] = received
+        assert event.reason == "SOLD_OUT"  # type: ignore[attr-defined]
+        booking = Booking.objects.get()
+        assert event.gross_amount == str(booking.gross_amount)  # type: ignore[attr-defined]
+
+    def test_when_nothing_could_be_secured_the_trip_is_cancelled_not_confirmed(self) -> None:
+        """ADR 0025, third addendum: paid, so not PRICED; empty, so not CONFIRMED."""
+        built = in_basket(adults=2, capacity=2)
+        django_apps.get_model("inventory", "InventoryHold").objects.update(
+            status="EXPIRED", expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        django_apps.get_model("inventory", "ActivityDeparture").objects.filter(
+            id=built.departure_id
+        ).update(capacity_held=0, capacity_sold=2)
+        services.confirm_trip(built.trip_id, payment_captured=True)
+        assert _trip(built).status == "CANCELLED"  # type: ignore[attr-defined]
+
+    def test_nothing_is_oversold_by_a_re_acquisition(self) -> None:
+        built = in_basket(adults=2, capacity=2)
+        django_apps.get_model("inventory", "InventoryHold").objects.update(
+            status="EXPIRED", expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        django_apps.get_model("inventory", "ActivityDeparture").objects.filter(
+            id=built.departure_id
+        ).update(capacity_held=0, capacity_sold=1)
+        services.confirm_trip(built.trip_id, payment_captured=True)
+        departure = _departure(built)
+        assert departure.capacity_sold == 1  # type: ignore[attr-defined]
+        assert Booking.objects.get().status == "FAILED"
+
+
+class TestBR037AtCapture:
+    """BR-037: VERIFIED "at the moment of confirmation"."""
+
+    def test_a_provider_suspended_since_the_basket_fails_its_component(self) -> None:
+        built = in_basket(adults=2)
+        django_apps.get_model("provider", "Provider").objects.filter(id=built.provider_id).update(
+            verify_status="SUSPENDED"
+        )
+        result = services.confirm_trip(built.trip_id, payment_captured=True)
+        assert result.failed and not result.confirmed
+        assert Booking.objects.get().status == "FAILED"
+
+    def test_its_held_seats_are_released_not_sold(self) -> None:
+        built = in_basket(adults=2)
+        django_apps.get_model("provider", "Provider").objects.filter(id=built.provider_id).update(
+            verify_status="SUSPENDED"
+        )
+        services.confirm_trip(built.trip_id, payment_captured=True)
+        departure = _departure(built)
+        assert (departure.capacity_held, departure.capacity_sold) == (0, 0)  # type: ignore[attr-defined]
+
+    def test_a_verified_provider_confirms(self) -> None:
+        built = in_basket()
+        assert services.confirm_trip(built.trip_id, payment_captured=True).confirmed

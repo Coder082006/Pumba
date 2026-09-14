@@ -470,6 +470,73 @@ class TestExtendHolds:
         assert InventoryHold.objects.get().expires_at == original
 
 
+class TestSettleCapture:
+    """§20.8 steps 7-11 per departure, including step 9's hard case."""
+
+    def _hold(self, departure: ActivityDeparture, pax: int, now: dt.datetime) -> None:
+        services.hold(
+            trip_id=TRIP,
+            requests=[HoldRequest(departure_id=departure.id, pax=pax)],
+            ttl_minutes=TTL,
+            now=now,
+        )
+
+    def test_a_live_hold_is_committed(self) -> None:
+        now = _now()
+        departure = make_departure(capacity_total=6)
+        self._hold(departure, 2, now)
+        result = services.settle_capture(trip_id=TRIP, claims={departure.id: 2}, now=now)
+        departure.refresh_from_db()
+        assert result.committed == {departure.id} and not result.lost
+        assert (departure.capacity_held, departure.capacity_sold) == (0, 2)
+
+    def test_a_dead_hold_is_re_acquired_when_the_seats_are_there(self) -> None:
+        now = _now()
+        departure = make_departure(capacity_total=6)
+        self._hold(departure, 2, now)
+        later = now + dt.timedelta(minutes=TTL + 5)
+        result = services.settle_capture(trip_id=TRIP, claims={departure.id: 2}, now=later)
+        departure.refresh_from_db()
+        assert result.committed == {departure.id}
+        assert (departure.capacity_held, departure.capacity_sold) == (0, 2)
+        statuses = sorted(InventoryHold.objects.values_list("status", flat=True))
+        assert statuses == ["COMMITTED", "EXPIRED"]
+
+    def test_a_dead_hold_whose_seats_are_gone_is_lost_and_sells_nothing(self) -> None:
+        """The sweeper gave this trip's two seats back while payment was in
+        flight, and another tourist bought two of the three."""
+        now = _now()
+        departure = make_departure(capacity_total=3)
+        self._hold(departure, 2, now)
+        InventoryHold.objects.update(status="EXPIRED")
+        ActivityDeparture.objects.filter(id=departure.id).update(capacity_held=0, capacity_sold=2)
+
+        result = services.settle_capture(trip_id=TRIP, claims={departure.id: 2}, now=now)
+
+        departure.refresh_from_db()
+        assert result.lost == {departure.id: "SOLD_OUT"}
+        assert (departure.capacity_held, departure.capacity_sold) == (0, 2)
+
+    def test_capacity_on_an_unclaimed_departure_is_released(self) -> None:
+        now = _now()
+        departure = make_departure(capacity_total=6)
+        self._hold(departure, 3, now)
+        result = services.settle_capture(trip_id=TRIP, claims={}, now=now)
+        departure.refresh_from_db()
+        assert not result.committed and not result.lost
+        assert (departure.capacity_held, departure.capacity_sold) == (0, 0)
+        assert InventoryHold.objects.get().status == "RELEASED"
+
+    def test_a_cancelled_departure_cannot_be_re_acquired(self) -> None:
+        now = _now()
+        departure = make_departure(capacity_total=6)
+        self._hold(departure, 2, now)
+        ActivityDeparture.objects.filter(id=departure.id).update(status="CANCELLED")
+        later = now + dt.timedelta(minutes=TTL + 5)
+        result = services.settle_capture(trip_id=TRIP, claims={departure.id: 2}, now=later)
+        assert result.lost == {departure.id: "CANCELLED"}
+
+
 class TestReleaseExpired:
     """§17.5's sweeper, over this module's own rows. TC-052."""
 
