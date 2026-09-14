@@ -103,6 +103,8 @@ __all__ = [
     "basket_basis",
     "open_payment",
     "abandon_payment",
+    "mark_confirmed",
+    "TripConfirmed",
     "PriceChangedError",
     "mark_priced",
     "expire_quote",
@@ -144,6 +146,15 @@ class ItineraryGenerated(DomainEvent):
     tourist_id: int = 0
     version: int = 0
     error_count: int = 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TripConfirmed(DomainEvent):
+    """§20.8 step 18: queued after commit, dispatched only if it commits."""
+
+    name = "trip.confirmed"
+    trip_public_id: str = ""
+    tourist_id: int = 0
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -1585,6 +1596,38 @@ def mark_priced(
         )
     )
     return _dto(trip)
+
+
+@transaction.atomic
+def mark_confirmed(trip_id: int, *, booking_ids: Sequence[int], now: datetime) -> bool:
+    """§20.8 steps 16 and 17: the trip is CONFIRMED and its booked items locked.
+
+    `booking_ids` are the bookings that confirmed or are awaiting a provider;
+    every itinerary item linked to one of them gets `is_locked = true`, which
+    §10.3 defines as "true once the covering booking is confirmed" and which
+    `LOCKED_ITEM_CONFLICT` then protects from regeneration.
+
+    Idempotent by §20.8 step 2: a trip already CONFIRMED is left alone and
+    reports that nothing moved. Takes a storage id and no principal — the
+    caller is the confirmation routine, which acts for nobody.
+    """
+    trip = Trip.objects.select_for_update().filter(pk=trip_id).first()
+    if trip is None or TripState(trip.status) is TripState.CONFIRMED:
+        return False
+    trip.status = TRIP_MACHINE.transition(TripState(trip.status), TripState.CONFIRMED)
+    trip.confirmed_at = now
+    trip.version += 1
+    trip.save(update_fields=["status", "confirmed_at", "version", "updated_at"])
+
+    wanted = set(booking_ids)
+    itinerary = getattr(trip, "itinerary", None)
+    for row in itinerary.items.all() if itinerary is not None else []:
+        if row.booking_id in wanted and not row.is_locked:
+            row.is_locked = True
+            row.save(update_fields=["is_locked", "updated_at"])
+
+    publish(TripConfirmed(trip_public_id=str(trip.public_id), tourist_id=trip.tourist_id))
+    return True
 
 
 @transaction.atomic

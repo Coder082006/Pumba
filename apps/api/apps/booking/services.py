@@ -44,11 +44,12 @@ from django.utils import timezone
 
 from apps.booking import repositories as repo
 from apps.booking.domain.allocation import allocate
-from apps.booking.domain.lifecycle import Actor, BookingState, apply
+from apps.booking.domain.lifecycle import Actor, BookingState, apply, force
 from apps.booking.dto import BasketDTO, BookingDTO
-from apps.booking.models import Booking, BookingType
+from apps.booking.models import Booking, BookingActivity, BookingType
 from apps.common.config import get_setting
 from apps.common.errors import ConflictError, InventoryUnavailableError
+from apps.common.events import DomainEvent, publish
 from apps.inventory import services as inventory
 from apps.inventory.dto import HoldDTO, HoldRequest
 from apps.provider import services as provider
@@ -66,6 +67,9 @@ __all__ = [
     "create_basket",
     "BasketFailure",
     "fail_basket",
+    "BookingConfirmed",
+    "ConfirmationDTO",
+    "confirm_trip",
 ]
 
 
@@ -516,3 +520,146 @@ def fail_basket(trip_id: int, *, cause: BasketFailure, now: datetime | None = No
     inventory.release(trip_id=trip_id)
     trip_services.abandon_payment(trip_id, quote_still_stands=cause is BasketFailure.PAYMENT_FAILED)
     return len(rows)
+
+
+# -- §20.8: the confirmation routine -------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BookingConfirmed(DomainEvent):
+    """§20.8 step 18, one per booking. `status` says which of step 12's two."""
+
+    name = "booking.confirmed"
+    booking_public_id: str = ""
+    reference: str = ""
+    trip_id: int = 0
+    provider_id: int = 0
+    status: str = ""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ConfirmationDTO:
+    """What the routine did. Empty lists and `moved=False` for a repeat run."""
+
+    trip_id: int
+    moved: bool
+    confirmed: tuple[str, ...] = ()
+    awaiting_provider: tuple[str, ...] = ()
+
+
+def _commission(row: Booking) -> tuple[Decimal, Decimal]:
+    """§20.8 step 14 from the rate frozen at the basket (BR-070).
+
+    `gross * rate / 100`, to the cent, half up; net is what is left. The rate
+    cannot have moved since TC-060 snapshotted it, which is the whole reason it
+    was snapshotted then.
+    """
+    rate = row.commission_rate or Decimal("0")
+    amount = (row.gross_amount * rate / Decimal(100)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    return amount, row.gross_amount - amount
+
+
+@transaction.atomic
+def confirm_trip(
+    trip_id: int,
+    *,
+    payment_captured: bool,
+    now: datetime | None = None,
+    forced_by: int | None = None,
+    reason: str = "",
+) -> ConfirmationDTO:
+    """§20.8, the confirmation routine: a paid basket becomes bookings.
+
+    Called by Phase 8's webhook with `payment_captured=True`, and in Phase 7 by
+    SUPER_ADMIN's force-transition (`forced_by`, BR-038), which bypasses §20.2's
+    guards and never its edges. The tourist cannot reach it (ADR 0025).
+
+    The steps, in §20.8's order:
+
+    2.  Idempotent: a trip with no PENDING booking left is a no-op.
+    5.  Every PENDING booking locked, ascending id (hard rule 12).
+    7-11. The trip's holds committed — `inventory.commit`, which re-checks
+        each hold under the counter lock and refuses a dead one (BR-026).
+    12. Each booking CONFIRMED, or AWAITING_PROVIDER for an on-request activity
+        with its deadline stamped (ADR 0025 decision 7).
+    13. `confirmed_at`.
+    14. Commission amount and net from the frozen rate.
+    15. A history row each.
+    16-17. The trip CONFIRMED and its booked items locked.
+    18. Events queued, dispatched only after commit.
+
+    Step 3 (payment captured, settlement amount, FX rate) is Phase 8's table.
+    Step 9's hard case — a hold that expired while payment was in flight — is
+    not yet partial: `inventory.commit` refuses the whole trip. The next commit
+    makes it fail that one booking and confirm the rest, as §20.8 requires.
+    """
+    now = now or timezone.now()
+    rows = repo.lock_of_trip(trip_id, statuses=[BookingState.PENDING.value])
+    if not rows:
+        return ConfirmationDTO(trip_id=trip_id, moved=False)
+
+    inventory.commit(trip_id=trip_id, now=now)
+
+    modes = dict(
+        BookingActivity.objects.filter(booking__in=rows).values_list(
+            "booking_id", "confirmation_mode"
+        )
+    )
+    window = timedelta(hours=int(get_setting("provider_response_hours")))
+
+    confirmed: list[str] = []
+    awaiting: list[str] = []
+    for row in rows:
+        mode = modes.get(row.pk, "INSTANT")
+        wanted = BookingState.AWAITING_PROVIDER if mode == "ON_REQUEST" else BookingState.CONFIRMED
+        if forced_by is not None:
+            target = force(BookingState(row.status), wanted)
+        else:
+            target = apply(
+                BookingState(row.status),
+                wanted,
+                actor=Actor.SYSTEM,
+                context={
+                    "payment_captured": payment_captured,
+                    "hold_committed": True,
+                    "confirmation_mode": mode,
+                },
+            )
+
+        commission, net = _commission(row)
+        fields: dict[str, object] = {"commission_amount": commission, "net_amount": net}
+        if target is BookingState.CONFIRMED:
+            fields["confirmed_at"] = now
+            confirmed.append(row.reference)
+        else:
+            fields["response_due_at"] = now + window
+            awaiting.append(row.reference)
+        repo.set_status(row, target.value, **fields)
+        repo.record_transition(
+            row,
+            from_status=BookingState.PENDING.value,
+            to_status=target.value,
+            actor_role="SUPER_ADMIN" if forced_by is not None else Actor.SYSTEM.value,
+            actor_user_id=forced_by,
+            reason=reason or "Payment captured.",
+            occurred_at=now,
+        )
+        publish(
+            BookingConfirmed(
+                booking_public_id=str(row.public_id),
+                reference=row.reference,
+                trip_id=trip_id,
+                provider_id=row.provider_id,
+                status=target.value,
+            )
+        )
+
+    trip_services.mark_confirmed(trip_id, booking_ids=[row.pk for row in rows], now=now)
+    return ConfirmationDTO(
+        trip_id=trip_id,
+        moved=True,
+        confirmed=tuple(confirmed),
+        awaiting_provider=tuple(awaiting),
+    )
