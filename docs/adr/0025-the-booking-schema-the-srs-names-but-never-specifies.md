@@ -290,3 +290,15 @@ the column is written only by this module either way (§20.1).
 The seed gives each of the three live Zanzibar regions one transport provider,
 and `tests/test_seed.py` asserts every region with a live destination has one.
 
+## Addendum — 2026-09-15: the confirmation mode is frozen at the basket
+
+§20.8 step 12 sets a booking CONFIRMED "(or AWAITING_PROVIDER)", and §14.4 makes
+the choice turn on `activity.confirmation_mode`. Step 12 runs at payment capture;
+the listing is `catalogue`'s and may change between the basket and the capture.
+
+**Decision:** `booking_activity.confirmation_mode` snapshots the mode at basket
+creation, with a CHECK admitting INSTANT and ON_REQUEST. The tourist is shown at
+checkout whether a component confirms instantly, and an operator switching the
+listing afterwards must not turn that promise into a wait nobody agreed to — the
+same reasoning BR-041 and §26.4 apply to policy and price.
+

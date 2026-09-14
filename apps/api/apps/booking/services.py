@@ -405,6 +405,7 @@ def create_basket(
                 pax_adult=line.pax_adult,
                 pax_child=line.pax_child,
                 meeting_at=line.starts_at,
+                confirmation_mode=line.confirmation_mode,
             )
         else:
             assert line.pickup_lonlat is not None and line.dropoff_lonlat is not None

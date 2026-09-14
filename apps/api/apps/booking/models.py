@@ -236,10 +236,19 @@ class BookingActivity(models.Model):
     pax_adult = models.SmallIntegerField()
     pax_child = models.SmallIntegerField(default=0)
     meeting_at = models.DateTimeField()
+    #: §14.4's INSTANT or ON_REQUEST, frozen at the basket. §20.8 step 12
+    #: branches on it at capture, and an operator switching the listing to
+    #: ON_REQUEST between the two must not strand a booking the tourist was
+    #: told would confirm instantly. ADR 0025, second addendum.
+    confirmation_mode = models.CharField(max_length=20, default="INSTANT")
 
     class Meta:
         db_table = "booking_activity"
         constraints = [
+            models.CheckConstraint(
+                condition=Q(confirmation_mode__in=["INSTANT", "ON_REQUEST"]),
+                name="booking_activity_confirmation_mode_known",
+            ),
             models.CheckConstraint(
                 condition=Q(pax_adult__gte=0) & Q(pax_child__gte=0),
                 name="booking_activity_pax_non_negative",

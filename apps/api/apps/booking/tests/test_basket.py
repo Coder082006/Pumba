@@ -105,6 +105,17 @@ class TestTC060ConfirmCreatesTheBasket:
         assert activity.activity_departure_id == built.departure_id
         assert (activity.pax_adult, activity.pax_child) == (2, 1)
 
+    @pytest.mark.parametrize("mode", ["INSTANT", "ON_REQUEST"])
+    def test_the_confirmation_mode_is_frozen_on_the_booking(self, mode: str) -> None:
+        """ADR 0025's second addendum: §20.8 branches on what the tourist was
+        told at checkout, not on the listing as it stands at capture."""
+        built, quote = quoted(confirmation_mode=mode)
+        basket(built, quote)
+        django_apps.get_model("catalogue", "Activity").objects.filter(id=built.activity_id).update(
+            confirmation_mode="INSTANT" if mode == "ON_REQUEST" else "ON_REQUEST"
+        )
+        assert BookingActivity.objects.get().confirmation_mode == mode
+
     def test_the_first_history_row_names_the_tourist(self) -> None:
         """BR-032: every change writes a history row naming actor and reason."""
         built, quote = quoted()
