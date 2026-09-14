@@ -56,6 +56,9 @@ class Scenario:
     departure_id: int
     departs_at: datetime
     item_public_id: Any
+    #: ADR 0025: who sells the activity, and the policy it is sold under.
+    provider_id: int | None = None
+    policy_id: int | None = None
 
 
 def _destination() -> Any:
@@ -100,6 +103,9 @@ def build(
     departure_status: str = "OPEN",
     with_activity: bool = True,
     tourist_id: int | None = None,
+    seller_status: str | None = "VERIFIED",
+    policy_code: str = "MODERATE_7D",
+    confirmation_mode: str = "INSTANT",
 ) -> Scenario:
     """One trip, one activity, one departure, wired together.
 
@@ -122,8 +128,25 @@ def build(
             .id
         )
 
+    policy = _policy(policy_code)
+    seller = None
+    if seller_status is not None:
+        seller = _model("provider", "Provider").objects.create(
+            legal_name=_unique("Harbour Adventures Limited"),
+            trading_name="Harbour Adventures",
+            provider_type="ACTIVITY",
+            contact_email=f"{_unique('ops')}@harbour.example",
+            contact_phone="+64210000000",
+            region_id=destination.region_id,
+            verify_status=seller_status,
+            verified_at=timezone.now() if seller_status in {"VERIFIED", "SUSPENDED"} else None,
+        )
+
     activity = _model("catalogue", "Activity").objects.create(
         destination=destination,
+        provider_id=None if seller is None else seller.id,
+        cancellation_policy=policy,
+        confirmation_mode=confirmation_mode,
         name="Harbour Kayak Tour",
         slug=_unique("harbour-kayak-tour"),
         coordinates=Point(174.08, -35.26, srid=4326),
@@ -185,6 +208,27 @@ def build(
         departure_id=int(departure.id),
         departs_at=departs_at,
         item_public_id=item.public_id if item is not None else None,
+        provider_id=None if seller is None else int(seller.id),
+        policy_id=int(policy.id),
+    )
+
+
+#: §14.6's ladders, for the codes a scenario may name.
+_LADDERS = {
+    "FLEX_48H": [{"hours_before": 48, "refund_percent": 100}],
+    "MODERATE_7D": [
+        {"hours_before": 168, "refund_percent": 100},
+        {"hours_before": 48, "refund_percent": 50},
+    ],
+    "STRICT_14D": [{"hours_before": 336, "refund_percent": 50}],
+    "NON_REFUNDABLE": [],
+}
+
+
+def _policy(code: str) -> Any:
+    model = _model("catalogue", "CancellationPolicy")
+    return model.objects.filter(code=code).first() or model.objects.create(
+        code=code, name=code.title(), tiers=_LADDERS[code]
     )
 
 

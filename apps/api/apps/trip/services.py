@@ -68,7 +68,14 @@ from apps.trip.domain.sequencing import (
     sequence_trip,
 )
 from apps.trip.domain.validation import ItemFacts, Limits, PartyFacts, TripFacts, validate
-from apps.trip.dto import QuoteBasisDTO, QuoteLineDTO, TripDTO, TripSummaryDTO
+from apps.trip.dto import (
+    BasketBasisDTO,
+    BasketLineDTO,
+    QuoteBasisDTO,
+    QuoteLineDTO,
+    TripDTO,
+    TripSummaryDTO,
+)
 from apps.trip.models import (
     ItemType,
     Itinerary,
@@ -93,6 +100,8 @@ __all__ = [
     "cancel_trip",
     "generate_itinerary",
     "quote_basis",
+    "basket_basis",
+    "PriceChangedError",
     "mark_priced",
     "expire_quote",
     "TripPriced",
@@ -1342,6 +1351,146 @@ def quote_basis(public_id: UUID, *, tourist_id: int) -> QuoteBasisDTO:
     )
 
 
+class PriceChangedError(ConflictError):
+    """§32.3's `PRICE_CHANGED`: a price moved between the quote and the basket.
+
+    Raised rather than absorbed. The quote is the number a tourist accepted, and
+    a basket that silently booked a different one would be the platform changing
+    the price after the tourist agreed to it — in either direction.
+    """
+
+    code = "PRICE_CHANGED"
+
+
+def basket_basis(public_id: UUID, *, tourist_id: int) -> BasketBasisDTO:
+    """Every fact §9.4.6's basket freezes, resolved by the module allowed to.
+
+    Ownership is a filter (`_owned`), so a foreign principal gets 404.
+
+    **Money comes from the quote, not a recomputation.** `line_total` is what
+    `mark_priced` wrote and the tourist accepted. Transfers are re-quoted here
+    only to recover *which rule* priced them — the rule is not stored on the
+    item — and a re-quote that disagrees with the accepted figure raises
+    `PRICE_CHANGED` rather than booking a number nobody agreed to.
+
+    STAY and ATTRACTION lines produce no line here: a stay is an anchor
+    (ADR 0013) and an attraction is paid at the gate.
+    """
+    trip = _owned(public_id, tourist_id)
+    itinerary = getattr(trip, "itinerary", None)
+    rows = list(itinerary.items.all()) if itinerary is not None else []
+    party = trip.adults + trip.children
+
+    activities = [r for r in rows if r.item_type == ItemType.ACTIVITY and r.activity_id]
+    legs = [r for r in rows if r.item_type == ItemType.TRANSFER and r.starts_at is not None]
+
+    terms = catalogue.sale_terms([r.activity_id for r in activities])
+    transfer_code = str(get_setting("transfer.cancellation_policy_code"))
+    policies = catalogue.policy_snapshots(
+        ids=[t.cancellation_policy_id for t in terms.values() if t.cancellation_policy_id],
+        codes=[transfer_code] if legs else [],
+    )
+
+    fares: dict[int, transfers.LegFare] = {}
+    if legs:
+        facts = _gather(rows, trip)
+        fares = _requoted_transfers(rows, facts, trip)
+
+    lines: list[BasketLineDTO] = []
+    for row in rows:
+        if row.starts_at is None or row.ends_at is None:
+            continue
+        if row in activities:
+            term = terms.get(int(row.activity_id))
+            policy = (
+                policies.get(term.cancellation_policy_id)
+                if term and term.cancellation_policy_id
+                else None
+            )
+            lines.append(
+                BasketLineDTO(
+                    item_id=int(row.pk),
+                    item_public_id=row.public_id,
+                    item_type=row.item_type,
+                    title=row.title,
+                    starts_at=row.starts_at,
+                    ends_at=row.ends_at,
+                    pax=party,
+                    pax_adult=trip.adults,
+                    pax_child=trip.children,
+                    gross_amount=row.line_total if row.line_total is not None else Decimal("0"),
+                    currency=row.currency or trip.currency,
+                    policy_snapshot=policy.as_json() if policy else {},
+                    cancellation_policy_id=policy.id if policy else None,
+                    activity_id=int(row.activity_id),
+                    activity_departure_id=row.activity_departure_id,
+                    provider_id=term.provider_id if term else None,
+                    confirmation_mode=term.confirmation_mode if term else "INSTANT",
+                )
+            )
+        elif row in legs:
+            fare = fares.get(int(row.pk))
+            if fare is None or row.line_total is None:
+                raise ConflictError(
+                    f"the transfer {row.title!r} has no price to book", code="TRIP_NOT_QUOTABLE"
+                )
+            if fare.money.amount != row.line_total:
+                raise PriceChangedError(
+                    f"the fare for {row.title!r} is now {fare.money.amount} {fare.money.currency}, "
+                    f"not the {row.line_total} quoted. Get a new price to continue."
+                )
+            policy = policies.get(transfer_code)
+            lines.append(
+                BasketLineDTO(
+                    item_id=int(row.pk),
+                    item_public_id=row.public_id,
+                    item_type=row.item_type,
+                    title=row.title,
+                    starts_at=row.starts_at,
+                    ends_at=row.ends_at,
+                    pax=party,
+                    pax_adult=trip.adults,
+                    pax_child=trip.children,
+                    gross_amount=row.line_total,
+                    currency=row.currency or trip.currency,
+                    policy_snapshot=policy.as_json() if policy else {},
+                    cancellation_policy_id=None,
+                    origin_destination_id=fare.origin_destination_id,
+                    target_destination_id=fare.target_destination_id,
+                    pickup_lonlat=_lonlat(row.origin_point),
+                    dropoff_lonlat=_lonlat(row.target_point),
+                    distance_m=row.distance_m,
+                    travel_seconds=row.travel_seconds,
+                    estimate_quality=row.estimate_quality,
+                    vehicle_class=fare.vehicle_class,
+                    luggage_count=fare.luggage,
+                    is_airport_transfer=fare.is_airport,
+                    match_kind=fare.match_kind,
+                    rule_id=fare.rule_id,
+                    origin_region_id=fare.origin_region_id,
+                )
+            )
+
+    return BasketBasisDTO(
+        trip_id=int(trip.pk),
+        public_id=trip.public_id,
+        tourist_id=tourist_id,
+        status=trip.status,
+        currency=trip.currency,
+        priced_at=trip.priced_at,
+        quote_expires_at=trip.quote_expires_at,
+        subtotal_amount=trip.subtotal_amount,
+        fee_amount=trip.fee_amount,
+        tax_amount=trip.tax_amount,
+        total_amount=trip.total_amount,
+        lines=tuple(lines),
+    )
+
+
+def _lonlat(point: Point | None) -> tuple[float, float] | None:
+    return None if point is None else (float(point.x), float(point.y))
+
+
 @transaction.atomic
 def mark_priced(
     public_id: UUID,
@@ -1479,6 +1628,11 @@ def _requoted_transfers(
         pax=party,
         luggage=row_luggage(items, luggage),
         strict=True,
+        classes={
+            row.pk: row.vehicle_class
+            for row in items
+            if row.item_type == ItemType.TRANSFER and row.vehicle_class
+        },
     )
 
 

@@ -52,6 +52,7 @@ from django.db import models, transaction
 
 from apps.catalogue import repositories as repo
 from apps.catalogue.domain import opening_hours
+from apps.catalogue.domain.cancellation import parse_tiers
 from apps.catalogue.domain.schedules import (
     ScheduleError,
     ScheduleRule,
@@ -99,6 +100,10 @@ __all__ = [
     "transfer_places",
     "resolve_scope_ref",
     "region_keys",
+    "SaleTerms",
+    "PolicySnapshot",
+    "sale_terms",
+    "policy_snapshots",
     "activity_facts",
     "attraction_facts",
     "opening_status",
@@ -1390,6 +1395,89 @@ def region_keys(ids: Sequence[int]) -> dict[int, str]:
     manager = cast("models.Manager[Region]", Region.all_objects)
     rows = manager.filter(id__in=set(ids)).values_list("id", "slug")
     return {int(row_id): str(slug) for row_id, slug in rows}
+
+
+@dataclass(frozen=True, slots=True)
+class PolicySnapshot:
+    """A cancellation policy exactly as a booking freezes it — BR-041.
+
+    `tiers` is a list of plain dicts, not `Tier` objects, because this is what
+    goes into `booking.cancellation_policy_snapshot` as JSON and what §20.9's
+    evaluation reads back months later. Anything richer would have to survive a
+    round trip through a column that stores only JSON.
+    """
+
+    id: int
+    code: str
+    name: str
+    tiers: tuple[dict[str, int | str], ...]
+
+    def as_json(self) -> dict[str, object]:
+        return {"code": self.code, "name": self.name, "tiers": [dict(t) for t in self.tiers]}
+
+
+@dataclass(frozen=True, slots=True)
+class SaleTerms:
+    """What a basket needs to know about selling one activity (ADR 0025).
+
+    `provider_id` may be `None`: `activity.provider_id` is nullable because the
+    catalogue console may create an activity before anyone is assigned to sell
+    it. A basket refuses such an activity rather than inventing a seller.
+    """
+
+    provider_id: int | None
+    confirmation_mode: str
+    cancellation_policy_id: int | None
+
+
+def sale_terms(ids: Sequence[int]) -> dict[int, SaleTerms]:
+    """The seller, confirmation mode and policy of each activity. One query."""
+    wanted = {int(value) for value in ids if value is not None}
+    if not wanted:
+        return {}
+    manager = cast("models.Manager[Activity]", Activity.all_objects)
+    rows = manager.filter(id__in=wanted).values_list(
+        "id", "provider_id", "confirmation_mode", "cancellation_policy_id"
+    )
+    return {
+        int(row_id): SaleTerms(
+            provider_id=None if seller is None else int(seller),
+            confirmation_mode=str(mode),
+            cancellation_policy_id=None if policy is None else int(policy),
+        )
+        for row_id, seller, mode, policy in rows
+    }
+
+
+def policy_snapshots(
+    *, ids: Sequence[int] = (), codes: Sequence[str] = ()
+) -> dict[int | str, PolicySnapshot]:
+    """Policies by id and by code, ready to freeze onto a booking.
+
+    Keyed by both, so an activity's policy (an id) and a transfer's policy (a
+    code from `transfer.cancellation_policy_code`) come back from one call.
+    Soft-deleted policies are included: an activity still pointing at a retired
+    policy was sold under it, and refusing to snapshot it would make the
+    activity unbookable for a reason no tourist could act on.
+    """
+    manager = cast("models.Manager[CancellationPolicy]", CancellationPolicy.all_objects)
+    rows = manager.filter(models.Q(id__in=set(ids)) | models.Q(code__in=set(codes)))
+    out: dict[int | str, PolicySnapshot] = {}
+    for row in rows:
+        snapshot = PolicySnapshot(
+            id=int(row.id),
+            code=row.code,
+            name=row.name,
+            tiers=tuple(
+                # A string, not a number: JSON numbers come back from psycopg as
+                # floats, and `parse_tiers` reads this back through `Decimal(str())`.
+                {"hours_before": int(t.hours_before), "refund_percent": str(t.refund_percent)}
+                for t in parse_tiers(row.tiers)
+            ),
+        )
+        out[snapshot.id] = snapshot
+        out[snapshot.code] = snapshot
+    return out
 
 
 def activity_facts(ids: Sequence[int]) -> dict[int, ActivityFacts]:

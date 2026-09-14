@@ -314,6 +314,15 @@ class LegFare:
     luggage: int
     origin_destination_id: int
     target_destination_id: int
+    #: ADR 0023: which table priced it and which row. `booking_transfer` stores
+    #: these as `corridor_id` or `tariff_id` so BR-054's frozen price stays
+    #: explicable. `"CORRIDOR"` or `"TARIFF"`.
+    match_kind: str = ""
+    rule_id: int = 0
+    #: §12.4's airport surcharge condition, and `booking_transfer.is_airport_transfer`.
+    is_airport: bool = False
+    #: The operating region of the origin — where a transport provider is found.
+    origin_region_id: int = 0
 
 
 def _parse_key(key: str | None) -> tuple[str, int] | None:
@@ -366,6 +375,7 @@ def fares_for(
     pax: int,
     luggage: int,
     strict: bool,
+    classes: Mapping[int, str] | None = None,
 ) -> dict[int, LegFare]:
     """Price a planned itinerary's transfers, by planner item id.
 
@@ -436,15 +446,28 @@ def fares_for(
 
     fares: dict[int, LegFare] = {}
     for quote in quotes:
-        option = transport.default_option(quote)
+        item_id = int(quote.reference)
+        # §12.2: a leg "can be re-priced identically later", which means in the
+        # class it was stored with. The cheapest fit is only the default for a
+        # leg that has no class yet — or one whose stored class the party no
+        # longer fits, which is re-priced rather than refused.
+        wanted = (classes or {}).get(item_id)
+        option = next(
+            (o for o in quote.options if wanted is not None and o.vehicle_class.code == wanted),
+            None,
+        ) or transport.default_option(quote)
         if option is None:
             continue
         origin, target = endpoints[quote.reference]
-        fares[int(quote.reference)] = LegFare(
+        fares[item_id] = LegFare(
             money=option.price,
             vehicle_class=option.vehicle_class.code,
             luggage=luggage,
             origin_destination_id=origin.destination_id,
             target_destination_id=target.destination_id,
+            match_kind=str(option.match.kind),
+            rule_id=option.match.rule_id,
+            is_airport=origin.is_gateway or target.is_gateway,
+            origin_region_id=origin.region_id,
         )
     return fares

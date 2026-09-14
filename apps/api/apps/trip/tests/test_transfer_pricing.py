@@ -313,3 +313,54 @@ class TestQuotingReQuotes:
             )
             is not None
         )
+
+
+class TestTheBasketKnowsWhichRulePricedTheLeg:
+    """ADR 0023 and 0025: `booking_transfer` stores the rule, so the basket
+    basis must carry it — the itinerary item does not."""
+
+    def test_a_corridor_leg_names_its_corridor(self, journey: Journey) -> None:
+        classes = _classes()
+        corridor = _corridor(classes["STANDARD"], journey.home, journey.away, "90000.00")
+        journey.generate()
+        journey.quote()
+
+        basis = services.basket_basis(journey.trip.public_id, tourist_id=journey.tourist)
+        [leg] = [line for line in basis.lines if line.item_type == ItemType.TRANSFER]
+
+        assert (leg.match_kind, leg.rule_id) == ("CORRIDOR", corridor.id)
+        assert leg.gross_amount == Decimal("90000.00")
+        assert leg.vehicle_class == "STANDARD"
+        assert leg.origin_region_id == journey.home.region_id
+        assert leg.pickup_lonlat is not None and leg.dropoff_lonlat is not None
+
+    def test_a_fare_that_moved_since_the_quote_is_refused(self, journey: Journey) -> None:
+        """§32.3's PRICE_CHANGED. The quote is the number the tourist accepted;
+        booking a different one would change the price after agreement."""
+        classes = _classes()
+        corridor = _corridor(classes["STANDARD"], journey.home, journey.away, "90000.00")
+        journey.generate()
+        journey.quote()
+
+        corridor.fixed_price = Decimal("95000.00")
+        corridor.save(update_fields=["fixed_price"])
+
+        with pytest.raises(services.PriceChangedError) as caught:
+            services.basket_basis(journey.trip.public_id, tourist_id=journey.tourist)
+        assert caught.value.code == "PRICE_CHANGED"
+
+    def test_a_stored_class_is_re_priced_in_that_class(self, journey: Journey) -> None:
+        """§12.2: a leg "can be re-priced identically later". Re-quoting must
+        not fall back to the cheapest class when the leg names another."""
+        classes = _classes()
+        _corridor(classes["STANDARD"], journey.home, journey.away, "90000.00")
+        _corridor(classes["VAN"], journey.home, journey.away, "140000.00")
+        planned = journey.generate()
+        [leg] = _transfers(planned)
+        django_apps.get_model("trip", "ItineraryItem").objects.filter(
+            public_id=leg.public_id
+        ).update(vehicle_class="VAN")
+
+        quoted = journey.quote()
+        [requoted] = _transfers(quoted)
+        assert Decimal(str(requoted.line_total)) == Decimal("140000.00")

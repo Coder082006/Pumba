@@ -130,6 +130,13 @@ SETTINGS_REGISTER: dict[str, Setting] = {
         # -- Money --
         Setting("platform_fee_rate", _d("0.05"), "Tourist-facing service fee"),
         Setting("commission.default_percent", _d("15"), "Global fallback commission"),
+        # ADR 0025. A transfer has no catalogue listing to carry a policy, and
+        # §26.4 makes transfer pricing platform-managed, so its policy is too.
+        Setting(
+            "transfer.cancellation_policy_code",
+            "FLEX_48H",
+            "Cancellation policy snapshotted onto every transfer booking",
+        ),
         Setting("fx.markup_percent", _d("2.0"), "Conversion protection margin"),
         Setting("settlement_hold_days", 2, "Delay before balance becomes available"),
         Setting(

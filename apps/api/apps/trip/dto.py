@@ -57,6 +57,8 @@ __all__ = [
     "TripSummaryDTO",
     "QuoteLineDTO",
     "QuoteBasisDTO",
+    "BasketLineDTO",
+    "BasketBasisDTO",
 ]
 
 
@@ -281,3 +283,75 @@ class TripDTO:
         infant does not occupy one. Defined in both places because the domain
         may not import this module, and `test_dto.py` pins that they agree."""
         return self.adults + self.children
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BasketLineDTO:
+    """One component a basket turns into a booking — §9.4.6, ADR 0025.
+
+    Every fact a booking freezes, already resolved. `booking` may not read
+    `catalogue` or `transport` (§6.4), so the seller, the confirmation mode, the
+    policy tiers and the tariff rule arrive here rather than being looked up —
+    ADR 0022's seam, a third time.
+
+    Integer ids cross this boundary for the reason `QuoteLineDTO` gives: the
+    caller stores them (ADR 0012), and this type never reaches a serializer.
+    """
+
+    item_id: int
+    item_public_id: UUID
+    item_type: str
+    title: str
+    starts_at: datetime
+    ends_at: datetime
+    pax: int
+    pax_adult: int
+    pax_child: int
+    gross_amount: Decimal
+    currency: str
+    #: `{"code", "name", "tiers"}`, JSON-ready (BR-041).
+    policy_snapshot: dict[str, object]
+    cancellation_policy_id: int | None
+
+    # -- ACTIVITY ---------------------------------------------------------------
+    activity_id: int | None = None
+    activity_departure_id: int | None = None
+    #: `None` when nobody has been assigned to sell the activity.
+    provider_id: int | None = None
+    confirmation_mode: str = "INSTANT"
+
+    # -- TRANSFER ---------------------------------------------------------------
+    origin_destination_id: int | None = None
+    target_destination_id: int | None = None
+    #: `(longitude, latitude)`.
+    pickup_lonlat: tuple[float, float] | None = None
+    dropoff_lonlat: tuple[float, float] | None = None
+    distance_m: int | None = None
+    travel_seconds: int | None = None
+    estimate_quality: str | None = None
+    vehicle_class: str | None = None
+    luggage_count: int = 0
+    is_airport_transfer: bool = False
+    #: `"CORRIDOR"` or `"TARIFF"`, and the row (ADR 0023).
+    match_kind: str | None = None
+    rule_id: int | None = None
+    #: Where a transport provider for this leg is found.
+    origin_region_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BasketBasisDTO:
+    """Everything §9.4.6 needs to create a basket from a priced trip."""
+
+    trip_id: int
+    public_id: UUID
+    tourist_id: int
+    status: str
+    currency: str
+    priced_at: datetime | None
+    quote_expires_at: datetime | None
+    subtotal_amount: Decimal
+    fee_amount: Decimal
+    tax_amount: Decimal
+    total_amount: Decimal
+    lines: tuple[BasketLineDTO, ...] = ()

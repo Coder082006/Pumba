@@ -132,6 +132,12 @@ class TestRegister:
                         grows with traffic, and shortening the window is how it
                         is made to shed rows during an incident. Lengthening it
                         is the riskier direction and equally needs no release.
+            transfer.   Phase 7, ADR 0025. `transfer.cancellation_policy_code`
+                        names the policy every transfer booking snapshots. A
+                        transfer has no listing to carry one, and §26.4 makes
+                        transfer pricing platform-managed, so its policy is the
+                        platform's to set — as a row, so changing it for new
+                        bookings needs no release.
             map.        Phase 3, ADR 0016 / Appendix D9. The tile URL and its
                         attribution string. Held as settings so changing map
                         provider is an administrator action rather than a
@@ -155,6 +161,7 @@ class TestRegister:
                     "search.",
                     "review.",
                     "map.",
+                    "transfer.",
                     "client.",
                     "currency.",
                     "feature.",
