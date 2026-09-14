@@ -21,12 +21,14 @@ from __future__ import annotations
 from uuid import UUID
 
 from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.booking import serializers as ser
 from apps.booking import services
+from apps.common.authentication import principal_from_request
 from apps.common.envelope import success_envelope
 from apps.common.idempotency import IDEMPOTENCY_HEADER, idempotent
 from apps.common.permissions import IsTourist, tourist_id_of
@@ -110,3 +112,57 @@ class TripQuoteView(APIView):
     def post(self, request: Request, public_id: UUID) -> Response:
         result = services.quote_trip(public_id, tourist_id=tourist_id_of(request))
         return Response(success_envelope(ser.QuoteSerializer(result).data))
+
+
+class TripConfirmView(APIView):
+    """§9.4.6, `POST /trips/{id}/confirm`: turn an accepted quote into a basket."""
+
+    permission_classes = [IsTourist]
+    throttle_classes = [TripQuoteThrottle]
+
+    @extend_schema(
+        request=ser.ConfirmSerializer,
+        parameters=[
+            OpenApiParameter(
+                name=IDEMPOTENCY_HEADER,
+                type=str,
+                location=OpenApiParameter.HEADER,
+                required=True,
+                description=(
+                    "A client-generated key unique to this attempt. Repeating the "
+                    "request with the same key returns the first basket and creates "
+                    "no second one."
+                ),
+            )
+        ],
+        responses={201: ser.BasketSerializer},
+        summary="Create the booking basket from an accepted quote",
+        description=(
+            "SRS §9.4.6. Creates one booking per component in `PENDING`, "
+            "snapshots each component's cancellation policy and commission rate, "
+            "moves the trip to `PENDING_PAYMENT` and extends the held capacity to "
+            "the payment window. **Nothing is committed and no provider is "
+            "notified** — that happens on payment capture.\n\n"
+            "**409 `QUOTE_EXPIRED`**: the quote lapsed or was superseded; no "
+            "booking is created. **409 `TRIP_NOT_PAYABLE`**: the trip is not "
+            "priced, or has nothing bookable. **409 `NOT_BOOKABLE`**: a "
+            "component has no verified seller or starts in the past; `details` "
+            "names each. **409 `PRICE_CHANGED`**: a transfer fare moved since the "
+            "quote. **409 `HOLD_EXPIRED`**: held capacity lapsed."
+        ),
+        tags=["trip"],
+    )
+    @idempotent
+    def post(self, request: Request, public_id: UUID) -> Response:
+        body = ser.ConfirmSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        principal = principal_from_request(request)
+        basket = services.create_basket(
+            public_id,
+            tourist_id=tourist_id_of(request),
+            quote_token=body.validated_data["quote_token"],
+            actor_user_id=None if principal is None else principal.user_id,
+        )
+        return Response(
+            success_envelope(ser.BasketSerializer(basket).data), status=status.HTTP_201_CREATED
+        )

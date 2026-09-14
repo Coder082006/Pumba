@@ -16,10 +16,14 @@ from __future__ import annotations
 
 from django.urls import path
 
-from apps.booking.views import TripQuoteView
+from apps.booking.views import TripConfirmView, TripQuoteView
 
 app_name = "booking"
 
 urlpatterns = [
     path("trips/<uuid:public_id>/quote", TripQuoteView.as_view(), name="trip-quote"),
+    # §9.4.6. Here rather than in `trip` for ADR 0022's reason: the basket
+    # writes bookings, reads providers and extends holds, and only `booking`
+    # may see all three.
+    path("trips/<uuid:public_id>/confirm", TripConfirmView.as_view(), name="trip-confirm"),
 ]

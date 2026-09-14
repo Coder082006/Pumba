@@ -28,7 +28,9 @@ from typing import Any
 
 from rest_framework import serializers
 
-__all__ = ["QuoteSerializer"]
+from apps.common.serializers import DisplayMoneyField, StrictSerializer
+
+__all__ = ["QuoteSerializer", "ConfirmSerializer", "BookingSerializer", "BasketSerializer"]
 
 
 class QuoteSerializer(serializers.Serializer[Any]):
@@ -76,3 +78,49 @@ class QuoteSerializer(serializers.Serializer[Any]):
 
     def get_total_amount(self, obj: Any) -> str:
         return str(obj.trip.total_amount)
+
+
+class ConfirmSerializer(StrictSerializer):
+    """§9.4.6's request: `{"quote_token": "…", "payment_method": "CARD"}`.
+
+    `payment_method` is accepted and not yet acted on. Payment is Phase 8, and
+    refusing a field §9.4.6 names would break a client written to the SRS; the
+    basket it creates is the same whichever method follows.
+    """
+
+    quote_token = serializers.UUIDField()
+    payment_method = serializers.ChoiceField(choices=["CARD", "MOBILE_MONEY"], required=False)
+
+
+class BookingSerializer(serializers.Serializer[Any]):
+    """One component booking. `id` is the `public_id` (§7.2)."""
+
+    id = serializers.UUIDField(source="public_id", read_only=True)
+    reference = serializers.CharField(read_only=True)
+    booking_type = serializers.CharField(read_only=True)
+    status = serializers.CharField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    starts_at = serializers.DateTimeField(read_only=True)
+    ends_at = serializers.DateTimeField(read_only=True)
+    pax_count = serializers.IntegerField(read_only=True)
+    gross_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    gross_amount_display = DisplayMoneyField(amount_field="gross_amount")
+    fee_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    tax_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    currency = serializers.CharField(read_only=True)
+    cancellation_policy_code = serializers.CharField(read_only=True)
+    confirmed_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    cancelled_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    response_due_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+
+class BasketSerializer(serializers.Serializer[Any]):
+    """§9.4.6's 201: "the basket and the total payable"."""
+
+    trip_public_id = serializers.UUIDField(read_only=True)
+    trip_status = serializers.CharField(read_only=True)
+    currency = serializers.CharField(read_only=True)
+    total_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    total_amount_display = DisplayMoneyField(amount_field="total_amount")
+    payment_expires_at = serializers.DateTimeField(read_only=True)
+    bookings = BookingSerializer(many=True, read_only=True)

@@ -62,6 +62,7 @@ __all__ = [
     "bind_departure",
     "price_trip",
     "unprice_trip",
+    "open_payment",
 ]
 
 _M = TypeVar("_M", bound=Model)
@@ -344,6 +345,32 @@ def price_trip(
             "updated_at",
         ]
     )
+    return trip
+
+
+def open_payment(
+    trip: Trip, *, items: Sequence[ItineraryItem], bookings: Mapping[int, int]
+) -> Trip:
+    """§9.4.6: link each component to its booking and move the trip on.
+
+    `bookings` maps an item's primary key to the booking created for it. The
+    link is `itinerary_item.booking_id`, declared in Phase 4 and written by
+    nothing until now (R21).
+
+    `status` goes through `TRIP_MACHINE.transition`, unlike `price_trip`'s
+    re-quote: PRICED → PENDING_PAYMENT is a declared edge, so there is no reason
+    to write the state by hand.
+    """
+    for row in items:
+        booking_id = bookings.get(int(row.pk))
+        if booking_id is None:
+            continue
+        row.booking_id = booking_id
+        row.save(update_fields=["booking_id", "updated_at"])
+
+    trip.status = TRIP_MACHINE.transition(TripState(trip.status), TripState.PENDING_PAYMENT)
+    trip.version += 1
+    trip.save(update_fields=["status", "version", "updated_at"])
     return trip
 
 

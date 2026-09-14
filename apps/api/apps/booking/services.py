@@ -1,8 +1,8 @@
 """booking module — SRS §6.4.
 
     Owns:       booking, booking_activity, booking_transfer,
-                booking_status_history, basket  (all Phase 7)
-    Interface:  quote_trip()
+                booking_status_history
+    Interface:  quote_trip(), create_basket()
     Depends on: inventory, trip, provider
     Layer:      L4
 
@@ -16,8 +16,9 @@ is the module §6.4 hands `inventory`, `trip` and `provider` to, for no other
 reason than this, and §43 forbids splitting it from `inventory` and `payment`
 because the three share the atomic transaction that makes a basket correct.
 
-The quote *is* that transaction, one phase early. **No booking row is created
-here.** The booking models, their state machine and the basket remain Phase 7.
+The quote *is* that transaction, one phase early, and it still creates no
+booking. Phase 7 adds the basket (§9.4.6), which does: `create_basket` turns an
+accepted quote into one PENDING booking per component (ADR 0025).
 
 **One transaction, and it holds nothing open across an external call** (§8.4,
 hard rule 11). Everything below is local work: a read of the trip, a locked
@@ -34,19 +35,35 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from django.db import transaction
 from django.utils import timezone
 
+from apps.booking import repositories as repo
+from apps.booking.domain.allocation import allocate
+from apps.booking.domain.lifecycle import BookingState
+from apps.booking.dto import BasketDTO, BookingDTO
+from apps.booking.models import Booking, BookingType
 from apps.common.config import get_setting
 from apps.common.errors import ConflictError
 from apps.inventory import services as inventory
 from apps.inventory.dto import HoldDTO, HoldRequest
+from apps.provider import services as provider
+from apps.provider.dto import ProviderDTO
 from apps.trip import services as trip_services
-from apps.trip.dto import TripDTO
+from apps.trip.dto import BasketLineDTO, TripDTO
 
-__all__ = ["QuoteResult", "quote_trip", "ItineraryNotQuotableError"]
+__all__ = [
+    "QuoteResult",
+    "quote_trip",
+    "ItineraryNotQuotableError",
+    "QuoteExpiredError",
+    "TripNotPayableError",
+    "NotBookableError",
+    "create_basket",
+]
 
 
 class ItineraryNotQuotableError(ConflictError):
@@ -175,5 +192,242 @@ def _token(trip: TripDTO) -> UUID:
     from a superseded quote, and the thing that changes between quotes is the
     moment they were made.
     """
-    stamp = trip.priced_at.isoformat() if trip.priced_at else ""
-    return uuid5(NAMESPACE_URL, f"quote:{trip.public_id}:{stamp}")
+    return _token_for(trip.public_id, trip.priced_at)
+
+
+def _token_for(public_id: UUID, priced_at: datetime | None) -> UUID:
+    stamp = priced_at.isoformat() if priced_at else ""
+    return uuid5(NAMESPACE_URL, f"quote:{public_id}:{stamp}")
+
+
+# -- §9.4.6: the basket -------------------------------------------------------
+
+
+class QuoteExpiredError(ConflictError):
+    """§32.3: `QUOTE_EXPIRED`, 409 — "Quote TTL elapsed", re-quote to continue.
+
+    Also raised for a token from a superseded quote. The tourist's remedy is the
+    same in both cases, and telling them apart would tell a stranger holding an
+    old token whether the trip had been re-priced since.
+    """
+
+    code = "QUOTE_EXPIRED"
+
+
+class TripNotPayableError(ConflictError):
+    """§32.3: `TRIP_NOT_PAYABLE`, 409 — the trip is in the wrong state."""
+
+    code = "TRIP_NOT_PAYABLE"
+
+
+class NotBookableError(ConflictError):
+    """A component nobody can currently sell — BR-037, BR-033, ADR 0025.
+
+    `details` names each component and why, so a client can say which item to
+    remove rather than refusing the whole trip with one sentence.
+    """
+
+    code = "NOT_BOOKABLE"
+
+
+def _seller_problems(
+    lines: Sequence[BasketLineDTO], now: datetime
+) -> tuple[dict[int, ProviderDTO], list[dict[str, str]]]:
+    """Who sells each line, and every line nobody can.
+
+    Collected rather than raised one at a time: a trip with two unsellable
+    components should say so once, naming both.
+    """
+    activity_sellers = provider.providers_by_id(
+        [line.provider_id for line in lines if line.provider_id is not None]
+    )
+    sellers: dict[int, ProviderDTO] = {}
+    problems: list[dict[str, str]] = []
+    for line in lines:
+        where = {"item": str(line.item_public_id), "title": line.title}
+        if line.starts_at <= now:
+            # BR-033: "A booking may not start in the past".
+            problems.append({**where, "reason": "STARTS_IN_THE_PAST"})
+            continue
+        if line.item_type == BookingType.TRANSFER:
+            seller = (
+                None
+                if line.origin_region_id is None
+                else provider.transport_provider_for(line.origin_region_id)
+            )
+        else:
+            seller = None if line.provider_id is None else activity_sellers.get(line.provider_id)
+        if seller is None:
+            problems.append({**where, "reason": "NO_PROVIDER"})
+        elif not seller.is_sellable:
+            # BR-037, checked at the basket as well as at confirmation: a
+            # tourist should not pay for something already known unsellable.
+            problems.append({**where, "reason": "PROVIDER_NOT_VERIFIED"})
+        else:
+            sellers[line.item_id] = seller
+    return sellers, problems
+
+
+def _commission_rate(seller: ProviderDTO) -> Decimal:
+    """§22.2's resolution, as far as Phase 7 can take it.
+
+    `commission_rule` is Phase 8's table, so every scope above GLOBAL is empty
+    and the rate is the global default. The snapshot is taken now all the same —
+    TC-060 — and Phase 8 changes what is resolved, not where it is stored.
+    """
+    return Decimal(str(get_setting("commission.default_percent"))).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+
+
+def _booking_dto(row: Booking, title: str) -> BookingDTO:
+    snapshot = row.cancellation_policy_snapshot or {}
+    return BookingDTO(
+        public_id=row.public_id,
+        reference=row.reference,
+        booking_type=row.booking_type,
+        status=row.status,
+        title=title,
+        starts_at=row.starts_at,
+        ends_at=row.ends_at,
+        pax_count=row.pax_count,
+        gross_amount=row.gross_amount,
+        fee_amount=row.fee_amount,
+        tax_amount=row.tax_amount,
+        currency=row.currency,
+        cancellation_policy_code=str(snapshot.get("code", "")),
+        confirmed_at=row.confirmed_at,
+        cancelled_at=row.cancelled_at,
+        response_due_at=row.response_due_at,
+    )
+
+
+@transaction.atomic
+def create_basket(
+    public_id: UUID,
+    *,
+    tourist_id: int,
+    quote_token: UUID,
+    actor_user_id: int | None = None,
+    now: datetime | None = None,
+) -> BasketDTO:
+    """§9.4.6, `POST /trips/{id}/confirm`: an accepted quote becomes a basket.
+
+    In order, and each step is §9.4.6's or a rule it names:
+
+    1. The quote must be the current one and still standing — otherwise
+       `QUOTE_EXPIRED`, and **no booking is created** (TC-061).
+    2. Every component must be sellable: in the future (BR-033), with a
+       verified seller (BR-037). Every failure is reported at once.
+    3. One PENDING booking per component, with its policy and commission rate
+       snapshotted (TC-060, BR-041) and its share of the fee and tax allocated
+       to the cent.
+    4. The items are linked and the trip moves to PENDING_PAYMENT.
+    5. The holds are extended to the payment window.
+
+    "No inventory is committed and no provider is notified at this point — that
+    happens only on payment capture." Nothing here does either.
+
+    **One transaction, no external call** (hard rule 11). A failure at step 4 or
+    5 rolls back step 3, so a basket is either whole or absent.
+    """
+    now = now or timezone.now()
+    basis = trip_services.basket_basis(public_id, tourist_id=tourist_id)
+
+    if basis.status != "PRICED":
+        raise TripNotPayableError(
+            f"a trip in {basis.status} cannot be booked; get a price for it first"
+        )
+    if (
+        basis.quote_expires_at is None
+        or now >= basis.quote_expires_at
+        or quote_token != _token_for(basis.public_id, basis.priced_at)
+    ):
+        raise QuoteExpiredError("This price is no longer available. Get a new price to continue.")
+    if not basis.lines:
+        raise TripNotPayableError(
+            "this trip has nothing to book: stays and attractions are not sold here"
+        )
+
+    sellers, problems = _seller_problems(basis.lines, now)
+    if problems:
+        raise NotBookableError(
+            "Some parts of this trip cannot be booked right now.", details=problems
+        )
+
+    fees = allocate(basis.fee_amount, [line.gross_amount for line in basis.lines])
+    taxes = allocate(basis.tax_amount, [line.gross_amount for line in basis.lines])
+
+    created: list[BookingDTO] = []
+    links: dict[UUID, int] = {}
+    for line, fee, tax in zip(basis.lines, fees, taxes, strict=True):
+        seller = sellers[line.item_id]
+        row = repo.create_booking(
+            trip_id=basis.trip_id,
+            tourist_id=tourist_id,
+            provider_id=seller.id,
+            booking_type=line.item_type,
+            status=BookingState.PENDING.value,
+            starts_at=line.starts_at,
+            ends_at=line.ends_at,
+            pax_count=line.pax,
+            gross_amount=line.gross_amount,
+            fee_amount=fee,
+            tax_amount=tax,
+            currency=line.currency,
+            commission_rate=_commission_rate(seller),
+            cancellation_policy_id=line.cancellation_policy_id,
+            cancellation_policy_snapshot=line.policy_snapshot,
+        )
+        if line.item_type == BookingType.ACTIVITY:
+            repo.create_activity(
+                row,
+                activity_id=line.activity_id,
+                activity_departure_id=line.activity_departure_id,
+                pax_adult=line.pax_adult,
+                pax_child=line.pax_child,
+                meeting_at=line.starts_at,
+            )
+        else:
+            assert line.pickup_lonlat is not None and line.dropoff_lonlat is not None
+            repo.create_transfer(
+                row,
+                pickup_lonlat=line.pickup_lonlat,
+                dropoff_lonlat=line.dropoff_lonlat,
+                origin_destination_id=line.origin_destination_id,
+                target_destination_id=line.target_destination_id,
+                pickup_at=line.starts_at,
+                distance_m=line.distance_m,
+                travel_seconds=line.travel_seconds,
+                estimate_quality=line.estimate_quality or "APPROXIMATE",
+                vehicle_class=line.vehicle_class,
+                luggage_count=line.luggage_count,
+                is_airport_transfer=line.is_airport_transfer,
+                corridor_id=line.rule_id if line.match_kind == "CORRIDOR" else None,
+                tariff_id=line.rule_id if line.match_kind == "TARIFF" else None,
+            )
+        repo.record_transition(
+            row,
+            from_status=None,
+            to_status=BookingState.PENDING.value,
+            actor_role="TOURIST",
+            actor_user_id=actor_user_id,
+            reason="Basket created from an accepted quote.",
+            occurred_at=now,
+        )
+        links[line.item_public_id] = int(row.pk)
+        created.append(_booking_dto(row, line.title))
+
+    moved = trip_services.open_payment(public_id, tourist_id=tourist_id, bookings=links)
+
+    window = now + timedelta(minutes=int(get_setting("payment.window_minutes")))
+    inventory.extend_holds(trip_id=basis.trip_id, until=window, now=now)
+
+    return BasketDTO(
+        trip_public_id=basis.public_id,
+        trip_status=moved.status,
+        currency=basis.currency,
+        total_amount=basis.total_amount,
+        payment_expires_at=window,
+        bookings=tuple(created),
+    )

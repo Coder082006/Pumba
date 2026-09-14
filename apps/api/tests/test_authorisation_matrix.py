@@ -264,6 +264,11 @@ SCOPED_BY_A_SELECTOR = {
     # — so a stranger's trip is never fetched and the answer is 404.
     # `tests/test_quote_api.py` asserts that, and asserts the stronger thing
     # underneath it: a foreign principal takes no capacity on the way past.
+    "v1:booking:trip-confirm": (
+        "`booking.create_basket` loads the trip through `trip.services.basket_basis`, "
+        "which fetches via `trip.selectors.trips_of(tourist_id)` — the owner is in "
+        "the WHERE clause, and the trip is locked through the same selector."
+    ),
     "v1:booking:trip-quote": (
         "`booking.quote_trip` loads the trip through `trip.services.quote_basis`, "
         "which fetches via `trip.selectors.trips_of(tourist_id)` — the owner is in "

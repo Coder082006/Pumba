@@ -101,6 +101,7 @@ __all__ = [
     "generate_itinerary",
     "quote_basis",
     "basket_basis",
+    "open_payment",
     "PriceChangedError",
     "mark_priced",
     "expire_quote",
@@ -1489,6 +1490,35 @@ def basket_basis(public_id: UUID, *, tourist_id: int) -> BasketBasisDTO:
 
 def _lonlat(point: Point | None) -> tuple[float, float] | None:
     return None if point is None else (float(point.x), float(point.y))
+
+
+@transaction.atomic
+def open_payment(public_id: UUID, *, tourist_id: int, bookings: Mapping[UUID, int]) -> TripDTO:
+    """§9.4.6's trip half: `PRICED → PENDING_PAYMENT`, components linked.
+
+    `bookings` maps an item's `public_id` to the booking created for it — the
+    one integer `booking` hands back across the boundary, because the column it
+    fills stores exactly that (ADR 0012).
+
+    **The trip row is locked first.** Two basket attempts for one trip with
+    different idempotency keys both build bookings; whichever reaches this lock
+    second finds the trip already PENDING_PAYMENT and raises, and its
+    transaction — bookings included — rolls back. The lock is what makes "one
+    basket per quote" true without a uniqueness constraint across modules.
+    """
+    trip = selectors.trips_of(tourist_id).select_for_update().filter(public_id=public_id).first()
+    if trip is None:
+        raise NotFoundError(f"no trip {public_id}")
+    if TripState(trip.status) is not TripState.PRICED:
+        raise ConflictError(
+            f"a trip in {trip.status} cannot start a payment; only a priced trip can",
+            code="TRIP_NOT_PAYABLE",
+        )
+
+    items = list(trip.itinerary.items.all())
+    by_pk = {int(row.pk): bookings[row.public_id] for row in items if row.public_id in bookings}
+    repo.open_payment(trip, items=items, bookings=by_pk)
+    return _dto(trip)
 
 
 @transaction.atomic

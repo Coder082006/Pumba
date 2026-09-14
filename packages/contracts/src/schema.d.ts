@@ -1741,6 +1741,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trips/{public_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create the booking basket from an accepted quote
+         * @description SRS §9.4.6. Creates one booking per component in `PENDING`, snapshots each component's cancellation policy and commission rate, moves the trip to `PENDING_PAYMENT` and extends the held capacity to the payment window. **Nothing is committed and no provider is notified** — that happens on payment capture.
+         *
+         *     **409 `QUOTE_EXPIRED`**: the quote lapsed or was superseded; no booking is created. **409 `TRIP_NOT_PAYABLE`**: the trip is not priced, or has nothing bookable. **409 `NOT_BOOKABLE`**: a component has no verified seller or starts in the past; `details` names each. **409 `PRICE_CHANGED`**: a transfer fare moved since the quote. **409 `HOLD_EXPIRED`**: held capacity lapsed.
+         */
+        post: operations["trips_confirm_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/trips/{public_id}/flights": {
         parameters: {
             query?: never;
@@ -2140,6 +2162,62 @@ export interface components {
             feature_rank?: number;
             is_active?: boolean;
         };
+        /** @description §9.4.6's 201: "the basket and the total payable". */
+        Basket: {
+            /** Format: uuid */
+            readonly trip_public_id: string;
+            readonly trip_status: string;
+            readonly currency: string;
+            /** Format: decimal */
+            readonly total_amount: string;
+            readonly total_amount_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
+            /** Format: date-time */
+            readonly payment_expires_at: string;
+            readonly bookings: components["schemas"]["Booking"][];
+        };
+        /** @description One component booking. `id` is the `public_id` (§7.2). */
+        Booking: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly reference: string;
+            readonly booking_type: string;
+            readonly status: string;
+            readonly title: string;
+            /** Format: date-time */
+            readonly starts_at: string;
+            /** Format: date-time */
+            readonly ends_at: string;
+            readonly pax_count: number;
+            /** Format: decimal */
+            readonly gross_amount: string;
+            readonly gross_amount_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
+            /** Format: decimal */
+            readonly fee_amount: string;
+            /** Format: decimal */
+            readonly tax_amount: string;
+            readonly currency: string;
+            readonly cancellation_policy_code: string;
+            /** Format: date-time */
+            readonly confirmed_at: string | null;
+            /** Format: date-time */
+            readonly cancelled_at: string | null;
+            /** Format: date-time */
+            readonly response_due_at: string | null;
+        };
         /** @description §14.6. `tiers` travels whole: a tourist needs the ladder, not the code. */
         CancellationPolicy: {
             /** Format: uuid */
@@ -2194,6 +2272,16 @@ export interface components {
             features: {
                 [key: string]: boolean;
             };
+        };
+        /** @description §9.4.6's request: `{"quote_token": "…", "payment_method": "CARD"}`.
+         *
+         *     `payment_method` is accepted and not yet acted on. Payment is Phase 8, and
+         *     refusing a field §9.4.6 names would break a client written to the SRS; the
+         *     basket it creates is the same whichever method follows. */
+        ConfirmRequest: {
+            /** Format: uuid */
+            quote_token: string;
+            payment_method?: components["schemas"]["PaymentMethodEnum"];
         };
         /**
          * @description * `INSTANT` - Confirms immediately
@@ -3052,6 +3140,12 @@ export interface components {
             infants?: number;
             title?: string | null;
         };
+        /**
+         * @description * `CARD` - CARD
+         *     * `MOBILE_MONEY` - MOBILE_MONEY
+         * @enum {string}
+         */
+        PaymentMethodEnum: "CARD" | "MOBILE_MONEY";
         /**
          * @description * `IOS` - IOS
          *     * `ANDROID` - ANDROID
@@ -5821,6 +5915,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Trip"];
+                };
+            };
+        };
+    };
+    trips_confirm_create: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A client-generated key unique to this attempt. Repeating the request with the same key returns the first basket and creates no second one. */
+                "Idempotency-Key": string;
+            };
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ConfirmRequest"];
+                "multipart/form-data": components["schemas"]["ConfirmRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Basket"];
                 };
             };
         };

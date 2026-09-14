@@ -2701,6 +2701,52 @@ paths:
               schema:
                 $ref: '#/components/schemas/Trip'
           description: ''
+  /api/v1/trips/{public_id}/confirm:
+    post:
+      operationId: trips_confirm_create
+      description: |-
+        SRS §9.4.6. Creates one booking per component in `PENDING`, snapshots each component's cancellation policy and commission rate, moves the trip to `PENDING_PAYMENT` and extends the held capacity to the payment window. **Nothing is committed and no provider is notified** — that happens on payment capture.
+
+        **409 `QUOTE_EXPIRED`**: the quote lapsed or was superseded; no booking is created. **409 `TRIP_NOT_PAYABLE`**: the trip is not priced, or has nothing bookable. **409 `NOT_BOOKABLE`**: a component has no verified seller or starts in the past; `details` names each. **409 `PRICE_CHANGED`**: a transfer fare moved since the quote. **409 `HOLD_EXPIRED`**: held capacity lapsed.
+      summary: Create the booking basket from an accepted quote
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        description: A client-generated key unique to this attempt. Repeating the
+          request with the same key returns the first basket and creates no second
+          one.
+        required: true
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trip
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConfirmRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Basket'
+          description: ''
   /api/v1/trips/{public_id}/flights:
     put:
       operationId: trips_flights_update
@@ -3647,6 +3693,176 @@ components:
       - longitude
       - name
       - slug
+    Basket:
+      type: object
+      description: '§9.4.6''s 201: "the basket and the total payable".'
+      properties:
+        trip_public_id:
+          type: string
+          format: uuid
+          readOnly: true
+        trip_status:
+          type: string
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        total_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        total_amount_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
+        payment_expires_at:
+          type: string
+          format: date-time
+          readOnly: true
+        bookings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+          readOnly: true
+      required:
+      - bookings
+      - currency
+      - payment_expires_at
+      - total_amount
+      - total_amount_display
+      - trip_public_id
+      - trip_status
+    Booking:
+      type: object
+      description: One component booking. `id` is the `public_id` (§7.2).
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        booking_type:
+          type: string
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          readOnly: true
+        starts_at:
+          type: string
+          format: date-time
+          readOnly: true
+        ends_at:
+          type: string
+          format: date-time
+          readOnly: true
+        pax_count:
+          type: integer
+          readOnly: true
+        gross_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        gross_amount_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
+        fee_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        tax_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        cancellation_policy_code:
+          type: string
+          readOnly: true
+        confirmed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        response_due_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+      required:
+      - booking_type
+      - cancellation_policy_code
+      - cancelled_at
+      - confirmed_at
+      - currency
+      - ends_at
+      - fee_amount
+      - gross_amount
+      - gross_amount_display
+      - id
+      - pax_count
+      - reference
+      - response_due_at
+      - starts_at
+      - status
+      - tax_amount
+      - title
     CancellationPolicy:
       type: object
       description: '§14.6. `tiers` travels whole: a tourist needs the ladder, not
@@ -3772,6 +3988,22 @@ components:
       - map_tile_url
       - min_supported_version
       - stay_max_nights
+    ConfirmRequest:
+      type: object
+      description: |-
+        §9.4.6's request: `{"quote_token": "…", "payment_method": "CARD"}`.
+
+        `payment_method` is accepted and not yet acted on. Payment is Phase 8, and
+        refusing a field §9.4.6 names would break a client written to the SRS; the
+        basket it creates is the same whichever method follows.
+      properties:
+        quote_token:
+          type: string
+          format: uuid
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethodEnum'
+      required:
+      - quote_token
     ConfirmationModeEnum:
       enum:
       - INSTANT
@@ -5772,6 +6004,14 @@ components:
           - 'null'
           minLength: 1
           maxLength: 140
+    PaymentMethodEnum:
+      enum:
+      - CARD
+      - MOBILE_MONEY
+      type: string
+      description: |-
+        * `CARD` - CARD
+        * `MOBILE_MONEY` - MOBILE_MONEY
     PlatformEnum:
       enum:
       - IOS
