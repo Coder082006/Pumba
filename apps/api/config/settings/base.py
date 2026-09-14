@@ -364,6 +364,10 @@ LOGGING = {
 # never "mail to a stranger from a half-configured host".
 PORT_ADAPTERS = {
     "email": env("EMAIL_ADAPTER", default="fake"),
+    # ADR 0026. The real renderer is the default here, unlike email: it makes
+    # no external call, and a tourist downloading a voucher in development
+    # should get a PDF. Tests override it to the fake (config.settings.ci).
+    "document": env("DOCUMENT_ADAPTER", default="apps.booking.adapters.pdf.ReportLabDocuments"),
 }
 
 # Django's SMTP transport, which `apps.notify.adapters.smtp` sends through.

@@ -26,3 +26,8 @@ CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"
 CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 LOGGING["root"]["level"] = "WARNING"  # type: ignore[index]  # noqa: F405
+
+# ADR 0026. Tests render vouchers through the fake, which returns readable text:
+# an assertion about what a voucher says should read words, not parse a PDF.
+# The real renderer has its own test that asks for it by name.
+PORT_ADAPTERS = {**PORT_ADAPTERS, "document": "fake"}  # noqa: F405

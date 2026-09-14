@@ -19,6 +19,7 @@ dependencies = [
     "argon2-cffi==23.1.*",
     "django-environ==0.11.*",
     "django-cors-headers==4.6.*",
+    "reportlab==4.*",
 ]
 
 [dependency-groups]
@@ -33,6 +34,7 @@ dev = [
     "pytest-cov==6.0.*",
     "factory-boy==3.3.*",
     "testcontainers[postgres,redis]==4.9.*",
+    "types-reportlab>=5.0.0.20260911",
 ]
 
 # ---------------------------------------------------------------------------

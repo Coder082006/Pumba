@@ -31,6 +31,7 @@ from django.utils.module_loading import import_string
 
 from ports.breach import BreachedPasswordPort
 from ports.crypto import CryptoPort
+from ports.document import DocumentPort
 from ports.exchange_rate import ExchangeRatePort
 from ports.notification import EmailPort, PushPort, SmsPort
 from ports.storage import StoragePort
@@ -45,6 +46,7 @@ __all__ = [
     "get_breach_port",
     "get_storage_port",
     "get_exchange_rate_port",
+    "get_document_port",
     "reset_ports",
 ]
 
@@ -57,6 +59,9 @@ _FAKES = {
     "breach": "ports.fakes.FakeBreachedPasswords",
     "storage": "ports.fakes.FakeStorage",
     "exchange_rate": "ports.fakes.FakeExchangeRates",
+    # ADR 0026. A renderer has no external side effect and no money behind it,
+    # so a fake carries none of the risk that keeps routing and payment out.
+    "document": "ports.fakes.FakeDocuments",
 }
 
 
@@ -104,3 +109,8 @@ def get_storage_port() -> StoragePort:
 def get_exchange_rate_port() -> ExchangeRatePort:
     """Indicative rates for display only. Never the §18.4 pricing path."""
     return _resolve("exchange_rate")  # type: ignore[no-any-return]
+
+
+def get_document_port() -> DocumentPort:
+    """Voucher rendering — ADR 0026."""
+    return _resolve("document")  # type: ignore[no-any-return]

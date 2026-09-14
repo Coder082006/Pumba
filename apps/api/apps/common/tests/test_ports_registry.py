@@ -64,6 +64,8 @@ class TestTheRegisteredSet:
             "breach",
             "storage",
             "exchange_rate",
+            # ADR 0026: voucher rendering. No external call, no money.
+            "document",
         }
 
     def test_no_deliberately_unregistered_port_has_a_fake(self) -> None:

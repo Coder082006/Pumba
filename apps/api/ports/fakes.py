@@ -26,6 +26,7 @@ from apps.common.errors import ValidationError
 from apps.common.money import Money
 from ports.breach import BreachLookupError
 from ports.crypto import Ciphertext, DecryptionError
+from ports.document import VoucherContent
 from ports.exchange_rate import IndicativeRate
 from ports.notification import DeliveryResult, DeliveryStatus
 from ports.payment import (
@@ -476,3 +477,20 @@ class FakeExchangeRates:
             as_of=self.AS_OF,
             source=self.SOURCE,
         )
+
+
+class FakeDocuments:
+    """`DocumentPort` for tests: the voucher's content as readable text.
+
+    Not a PDF, on purpose. A test asserting that a voucher names its reference
+    and its meeting point should read those words, not parse a byte stream —
+    and deterministic output is what the real adapter promises too.
+    """
+
+    def __init__(self) -> None:
+        self.rendered: list[VoucherContent] = []
+
+    def render_voucher(self, content: VoucherContent) -> bytes:
+        self.rendered.append(content)
+        lines = [f"{field}: {getattr(content, field)}" for field in content.__dataclass_fields__]
+        return ("FAKE-VOUCHER\n" + "\n".join(lines)).encode("utf-8")
