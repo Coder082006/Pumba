@@ -69,6 +69,7 @@ __all__ = [
     "resolve_departure_at",
     "hold",
     "commit",
+    "extend_holds",
     "release",
     "release_expired",
     "reconcile",
@@ -565,6 +566,41 @@ def commit(*, trip_id: int, now: datetime) -> int:
 
     for row in live:
         _finish(row, state=HoldState.COMMITTED)
+    return len(live)
+
+
+@transaction.atomic
+def extend_holds(*, trip_id: int, until: datetime, now: datetime) -> int:
+    """§9.4.6: "extend hold expiry to the payment window".
+
+    Called when a basket is created, so a tourist completing a 3-D Secure
+    challenge is not timed out mid-payment (§17.2). Returns how many holds were
+    extended; a trip holding nothing — transfers only — extends nothing.
+
+    **A hold that has already expired is refused, not revived.** §17.4: "Confirm
+    | Hold validity re-checked; expired hold → 409 HOLD_EXPIRED". Extending a
+    dead hold would promise a seat the sweeper may already have given back, and
+    the counter no longer counts it.
+
+    **Extension never shortens.** `max(current, until)`, so a basket created
+    twice in quick succession cannot pull a longer window back in.
+
+    The holds are locked; the departures are not, because nothing here moves a
+    counter — the seats stay held, only the moment they are given back changes.
+    The sweeper re-reads `expires_at` under the same row lock, which is exactly
+    why that re-check exists (see `release_expired`).
+    """
+    live = repo.live_holds_of_trip(trip_id, for_update=True)
+    expired = [row for row in live if not row.is_live(now=now)]
+    if expired:
+        raise InventoryUnavailableError(
+            "The hold on this trip expired before the basket was created.",
+            code="HOLD_EXPIRED",
+            details=[{"hold": str(row.hold_token)} for row in expired],
+        )
+    for row in live:
+        if row.expires_at < until:
+            repo.extend_hold(row, expires_at=until)
     return len(live)
 
 

@@ -414,6 +414,62 @@ class TestCommit:
         assert services.commit(trip_id=TRIP, now=_now()) == 0
 
 
+class TestExtendHolds:
+    """§9.4.6: a basket extends its holds to the payment window."""
+
+    def _hold(self, now: dt.datetime) -> ActivityDeparture:
+        departure = make_departure()
+        services.hold(
+            trip_id=TRIP,
+            requests=[HoldRequest(departure_id=departure.id, pax=1)],
+            ttl_minutes=TTL,
+            now=now,
+        )
+        return departure
+
+    def test_a_live_hold_is_extended(self) -> None:
+        now = _now()
+        self._hold(now)
+        until = now + dt.timedelta(minutes=30)
+        assert services.extend_holds(trip_id=TRIP, until=until, now=now) == 1
+        assert InventoryHold.objects.get().expires_at == until
+
+    def test_the_seats_stay_held_and_nothing_is_sold(self) -> None:
+        now = _now()
+        departure = self._hold(now)
+        services.extend_holds(trip_id=TRIP, until=now + dt.timedelta(minutes=30), now=now)
+        departure.refresh_from_db()
+        assert (departure.capacity_held, departure.capacity_sold) == (1, 0)
+
+    def test_an_expired_hold_is_refused_not_revived(self) -> None:
+        """§17.4: "expired hold → 409 HOLD_EXPIRED"."""
+        now = _now()
+        self._hold(now)
+        later = now + dt.timedelta(minutes=TTL + 1)
+        with pytest.raises(InventoryUnavailableError) as raised:
+            services.extend_holds(trip_id=TRIP, until=later + dt.timedelta(minutes=30), now=later)
+        assert raised.value.code == "HOLD_EXPIRED"
+
+    def test_an_extension_never_shortens_a_window(self) -> None:
+        now = _now()
+        self._hold(now)
+        long = now + dt.timedelta(minutes=45)
+        services.extend_holds(trip_id=TRIP, until=long, now=now)
+        services.extend_holds(trip_id=TRIP, until=now + dt.timedelta(minutes=30), now=now)
+        assert InventoryHold.objects.get().expires_at == long
+
+    def test_a_trip_holding_nothing_extends_nothing(self) -> None:
+        now = _now()
+        assert services.extend_holds(trip_id=TRIP, until=now, now=now) == 0
+
+    def test_another_trips_holds_are_untouched(self) -> None:
+        now = _now()
+        self._hold(now)
+        original = InventoryHold.objects.get().expires_at
+        services.extend_holds(trip_id=OTHER_TRIP, until=now + dt.timedelta(hours=1), now=now)
+        assert InventoryHold.objects.get().expires_at == original
+
+
 class TestReleaseExpired:
     """§17.5's sweeper, over this module's own rows. TC-052."""
 

@@ -78,6 +78,7 @@ __all__ = [
     "release_held",
     "create_hold",
     "live_holds_of_trip",
+    "extend_hold",
     "expired_holds",
     "lock_hold",
     "finish_hold",
@@ -272,6 +273,14 @@ def live_holds_of_trip(trip_id: int, *, for_update: bool = False) -> list[Invent
     if for_update:
         rows = rows.select_for_update()
     return list(rows.order_by("resource_id", "id"))
+
+
+def extend_hold(row: InventoryHold, *, expires_at: datetime) -> InventoryHold:
+    """A later expiry on a live, locked hold. The caller has checked both."""
+    row.expires_at = expires_at
+    row.version += 1
+    row.save(update_fields=["expires_at", "version", "updated_at"])
+    return row
 
 
 def expired_holds(*, now: datetime, limit: int) -> list[InventoryHold]:
