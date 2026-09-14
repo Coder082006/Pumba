@@ -91,3 +91,57 @@ class TestSoftDeletion:
         provider.delete()
         assert not Provider.objects.filter(pk=provider.pk).exists()
         assert Provider.all_objects.filter(pk=provider.pk).exists()
+
+
+class TestWhoSellsATransfer:
+    """ADR 0025's addendum: the verified TRANSPORT provider in the origin region."""
+
+    def test_the_verified_transport_provider_in_the_region(self) -> None:
+        from apps.provider.services import transport_provider_for
+
+        make(provider_type="ACTIVITY", verify_status="VERIFIED", verified_at=timezone.now())
+        seller = make(
+            legal_name="North Cars Limited",
+            provider_type="TRANSPORT",
+            verify_status="VERIFIED",
+            verified_at=timezone.now(),
+        )
+        found = transport_provider_for(1)
+        assert found is not None and found.id == seller.id
+
+    def test_an_unverified_or_suspended_one_is_not_chosen(self) -> None:
+        """BR-037, before anything is booked."""
+        from apps.provider.services import transport_provider_for
+
+        make(provider_type="TRANSPORT")
+        make(
+            legal_name="Suspended Cars Limited",
+            provider_type="TRANSPORT",
+            verify_status="SUSPENDED",
+            verified_at=timezone.now(),
+        )
+        assert transport_provider_for(1) is None
+
+    def test_another_region_s_provider_is_not_chosen(self) -> None:
+        from apps.provider.services import transport_provider_for
+
+        make(provider_type="TRANSPORT", verify_status="VERIFIED", verified_at=timezone.now())
+        assert transport_provider_for(2) is None
+
+    def test_the_oldest_wins_so_the_answer_is_stable(self) -> None:
+        from apps.provider.services import transport_provider_for
+
+        first = make(
+            legal_name="First Cars Limited",
+            provider_type="TRANSPORT",
+            verify_status="VERIFIED",
+            verified_at=timezone.now(),
+        )
+        make(
+            legal_name="Second Cars Limited",
+            provider_type="TRANSPORT",
+            verify_status="VERIFIED",
+            verified_at=timezone.now(),
+        )
+        found = transport_provider_for(1)
+        assert found is not None and found.id == first.id

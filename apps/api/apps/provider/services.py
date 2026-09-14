@@ -49,6 +49,7 @@ __all__ = [
     "providers_by_id",
     "change_status",
     "require_owner_of",
+    "transport_provider_for",
     "WALKABLE_TARGETS",
     "SeedResult",
     "load_provider_seed",
@@ -178,6 +179,33 @@ def require_owner_of(provider_public_id: UUID, kind: str) -> ProviderDTO:
             details=[{"field": "provider", "issue": "wrong_provider_type"}],
         )
     return _dto(row)
+
+
+def transport_provider_for(region_id: int) -> ProviderDTO | None:
+    """The transport provider a transfer starting in `region_id` is sold by.
+
+    §7.5.12 requires every booking to name a provider, and a transfer has no
+    listing to name one — the driver, and so the operator, is chosen by dispatch
+    after payment (Phases 9-10). ADR 0025's addendum records the rule this
+    implements: the sellable TRANSPORT provider operating in the leg's origin
+    region, the oldest if there are several.
+
+    "Oldest" is a tie-break, not a preference: it is stable, so the same leg
+    always books against the same operator until dispatch exists to decide
+    properly, and it favours no one by name. `None` when the region has none —
+    the basket refuses the leg rather than selling a drive nobody can be paid
+    for.
+    """
+    row = (
+        Provider.objects.filter(
+            provider_type=ProviderType.TRANSPORT.value,
+            region_id=region_id,
+            verify_status=VerifyState.VERIFIED.value,
+        )
+        .order_by("created_at", "id")
+        .first()
+    )
+    return None if row is None else _dto(row)
 
 
 @dataclass(frozen=True, slots=True)

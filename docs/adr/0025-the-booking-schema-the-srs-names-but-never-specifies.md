@@ -126,9 +126,13 @@ console. §7.5.3's "a provider may not own listings of a type inconsistent with
 provider_type" is enforced in that application service; the trigger half would
 be a cross-module trigger, which ADR 0012 forbids, and is not built.
 
-`activity.provider_id` is backfilled from seeded providers and made NOT NULL in
-the same migration. A listing with no provider is a listing nobody can be paid
-for.
+`activity.provider_id` is backfilled from seeded providers but **stays
+nullable**, which the first draft of this record got wrong. The catalogue console
+creates activities, and `catalogue` may not import `provider`, so a NOT NULL
+column would make an activity impossible to create until somebody could name its
+seller in a module that cannot see sellers. Instead a listing with no provider is
+a listing nobody can book: basket creation refuses it, and the seed test asserts
+no seeded activity is without one.
 
 ### 3. The service fee sits on top of gross
 
@@ -263,3 +267,26 @@ payment window may be extended once more at intent creation.
 database: a provider's listings match its type, and a booking's provider is
 VERIFIED at confirmation. Both have a positive and a negative test, because
 nothing else would notice them failing.
+
+## Addendum — 2026-09-15: who sells a transfer
+
+Building the basket found a ninth gap. §7.5.12 makes `booking.provider_id`
+NOT NULL, and a transfer booking has no listing to take a provider from: §20.3
+names the fulfilment actor as "assigned driver", and assignment is dispatch,
+which happens after payment and arrives in Phases 9–10.
+
+**Decision:** a transfer booking is sold by the VERIFIED `TRANSPORT` provider
+operating in the leg's origin region — `provider.region_id` is §7.5.3's
+"operating region" — and when a region has several, the oldest. The rule is
+stable, so a given leg books against the same operator on every attempt, and
+the tie-break favours nobody by name. A region with none refuses the leg at
+basket creation rather than selling a drive nobody can be paid for.
+
+This is a placeholder for dispatch, not a substitute for it. When Phase 9
+assigns a driver, the assignment may belong to a different operator; whether
+`booking.provider_id` then follows the assignment is Phase 9's decision, and
+the column is written only by this module either way (§20.1).
+
+The seed gives each of the three live Zanzibar regions one transport provider,
+and `tests/test_seed.py` asserts every region with a live destination has one.
+
