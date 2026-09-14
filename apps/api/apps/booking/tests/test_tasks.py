@@ -18,7 +18,11 @@ from django.apps import apps as django_apps
 from django.utils import timezone
 
 from apps.booking import services
-from apps.booking.tasks import reconcile_inventory, release_expired_holds
+from apps.booking.tasks import (
+    expire_provider_responses,
+    reconcile_inventory,
+    release_expired_holds,
+)
 
 from . import scenario
 
@@ -216,4 +220,8 @@ class TestTheyAreScheduled:
         scheduled = set(
             PeriodicTask.objects.filter(task__startswith="booking.").values_list("task", flat=True)
         )
-        assert scheduled == {release_expired_holds.name, reconcile_inventory.name}
+        assert scheduled == {
+            release_expired_holds.name,
+            reconcile_inventory.name,
+            expire_provider_responses.name,
+        }
