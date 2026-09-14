@@ -132,6 +132,11 @@ class TestRegister:
                         grows with traffic, and shortening the window is how it
                         is made to shed rows during an incident. Lengthening it
                         is the riskier direction and equally needs no release.
+            refund.     Appendix B registers `refund.auto_approve_limit`, so the
+                        namespace is familiar; `refund.fee_retention_hours` is
+                        new in Phase 7. §20.9 keeps the service fee on a tourist
+                        cancellation inside seven days of the start, and a window
+                        is a threshold hard rule 5 puts in a row. ADR 0025.
             transfer.   Phase 7, ADR 0025. `transfer.cancellation_policy_code`
                         names the policy every transfer booking snapshots. A
                         transfer has no listing to carry one, and §26.4 makes
@@ -162,6 +167,7 @@ class TestRegister:
                     "review.",
                     "map.",
                     "transfer.",
+                    "refund.",
                     "client.",
                     "currency.",
                     "feature.",

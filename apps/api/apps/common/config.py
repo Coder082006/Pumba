@@ -144,6 +144,14 @@ SETTINGS_REGISTER: dict[str, Setting] = {
             _d("50"),
             "USD equivalent; threshold below which balance rolls forward",
         ),
+        # §20.9: the service fee is refunded when a tourist cancels "> 7 days
+        # before start", and kept otherwise. A window is a threshold, and hard
+        # rule 5 makes a threshold a row. ADR 0025.
+        Setting(
+            "refund.fee_retention_hours",
+            168,
+            "Inside this many hours of the start a tourist cancellation keeps the fee",
+        ),
         Setting(
             "refund.auto_approve_limit",
             _d("200"),

@@ -75,6 +75,7 @@ __all__ = [
     "held_departures",
     "settle_capture",
     "return_sold",
+    "release_departure",
     "release",
     "release_expired",
     "reconcile",
@@ -696,6 +697,27 @@ def settle_capture(*, trip_id: int, claims: Mapping[int, int], now: datetime) ->
         committed.add(departure_id)
 
     return SettlementDTO(committed=frozenset(committed), lost=lost)
+
+
+@transaction.atomic
+def release_departure(*, trip_id: int, departure_id: int) -> int:
+    """Release this trip's live holds on one departure — BR-048 for a PENDING line.
+
+    `release` gives back a whole trip. A tourist cancelling one component of a
+    basket still awaiting payment needs only that component's seats back; the
+    rest of the basket keeps its capacity.
+    """
+    live = [
+        row
+        for row in repo.live_holds_of_trip(trip_id, for_update=True)
+        if row.resource_id == departure_id
+    ]
+    if not live:
+        return 0
+    repo.lock_departures([departure_id])
+    for row in live:
+        _finish(row, state=HoldState.RELEASED)
+    return len(live)
 
 
 @transaction.atomic

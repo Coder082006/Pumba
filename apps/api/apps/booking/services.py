@@ -44,7 +44,8 @@ from django.utils import timezone
 
 from apps.booking import repositories as repo
 from apps.booking.domain.allocation import allocate
-from apps.booking.domain.lifecycle import Actor, BookingState, apply, force
+from apps.booking.domain.cancellation import Party, Refund, evaluate
+from apps.booking.domain.lifecycle import ACTORS, Actor, BookingState, apply, force
 from apps.booking.dto import BasketDTO, BookingDTO
 from apps.booking.models import Booking, BookingActivity, BookingType
 from apps.common.config import get_setting
@@ -76,6 +77,10 @@ __all__ = [
     "accept_request",
     "decline_request",
     "expire_provider_responses",
+    "CancellationNotPermittedError",
+    "CancellationDTO",
+    "preview_cancellation",
+    "cancel_booking",
 ]
 
 
@@ -979,3 +984,184 @@ def expire_provider_responses(*, now: datetime | None = None) -> int:
             )
             cancelled += 1
     return cancelled
+
+
+# -- §20.9: cancellation ---------------------------------------------------------
+
+
+class CancellationNotPermittedError(ConflictError):
+    """§32.3: `CANCELLATION_NOT_PERMITTED`, 409 — the state forbids it (BR-042)."""
+
+    code = "CANCELLATION_NOT_PERMITTED"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CancellationDTO:
+    """A cancellation, previewed or done. The same shape for both, so BR-043's
+    "the preview shown must equal the refund actually issued" is a comparison
+    of two values of one type."""
+
+    booking: BookingDTO
+    cancellable: bool
+    refund_percent: Decimal
+    refund_amount: Decimal
+    refund_of_price: Decimal
+    fee_refunded: Decimal
+    tax_refunded: Decimal
+    currency: str
+    policy_code: str
+
+
+_PARTY_FOR_ACTOR = {Actor.TOURIST: Party.TOURIST, Actor.PROVIDER: Party.PROVIDER}
+_REASON_FOR_PARTY = {Party.TOURIST: "TOURIST_REQUEST", Party.PROVIDER: "PROVIDER_UNAVAILABLE"}
+
+
+def _refund_for(row: Booking, *, party: Party, now: datetime) -> Refund:
+    """§20.9 for this booking, as it stands.
+
+    **Nothing is owed on a booking nobody has paid for.** A PENDING booking's
+    payment was never captured, so its refund is zero whatever the policy says —
+    a preview offering money back on an unpaid basket would be a promise the
+    refund could never keep.
+    """
+    refund = evaluate(
+        snapshot=row.cancellation_policy_snapshot or {},
+        starts_at=row.starts_at,
+        cancelled_at=now,
+        gross=row.gross_amount,
+        fee=row.fee_amount,
+        tax=row.tax_amount,
+        party=party,
+        fee_retention_hours=int(get_setting("refund.fee_retention_hours")),
+    )
+    if row.status == BookingState.PENDING.value:
+        zero = Decimal("0.00")
+        return Refund(
+            refund_percent=Decimal(0),
+            refund_of_price=zero,
+            fee_refunded=zero,
+            tax_refunded=zero,
+            refund_amount=zero,
+            provider_compensation=zero,
+            platform_fee_retained=zero,
+        )
+    return refund
+
+
+def _cancellation(row: Booking, refund: Refund, *, cancellable: bool) -> CancellationDTO:
+    snapshot = row.cancellation_policy_snapshot or {}
+    return CancellationDTO(
+        booking=_booking_dto(row, ""),
+        cancellable=cancellable,
+        refund_percent=refund.refund_percent,
+        refund_amount=refund.refund_amount,
+        refund_of_price=refund.refund_of_price,
+        fee_refunded=refund.fee_refunded,
+        tax_refunded=refund.tax_refunded,
+        currency=row.currency,
+        policy_code=str(snapshot.get("code", "")),
+    )
+
+
+def _cancellable_by(row: Booking, actor: Actor) -> bool:
+    """Whether §20.2's Actor column lets `actor` cancel from this state.
+
+    Read from `ACTORS` rather than restated, so BR-042's "not yet IN_PROGRESS"
+    for a tourist and the provider's own rows come from the one table.
+    """
+    edge = (BookingState(row.status), BookingState.CANCELLED)
+    return actor in ACTORS.get(edge, frozenset())
+
+
+def preview_cancellation(
+    row: Booking, *, actor: Actor = Actor.TOURIST, now: datetime | None = None
+) -> CancellationDTO:
+    """`GET /bookings/{id}/cancellation-preview` — §20.9, BR-043.
+
+    Takes the row the caller has already resolved through its scoped selector,
+    so the ownership question is answered once, where it belongs.
+    """
+    now = now or timezone.now()
+    party = _PARTY_FOR_ACTOR[actor]
+    return _cancellation(
+        row,
+        _refund_for(row, party=party, now=now),
+        cancellable=_cancellable_by(row, actor),
+    )
+
+
+@transaction.atomic
+def cancel_booking(
+    public_id: UUID,
+    *,
+    actor: Actor,
+    actor_user_id: int | None,
+    reason: str = "",
+    now: datetime | None = None,
+) -> CancellationDTO:
+    """`POST /bookings/{id}/cancel` — §20.2, §20.9, BR-042, BR-043, BR-048.
+
+    The row is re-read under lock here even though the view has already found
+    it: the lock is what makes two cancellations of one booking one
+    cancellation and a 409, rather than two refunds.
+
+    In order: the state must permit it (BR-042 for a tourist); the refund is
+    evaluated from the snapshot (BR-040); the booking moves to CANCELLED
+    through §20.2's "policy evaluated; refund computed"; its seats return to sale
+    at once, before any refund settles (BR-048); the refund obligation is
+    published for Phase 8 to settle; and the trip is cancelled if this was its
+    last live component.
+    """
+    now = now or timezone.now()
+    row = Booking.objects.select_for_update().filter(public_id=public_id).first()
+    if row is None:
+        raise NotFoundError()
+
+    party = _PARTY_FOR_ACTOR[actor]
+    if not _cancellable_by(row, actor):
+        raise CancellationNotPermittedError(
+            f"{row.reference} is {row.status} and can no longer be cancelled here."
+        )
+
+    was = BookingState(row.status)
+    refund = _refund_for(row, party=party, now=now)
+    target = apply(was, BookingState.CANCELLED, actor=actor, context={"policy_evaluated": True})
+    code = _REASON_FOR_PARTY[party]
+    repo.set_status(
+        row, target.value, cancelled_at=now, cancelled_by=party.value, cancellation_reason=code
+    )
+    repo.record_transition(
+        row,
+        from_status=was.value,
+        to_status=target.value,
+        actor_role=actor.value,
+        actor_user_id=actor_user_id,
+        reason=reason or f"Cancelled; {refund.refund_amount} {row.currency} to refund.",
+        occurred_at=now,
+    )
+
+    activity = BookingActivity.objects.filter(booking=row).first()
+    if activity is not None:
+        if was is BookingState.PENDING:
+            inventory.release_departure(
+                trip_id=row.trip_id, departure_id=activity.activity_departure_id
+            )
+        else:
+            inventory.return_sold(
+                departure_id=activity.activity_departure_id, quantity=row.pax_count
+            )
+
+    publish(
+        BookingCancelled(
+            booking_public_id=str(row.public_id),
+            reference=row.reference,
+            trip_id=row.trip_id,
+            provider_id=row.provider_id,
+            cancelled_by=party.value,
+            reason=code,
+            refund_amount=str(refund.refund_amount),
+            currency=row.currency,
+        )
+    )
+    _end_trip_if_every_component_is_cancelled(row.trip_id)
+    return _cancellation(row, refund, cancellable=False)
