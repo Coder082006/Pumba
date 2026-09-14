@@ -13,7 +13,7 @@ activities, transport — before travelling, and receive one confirmed day-by-da
 Supply side is verified local drivers, hotels and activity operators.
 
 **Authoritative specification:**
-`docs/srs/SRS-ZTJOP-001 Zanzibar Tourism Platform SRS v1.0.docx`, **baselined to v1.2**
+`docs/srs/SRS-ZTJOP-001 Zanzibar Tourism Platform SRS v1.0.docx`, **baselined to v1.6**
 — the filename still says v1.0; the revision-history table inside the document is
 authoritative for the version. Read it. It defines the data model, API, state machines
 and business rules. If this file and the SRS conflict, raise it with me rather than
