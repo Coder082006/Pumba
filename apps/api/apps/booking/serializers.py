@@ -30,7 +30,14 @@ from rest_framework import serializers
 
 from apps.common.serializers import DisplayMoneyField, StrictSerializer
 
-__all__ = ["QuoteSerializer", "ConfirmSerializer", "BookingSerializer", "BasketSerializer"]
+__all__ = [
+    "QuoteSerializer",
+    "ConfirmSerializer",
+    "BookingSerializer",
+    "BasketSerializer",
+    "CancellationSerializer",
+    "TripCancellationSerializer",
+]
 
 
 class QuoteSerializer(serializers.Serializer[Any]):
@@ -124,3 +131,41 @@ class BasketSerializer(serializers.Serializer[Any]):
     total_amount_display = DisplayMoneyField(amount_field="total_amount")
     payment_expires_at = serializers.DateTimeField(read_only=True)
     bookings = BookingSerializer(many=True, read_only=True)
+
+
+class CancellationSerializer(serializers.Serializer[Any]):
+    """One component's refund, previewed or done — §20.9, BR-043."""
+
+    booking = BookingSerializer(read_only=True)
+    cancellable = serializers.BooleanField(read_only=True)
+    policy_code = serializers.CharField(read_only=True)
+    refund_percent = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+    refund_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    refund_amount_display = DisplayMoneyField(amount_field="refund_amount")
+    refund_of_price = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    fee_refunded = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    tax_refunded = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    currency = serializers.CharField(read_only=True)
+
+
+class TripCancellationSerializer(serializers.Serializer[Any]):
+    """§20.9's "itemised total". `status` and `cancelled_at` stay at the top
+    level, where `POST /trips/{id}/cancel` has always put them."""
+
+    public_id = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    cancelled_at = serializers.SerializerMethodField()
+    currency = serializers.CharField(read_only=True)
+    refund_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    refund_amount_display = DisplayMoneyField(amount_field="refund_amount")
+    components = CancellationSerializer(many=True, read_only=True)
+
+    def get_public_id(self, obj: Any) -> str:
+        return str(obj.trip.public_id)
+
+    def get_status(self, obj: Any) -> str:
+        return str(obj.trip.status)
+
+    def get_cancelled_at(self, obj: Any) -> str | None:
+        stamp = obj.trip.cancelled_at
+        return None if stamp is None else stamp.isoformat()

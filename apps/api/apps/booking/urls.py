@@ -16,7 +16,12 @@ from __future__ import annotations
 
 from django.urls import path
 
-from apps.booking.views import TripConfirmView, TripQuoteView
+from apps.booking.views import (
+    TripCancellationPreviewView,
+    TripCancelView,
+    TripConfirmView,
+    TripQuoteView,
+)
 
 app_name = "booking"
 
@@ -26,4 +31,11 @@ urlpatterns = [
     # writes bookings, reads providers and extends holds, and only `booking`
     # may see all three.
     path("trips/<uuid:public_id>/confirm", TripConfirmView.as_view(), name="trip-confirm"),
+    # §9.3's whole-trip cancel, moved from `trip` because it must cancel bookings.
+    path("trips/<uuid:public_id>/cancel", TripCancelView.as_view(), name="trip-cancel"),
+    path(
+        "trips/<uuid:public_id>/cancellation-preview",
+        TripCancellationPreviewView.as_view(),
+        name="trip-cancellation-preview",
+    ),
 ]

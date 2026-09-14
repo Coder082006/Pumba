@@ -1648,8 +1648,9 @@ def mark_cancelled(trip_id: int) -> bool:
     if TripState.CANCELLED not in TRIP_MACHINE.allowed_targets(current):
         return False
     trip.status = TRIP_MACHINE.transition(current, TripState.CANCELLED)
+    trip.cancelled_at = timezone.now()
     trip.version += 1
-    trip.save(update_fields=["status", "version", "updated_at"])
+    trip.save(update_fields=["status", "cancelled_at", "version", "updated_at"])
     publish(TripCancelled(trip_public_id=str(trip.public_id), tourist_id=trip.tourist_id))
     return True
 
@@ -1669,8 +1670,9 @@ def mark_unfulfillable(trip_id: int) -> bool:
     if trip is None or TripState(trip.status) is not TripState.PENDING_PAYMENT:
         return False
     trip.status = TRIP_MACHINE.transition(TripState(trip.status), TripState.CANCELLED)
+    trip.cancelled_at = timezone.now()
     trip.version += 1
-    trip.save(update_fields=["status", "version", "updated_at"])
+    trip.save(update_fields=["status", "cancelled_at", "version", "updated_at"])
     return True
 
 

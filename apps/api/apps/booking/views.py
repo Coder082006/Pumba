@@ -166,3 +166,57 @@ class TripConfirmView(APIView):
         return Response(
             success_envelope(ser.BasketSerializer(basket).data), status=status.HTTP_201_CREATED
         )
+
+
+class TripCancelView(APIView):
+    """§9.3 `POST /trips/{id}/cancel` — "Cancel entire trip subject to policy".
+
+    Moved here from `trip` in Phase 7. A trip with bookings cannot be cancelled
+    by the module that may not see them: flipping the trip's status alone left
+    its bookings CONFIRMED and their seats sold. The path is unchanged; the
+    route name is now `v1:booking:trip-cancel` (ADR 0022's pattern).
+    """
+
+    permission_classes = [IsTourist]
+
+    @extend_schema(
+        request=None,
+        responses={200: ser.TripCancellationSerializer},
+        summary="Cancel a whole trip, each component under its own policy",
+        description=(
+            "BR-046: every live component is evaluated against its own "
+            "snapshotted policy and the refund is itemised. If any component can "
+            "no longer be cancelled (it has started), nothing is cancelled and "
+            "the response is 409 CANCELLATION_NOT_PERMITTED naming each one."
+        ),
+        tags=["trip"],
+    )
+    def post(self, request: Request, public_id: UUID) -> Response:
+        principal = principal_from_request(request)
+        result = services.cancel_trip(
+            public_id,
+            tourist_id=tourist_id_of(request),
+            actor_user_id=None if principal is None else principal.user_id,
+        )
+        return Response(success_envelope(ser.TripCancellationSerializer(result).data))
+
+
+class TripCancellationPreviewView(APIView):
+    """What cancelling the whole trip would refund, before anybody does it.
+
+    §20.9 promises "the tourist always sees the financial consequence before
+    acting" and itemises trip-level cancellation, but §9.3 lists a preview only
+    per booking. A trip-level preview is the same promise at the level the
+    cancel button acts on; it writes nothing.
+    """
+
+    permission_classes = [IsTourist]
+
+    @extend_schema(
+        responses={200: ser.TripCancellationSerializer},
+        summary="Preview cancelling a whole trip",
+        tags=["trip"],
+    )
+    def get(self, request: Request, public_id: UUID) -> Response:
+        result = services.preview_trip_cancellation(public_id, tourist_id=tourist_id_of(request))
+        return Response(success_envelope(ser.TripCancellationSerializer(result).data))

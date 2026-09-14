@@ -45,7 +45,6 @@ __all__ = [
     "TripItemDetailView",
     "TripFlightsView",
     "TripGenerateView",
-    "TripCancelView",
     "TransportCorridorListView",
     "TransportQuoteView",
 ]
@@ -153,15 +152,6 @@ class TripGenerateView(_TouristView):
         """§10.2's generate. The findings come back on the itinerary, not as
         an error: §10.6 returns them from a run that worked."""
         trip = services.generate_itinerary(public_id, tourist_id=tourist_id_of(request))
-        return _trip_response(trip)
-
-
-class TripCancelView(_TouristView):
-    @extend_schema(request=None, responses={200: ser.TripSerializer})
-    def post(self, request: Request, public_id: UUID) -> Response:
-        """§20.5. A completed trip is a 409, raised by the state machine —
-        a journey that has happened cannot be made not to have happened."""
-        trip = services.cancel_trip(public_id, tourist_id=tourist_id_of(request))
         return _trip_response(trip)
 
 

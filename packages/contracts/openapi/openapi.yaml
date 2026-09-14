@@ -2680,9 +2680,11 @@ paths:
   /api/v1/trips/{public_id}/cancel:
     post:
       operationId: trips_cancel_create
-      description: |-
-        §20.5. A completed trip is a 409, raised by the state machine —
-        a journey that has happened cannot be made not to have happened.
+      description: 'BR-046: every live component is evaluated against its own snapshotted
+        policy and the refund is itemised. If any component can no longer be cancelled
+        (it has started), nothing is cancelled and the response is 409 CANCELLATION_NOT_PERMITTED
+        naming each one.'
+      summary: Cancel a whole trip, each component under its own policy
       parameters:
       - in: path
         name: public_id
@@ -2691,7 +2693,7 @@ paths:
           format: uuid
         required: true
       tags:
-      - trips
+      - trip
       security:
       - bearerAuth: []
       responses:
@@ -2699,7 +2701,36 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Trip'
+                $ref: '#/components/schemas/TripCancellation'
+          description: ''
+  /api/v1/trips/{public_id}/cancellation-preview:
+    get:
+      operationId: trips_cancellation_preview_retrieve
+      description: |-
+        What cancelling the whole trip would refund, before anybody does it.
+
+        §20.9 promises "the tourist always sees the financial consequence before
+        acting" and itemises trip-level cancellation, but §9.3 lists a preview only
+        per booking. A trip-level preview is the same promise at the level the
+        cancel button acts on; it writes nothing.
+      summary: Preview cancelling a whole trip
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trip
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripCancellation'
           description: ''
   /api/v1/trips/{public_id}/confirm:
     post:
@@ -3863,6 +3894,82 @@ components:
       - status
       - tax_amount
       - title
+    Cancellation:
+      type: object
+      description: One component's refund, previewed or done — §20.9, BR-043.
+      properties:
+        booking:
+          allOf:
+          - $ref: '#/components/schemas/Booking'
+          readOnly: true
+        cancellable:
+          type: boolean
+          readOnly: true
+        policy_code:
+          type: string
+          readOnly: true
+        refund_percent:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          readOnly: true
+        refund_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        refund_amount_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
+        refund_of_price:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        fee_refunded:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        tax_refunded:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+      required:
+      - booking
+      - cancellable
+      - currency
+      - fee_refunded
+      - policy_code
+      - refund_amount
+      - refund_amount_display
+      - refund_of_price
+      - refund_percent
+      - tax_refunded
     CancellationPolicy:
       type: object
       description: '§14.6. `tiers` travels whole: a tourist needs the ladder, not
@@ -3892,7 +3999,7 @@ components:
       description: |-
         One rung of the §14.6 ladder.
 
-        Bounded here as well as by `domain.cancellation.parse_tiers`, because the
+        Bounded here as well as by `common.cancellation.parse_tiers`, because the
         domain rejects rather than repairs and an administrator who typed 150 in a
         percent field deserves to be told which field, not handed a refusal about
         the whole list.
@@ -3912,7 +4019,7 @@ components:
       description: |-
         One rung of the §14.6 ladder.
 
-        Bounded here as well as by `domain.cancellation.parse_tiers`, because the
+        Bounded here as well as by `common.cancellation.parse_tiers`, because the
         domain rejects rather than repairs and an administrator who typed 150 in a
         percent field deserves to be told which field, not handed a refusal about
         the whole list.
@@ -3933,7 +4040,7 @@ components:
         §14.6. Four policies ship as rows; a fifth is a console form.
 
         `tiers` is ordered most generous first and is validated by
-        `domain.cancellation.parse_tiers` at the model tier, which is the one that
+        `common.cancellation.parse_tiers` at the model tier, which is the one that
         also runs for the seed loader. What this adds is a per-field message.
 
         BR-106 is why editing this is safe: a booking snapshots the policy in force
@@ -5562,7 +5669,7 @@ components:
         §14.6. Four policies ship as rows; a fifth is a console form.
 
         `tiers` is ordered most generous first and is validated by
-        `domain.cancellation.parse_tiers` at the model tier, which is the one that
+        `common.cancellation.parse_tiers` at the model tier, which is the one that
         also runs for the seed loader. What this adds is a per-field message.
 
         BR-106 is why editing this is safe: a booking snapshots the policy in force
@@ -7300,6 +7407,67 @@ components:
       - total_amount
       - total_amount_display
       - version
+    TripCancellation:
+      type: object
+      description: |-
+        §20.9's "itemised total". `status` and `cancelled_at` stay at the top
+        level, where `POST /trips/{id}/cancel` has always put them.
+      properties:
+        public_id:
+          type: string
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        refund_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        refund_amount_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cancellation'
+          readOnly: true
+      required:
+      - cancelled_at
+      - components
+      - currency
+      - public_id
+      - refund_amount
+      - refund_amount_display
+      - status
     TripFlight:
       type: object
       properties:

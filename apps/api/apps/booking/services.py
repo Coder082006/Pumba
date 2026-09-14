@@ -81,6 +81,9 @@ __all__ = [
     "CancellationDTO",
     "preview_cancellation",
     "cancel_booking",
+    "TripCancellationDTO",
+    "preview_trip_cancellation",
+    "cancel_trip",
 ]
 
 
@@ -1165,3 +1168,108 @@ def cancel_booking(
     )
     _end_trip_if_every_component_is_cancelled(row.trip_id)
     return _cancellation(row, refund, cancellable=False)
+
+
+# -- BR-046: a whole trip --------------------------------------------------------
+
+
+_LIVE_FOR_CANCELLATION = (
+    BookingState.PENDING.value,
+    BookingState.AWAITING_PROVIDER.value,
+    BookingState.CONFIRMED.value,
+    BookingState.IN_PROGRESS.value,
+)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TripCancellationDTO:
+    """§20.9: "Trip-level cancellation evaluates each component booking
+    independently against its own snapshotted policy and returns an itemised
+    total"."""
+
+    trip: TripDTO
+    currency: str
+    refund_amount: Decimal
+    components: tuple[CancellationDTO, ...]
+
+
+def _owned_trip(public_id: UUID, tourist_id: int) -> tuple[int, str]:
+    basis = trip_services.quote_basis(public_id, tourist_id=tourist_id)
+    return basis.trip_id, basis.currency
+
+
+def preview_trip_cancellation(
+    public_id: UUID, *, tourist_id: int, now: datetime | None = None
+) -> TripCancellationDTO:
+    """What cancelling the whole trip would refund, component by component."""
+    now = now or timezone.now()
+    trip_id, currency = _owned_trip(public_id, tourist_id)
+    rows = list(
+        Booking.objects.filter(trip_id=trip_id, status__in=_LIVE_FOR_CANCELLATION).order_by("id")
+    )
+    components = tuple(preview_cancellation(row, now=now) for row in rows)
+    trip = trip_services.get_trip(public_id, tourist_id=tourist_id)
+    assert trip is not None
+    return TripCancellationDTO(
+        trip=trip,
+        currency=currency,
+        refund_amount=sum((c.refund_amount for c in components), Decimal("0.00")),
+        components=components,
+    )
+
+
+@transaction.atomic
+def cancel_trip(
+    public_id: UUID,
+    *,
+    tourist_id: int,
+    actor_user_id: int | None,
+    now: datetime | None = None,
+) -> TripCancellationDTO:
+    """`POST /trips/{id}/cancel` — §9.3, §20.5, BR-046.
+
+    **Every component, independently, or none.** BR-046: each is evaluated
+    against its own snapshot. If any live component can no longer be cancelled
+    by the tourist — one already IN_PROGRESS, say — the whole request is refused
+    with every such component named, and nothing is cancelled: a trip half
+    cancelled by a request that failed is a state nobody asked for.
+
+    A trip with no bookings — a plan or a quote — is cancelled as before, and
+    any capacity it still holds is released rather than left for the sweeper.
+    """
+    now = now or timezone.now()
+    trip_id, currency = _owned_trip(public_id, tourist_id)
+    rows = repo.lock_of_trip(trip_id, statuses=_LIVE_FOR_CANCELLATION)
+
+    if not rows:
+        inventory.release(trip_id=trip_id)
+        trip = trip_services.cancel_trip(public_id, tourist_id=tourist_id)
+        return TripCancellationDTO(
+            trip=trip, currency=currency, refund_amount=Decimal("0.00"), components=()
+        )
+
+    blocked = [row for row in rows if not _cancellable_by(row, Actor.TOURIST)]
+    if blocked:
+        raise CancellationNotPermittedError(
+            "Part of this trip can no longer be cancelled.",
+            details=[{"booking": row.reference, "status": row.status} for row in blocked],
+        )
+
+    components = tuple(
+        cancel_booking(
+            row.public_id,
+            actor=Actor.TOURIST,
+            actor_user_id=actor_user_id,
+            reason="Whole trip cancelled.",
+            now=now,
+        )
+        for row in rows
+    )
+    after = trip_services.get_trip(public_id, tourist_id=tourist_id)
+    assert after is not None
+    return TripCancellationDTO(
+        trip=after,
+        currency=currency,
+        refund_amount=sum((c.refund_amount for c in components), Decimal("0.00")),
+        components=components,
+    )

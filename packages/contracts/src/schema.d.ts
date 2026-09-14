@@ -1732,9 +1732,36 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description §20.5. A completed trip is a 409, raised by the state machine —
-         *     a journey that has happened cannot be made not to have happened. */
+        /**
+         * Cancel a whole trip, each component under its own policy
+         * @description BR-046: every live component is evaluated against its own snapshotted policy and the refund is itemised. If any component can no longer be cancelled (it has started), nothing is cancelled and the response is 409 CANCELLATION_NOT_PERMITTED naming each one.
+         */
         post: operations["trips_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trips/{public_id}/cancellation-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview cancelling a whole trip
+         * @description What cancelling the whole trip would refund, before anybody does it.
+         *
+         *     §20.9 promises "the tourist always sees the financial consequence before
+         *     acting" and itemises trip-level cancellation, but §9.3 lists a preview only
+         *     per booking. A trip-level preview is the same promise at the level the
+         *     cancel button acts on; it writes nothing.
+         */
+        get: operations["trips_cancellation_preview_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2218,6 +2245,31 @@ export interface components {
             /** Format: date-time */
             readonly response_due_at: string | null;
         };
+        /** @description One component's refund, previewed or done — §20.9, BR-043. */
+        Cancellation: {
+            readonly booking: components["schemas"]["Booking"];
+            readonly cancellable: boolean;
+            readonly policy_code: string;
+            /** Format: decimal */
+            readonly refund_percent: string;
+            /** Format: decimal */
+            readonly refund_amount: string;
+            readonly refund_amount_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
+            /** Format: decimal */
+            readonly refund_of_price: string;
+            /** Format: decimal */
+            readonly fee_refunded: string;
+            /** Format: decimal */
+            readonly tax_refunded: string;
+            readonly currency: string;
+        };
         /** @description §14.6. `tiers` travels whole: a tourist needs the ladder, not the code. */
         CancellationPolicy: {
             /** Format: uuid */
@@ -2229,7 +2281,7 @@ export interface components {
         };
         /** @description One rung of the §14.6 ladder.
          *
-         *     Bounded here as well as by `domain.cancellation.parse_tiers`, because the
+         *     Bounded here as well as by `common.cancellation.parse_tiers`, because the
          *     domain rejects rather than repairs and an administrator who typed 150 in a
          *     percent field deserves to be told which field, not handed a refusal about
          *     the whole list. */
@@ -2239,7 +2291,7 @@ export interface components {
         };
         /** @description One rung of the §14.6 ladder.
          *
-         *     Bounded here as well as by `domain.cancellation.parse_tiers`, because the
+         *     Bounded here as well as by `common.cancellation.parse_tiers`, because the
          *     domain rejects rather than repairs and an administrator who typed 150 in a
          *     percent field deserves to be told which field, not handed a refusal about
          *     the whole list. */
@@ -2250,7 +2302,7 @@ export interface components {
         /** @description §14.6. Four policies ship as rows; a fifth is a console form.
          *
          *     `tiers` is ordered most generous first and is validated by
-         *     `domain.cancellation.parse_tiers` at the model tier, which is the one that
+         *     `common.cancellation.parse_tiers` at the model tier, which is the one that
          *     also runs for the seed loader. What this adds is a per-field message.
          *
          *     BR-106 is why editing this is safe: a booking snapshots the policy in force
@@ -2928,7 +2980,7 @@ export interface components {
         /** @description §14.6. Four policies ship as rows; a fifth is a console form.
          *
          *     `tiers` is ordered most generous first and is validated by
-         *     `domain.cancellation.parse_tiers` at the model tier, which is the one that
+         *     `common.cancellation.parse_tiers` at the model tier, which is the one that
          *     also runs for the seed loader. What this adds is a per-field message.
          *
          *     BR-106 is why editing this is safe: a booking snapshots the policy in force
@@ -3678,6 +3730,25 @@ export interface components {
             readonly version: number;
             readonly itinerary: components["schemas"]["Itinerary"] | null;
             readonly flights: components["schemas"]["TripFlight"][];
+        };
+        /** @description §20.9's "itemised total". `status` and `cancelled_at` stay at the top
+         *     level, where `POST /trips/{id}/cancel` has always put them. */
+        TripCancellation: {
+            readonly public_id: string;
+            readonly status: string;
+            readonly cancelled_at: string | null;
+            readonly currency: string;
+            /** Format: decimal */
+            readonly refund_amount: string;
+            readonly refund_amount_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
+            readonly components: components["schemas"]["Cancellation"][];
         };
         TripFlight: {
             readonly direction: string;
@@ -5914,7 +5985,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Trip"];
+                    "application/json": components["schemas"]["TripCancellation"];
+                };
+            };
+        };
+    };
+    trips_cancellation_preview_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripCancellation"];
                 };
             };
         };

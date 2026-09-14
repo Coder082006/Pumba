@@ -277,8 +277,14 @@ SCOPED_BY_A_SELECTOR = {
     "v1:trip:trip-generate": (
         "Regenerates the itinerary of a trip loaded through the `trip.selectors.trips_of` selector."
     ),
-    "v1:trip:trip-cancel": (
-        "Transitions a trip loaded through the `trip.selectors.trips_of` selector."
+    "v1:booking:trip-cancel": (
+        "`booking.cancel_trip` resolves the trip through `trip.services.quote_basis`, "
+        "which fetches via `trip.selectors.trips_of(tourist_id)`; the bookings it "
+        "cancels are then selected by that owned trip's id."
+    ),
+    "v1:booking:trip-cancellation-preview": (
+        "`booking.preview_trip_cancellation` resolves the trip through "
+        "`trip.services.quote_basis` and `trip.selectors.trips_of(tourist_id)`."
     ),
 }
 
