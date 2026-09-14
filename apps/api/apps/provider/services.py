@@ -18,7 +18,8 @@ an administrator typed and the table it resolves to (ADR 0025).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -49,6 +50,8 @@ __all__ = [
     "change_status",
     "require_owner_of",
     "WALKABLE_TARGETS",
+    "SeedResult",
+    "load_provider_seed",
 ]
 
 #: The targets an administrator may reach in more than one step. Walking to
@@ -175,3 +178,56 @@ def require_owner_of(provider_public_id: UUID, kind: str) -> ProviderDTO:
             details=[{"field": "provider", "issue": "wrong_provider_type"}],
         )
     return _dto(row)
+
+
+@dataclass(frozen=True, slots=True)
+class SeedResult:
+    """What one file did — the same three fields as the other modules' loaders,
+    and not the same class, because §6.4 gives `provider -> identity` only."""
+
+    entity: str
+    created: int
+    updated: int
+
+    def __str__(self) -> str:
+        return f"{self.entity}: {self.created} created, {self.updated} updated"
+
+
+def load_provider_seed(
+    rows: Sequence[Mapping[str, Any]], *, now: datetime
+) -> tuple[SeedResult, dict[str, ProviderDTO]]:
+    """Seeded providers, identified by `legal_name`, walked to their status.
+
+    §7.5.3 gives a provider no code or slug, and the registered legal name is
+    the one thing two rows for the same business agree on. Idempotent: an
+    existing live row is updated rather than duplicated.
+
+    **The status is reached through the machine, not written.** A seed row
+    saying VERIFIED is walked there by `change_status`, so a seeded provider
+    has the same verified-at stamp and passes the same edges as one an
+    administrator verified — seed data that could reach a state the console
+    cannot would be seed data that tests something production never does.
+
+    Returns the providers by legal name, so the caller can assign listings.
+    """
+    created = updated = 0
+    by_name: dict[str, ProviderDTO] = {}
+    for raw in rows:
+        fields = dict(raw)
+        status = fields.pop("verify_status", VerifyState.DRAFT.value)
+        name = fields.get("legal_name")
+        if not name:
+            raise ValidationError("a provider seed row needs a legal_name")
+        existing = Provider.objects.filter(legal_name=name).first()
+        if existing is None:
+            row = repo.create(**fields)
+            created += 1
+        else:
+            fields.pop("provider_type", None)
+            row = repo.update(existing, **fields)
+            updated += 1
+        if row.verify_status != status:
+            change_status(row.public_id, status, now=now)
+            row.refresh_from_db()
+        by_name[name] = _dto(row)
+    return SeedResult("provider", created, updated), by_name

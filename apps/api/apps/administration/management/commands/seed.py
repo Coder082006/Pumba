@@ -38,8 +38,10 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 
 from apps.catalogue import services as catalogue
+from apps.provider import services as provider
 from apps.transport import services as transport
 
 __all__ = ["Command", "find_seed_root", "DEFAULT_ROOT"]
@@ -109,7 +111,7 @@ class Command(BaseCommand):
                 # Typed as the two loaders' union rather than one of them:
                 # both report the same three fields and neither may import the
                 # other's class, which is the §6.4 boundary showing through.
-                results: list[catalogue.SeedResult | transport.SeedResult] = [
+                results: list[catalogue.SeedResult | transport.SeedResult | provider.SeedResult] = [
                     self._load(root, stem, key) for stem, key in catalogue.SEED_FILES
                 ]
                 # Media last and through its own loader: it is not a
@@ -124,6 +126,9 @@ class Command(BaseCommand):
                 # tariff names a country, so every row it resolves has to have
                 # been written by the files above it.
                 results.extend(self._load_transport(seeds))
+                # Providers after activities, because each names the listings
+                # it sells and those rows have to exist to be assigned.
+                results.extend(self._load_providers(seeds))
                 if options["dry_run"]:
                     self.stdout.write(self.style.WARNING("dry run — rolling back"))
                     transaction.set_rollback(True)
@@ -189,6 +194,52 @@ class Command(BaseCommand):
             [self._routed(row) for row in self._rows(directory / "03-transfer-corridors.json")]
         )
         return [classes, tariffs, corridors]
+
+    # -- providers ------------------------------------------------------------
+    #
+    # ADR 0025. A booking is payable to a provider, and every seeded activity
+    # needs one or nothing in the seeded catalogue can be booked. The region is
+    # resolved here, and so is each listing a provider sells, for the same
+    # reason the transport rows are: `provider` may see neither table.
+
+    def _load_providers(self, root: Path) -> list[provider.SeedResult | catalogue.SeedResult]:
+        path = root / "provider" / "01-providers.json"
+        if not path.is_file():
+            return []
+
+        rows = self._rows(path)
+        sells = {row["legal_name"]: list(row.get("sells", [])) for row in rows}
+        prepared = []
+        for row in rows:
+            fields = {key: value for key, value in row.items() if key != "sells"}
+            region = fields.pop("region")
+            found = catalogue.resolve_scope_ref("region", region)
+            if found is None:
+                raise CommandError(
+                    f"provider {row['legal_name']!r} names region {region!r}, "
+                    "which the catalogue has no row for"
+                )
+            fields["region_id"] = found
+            prepared.append(fields)
+
+        result, by_name = provider.load_provider_seed(prepared, now=timezone.now())
+
+        assigned = 0
+        for name, slugs in sells.items():
+            for slug in slugs:
+                listing = catalogue.resolve_curated_listing("activity", slug)
+                if listing is None:
+                    raise CommandError(
+                        f"provider {name!r} sells activity {slug!r}, which does not exist"
+                    )
+                owner = provider.require_owner_of(by_name[name].public_id, "ACTIVITY")
+                catalogue.update(
+                    catalogue.entity_for("activity"),
+                    listing.public_id,
+                    fields={"provider_id": owner.id},
+                )
+                assigned += 1
+        return [result, catalogue.SeedResult("activity provider", 0, assigned)]
 
     def _rows(self, path: Path) -> list[dict[str, Any]]:
         if not path.is_file():

@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 from django.core.management import call_command
@@ -54,6 +55,7 @@ from apps.catalogue.models import (
 )
 from apps.catalogue.services import SCHEDULE_SEED_FILE, SEED_FILES
 from apps.common.geo import BoundingBox, Coordinates
+from apps.provider.models import Provider
 
 pytestmark = pytest.mark.django_db
 
@@ -566,6 +568,64 @@ class TestLoadingIt:
         stay = Accommodation.objects.get(slug="park-hyatt-zanzibar")
         original = (round(stay.coordinates.y, 4), round(stay.coordinates.x, 4))
         assert original == (-6.1611, 39.1867)
+
+
+class TestEverySellableThingHasASeller:
+    """ADR 0025. A booking is payable to a provider, so a listing without one is
+    a listing nobody can book — and before Phase 7 all twelve were exactly that.
+    """
+
+    @staticmethod
+    def _providers() -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = json.loads(
+            (DEFAULT_ROOT / "provider" / "01-providers.json").read_text(encoding="utf-8")
+        )
+        return rows
+
+    def test_every_seeded_activity_is_sold_by_exactly_one_provider(self) -> None:
+        sold = [slug for row in self._providers() for slug in row["sells"]]
+        activities = sorted(row["slug"] for row in _rows("activity"))
+        assert sorted(sold) == activities
+
+    def test_only_activity_providers_sell_activities(self) -> None:
+        """§7.5.3's type constraint, checked in the file before the loader
+        refuses it."""
+        for row in self._providers():
+            if row["sells"]:
+                assert row["provider_type"] == "ACTIVITY", row["legal_name"]
+
+    def test_every_region_with_a_live_destination_has_a_transport_provider(self) -> None:
+        """A transfer is sold by a transport provider operating where it starts.
+        A live region with none would plan a drive nobody could be paid for."""
+        live = {row["region"] for row in _rows("destination") if row.get("is_active")}
+        served = {row["region"] for row in self._providers() if row["provider_type"] == "TRANSPORT"}
+        assert live <= served
+
+    def test_no_contact_detail_could_reach_a_real_business(self) -> None:
+        """Seed data is sample data. `.example` is reserved by RFC 2606 and can
+        never deliver mail, so a test email sent to a seeded provider goes
+        nowhere rather than to a stranger."""
+        for row in self._providers():
+            assert row["contact_email"].endswith(".example"), row["legal_name"]
+
+
+class TestLoadingProviders:
+    def test_they_load_verified_and_every_activity_gets_one(self) -> None:
+        call_command("seed", verbosity=0)
+        assert Provider.objects.count() == 7
+        assert set(Provider.objects.values_list("verify_status", flat=True)) == {"VERIFIED"}
+        assert not Activity.objects.filter(provider_id__isnull=True).exists()
+
+    def test_each_is_verified_through_the_machine(self) -> None:
+        """Seeded providers pass the same edges as console-verified ones, so the
+        stamp a booking will check (BR-037) is set by the same code."""
+        call_command("seed", verbosity=0)
+        assert not Provider.objects.filter(verified_at__isnull=True).exists()
+
+    def test_a_second_run_creates_none(self) -> None:
+        call_command("seed", verbosity=0)
+        call_command("seed", verbosity=0)
+        assert Provider.objects.count() == 7
 
 
 class TestTheLoaderIsNotZanzibarShaped:

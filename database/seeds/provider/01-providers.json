@@ -1,0 +1,88 @@
+[
+  {
+    "legal_name": "Stone Town Heritage Guides Limited",
+    "trading_name": "Stone Town Heritage Guides",
+    "provider_type": "ACTIVITY",
+    "contact_email": "bookings@heritage-guides.example",
+    "contact_phone": "+255700100001",
+    "region": "zanzibar-urban-west",
+    "verify_status": "VERIFIED",
+    "sells": [
+      "stone-town-walking-tour",
+      "spice-farm-tour",
+      "prison-island-half-day",
+      "safari-blue-full-day"
+    ]
+  },
+  {
+    "legal_name": "North Coast Reef Excursions Limited",
+    "trading_name": "North Coast Reef Excursions",
+    "provider_type": "ACTIVITY",
+    "contact_email": "bookings@northcoast-reef.example",
+    "contact_phone": "+255700100002",
+    "region": "zanzibar-north",
+    "verify_status": "VERIFIED",
+    "sells": [
+      "mnemba-atoll-snorkelling",
+      "sunset-dhow-cruise",
+      "kendwa-sandbank-picnic",
+      "kiwengwa-caves-and-village"
+    ]
+  },
+  {
+    "legal_name": "Matemwe Blue Water Divers Limited",
+    "trading_name": "Matemwe Blue Water Divers",
+    "provider_type": "ACTIVITY",
+    "contact_email": "dive@matemwe-bluewater.example",
+    "contact_phone": "+255700100003",
+    "region": "zanzibar-north",
+    "verify_status": "VERIFIED",
+    "sells": [
+      "mnemba-two-tank-dive"
+    ]
+  },
+  {
+    "legal_name": "South Coast Wind and Forest Company Limited",
+    "trading_name": "South Coast Wind & Forest",
+    "provider_type": "ACTIVITY",
+    "contact_email": "hello@southcoast-windforest.example",
+    "contact_phone": "+255700100004",
+    "region": "zanzibar-central-south",
+    "verify_status": "VERIFIED",
+    "sells": [
+      "paje-kitesurfing-lesson",
+      "jozani-forest-red-colobus",
+      "michamvi-sunset-kayak"
+    ]
+  },
+  {
+    "legal_name": "Urban West Transfers Limited",
+    "trading_name": "Urban West Transfers",
+    "provider_type": "TRANSPORT",
+    "contact_email": "dispatch@urbanwest-transfers.example",
+    "contact_phone": "+255700200001",
+    "region": "zanzibar-urban-west",
+    "verify_status": "VERIFIED",
+    "sells": []
+  },
+  {
+    "legal_name": "North Coast Transfers Limited",
+    "trading_name": "North Coast Transfers",
+    "provider_type": "TRANSPORT",
+    "contact_email": "dispatch@northcoast-transfers.example",
+    "contact_phone": "+255700200002",
+    "region": "zanzibar-north",
+    "verify_status": "VERIFIED",
+    "sells": []
+  },
+  {
+    "legal_name": "South Coast Transfers Limited",
+    "trading_name": "South Coast Transfers",
+    "provider_type": "TRANSPORT",
+    "contact_email": "dispatch@southcoast-transfers.example",
+    "contact_phone": "+255700200003",
+    "region": "zanzibar-central-south",
+    "verify_status": "VERIFIED",
+    "sells": []
+  }
+]
