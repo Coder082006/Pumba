@@ -559,7 +559,7 @@ class CancellationPolicy(SoftDeleteModel):
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True, default="")
 
-    #: An ordered list, most generous first. `domain.cancellation.parse_tiers`
+    #: An ordered list, most generous first. `common.cancellation.parse_tiers`
     #: reads it and rejects rather than repairs; a CHECK could only reach as far
     #: as "is an array", which catches the gross shape error and nothing else.
     tiers = models.JSONField(default=list, blank=True, validators=[validate_cancellation_tiers])

@@ -30,7 +30,6 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, models
 from django.db.models.deletion import ProtectedError
 
-from apps.catalogue.domain.cancellation import parse_tiers, refund_percent_at
 from apps.catalogue.models import Accommodation, CancellationPolicy, PropertyType
 from apps.catalogue.tests.factories import (
     make_accommodation,
@@ -38,6 +37,7 @@ from apps.catalogue.tests.factories import (
     make_cancellation_policy,
     make_destination,
 )
+from apps.common.cancellation import parse_tiers, refund_percent_at
 
 
 def field(model: type[models.Model], name: str) -> models.Field:

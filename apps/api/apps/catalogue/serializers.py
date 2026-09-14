@@ -233,7 +233,7 @@ class TagWriteSerializer(StrictSerializer):
 class CancellationPolicyTierSerializer(StrictSerializer):
     """One rung of the §14.6 ladder.
 
-    Bounded here as well as by `domain.cancellation.parse_tiers`, because the
+    Bounded here as well as by `common.cancellation.parse_tiers`, because the
     domain rejects rather than repairs and an administrator who typed 150 in a
     percent field deserves to be told which field, not handed a refusal about
     the whole list.
@@ -247,7 +247,7 @@ class CancellationPolicyWriteSerializer(StrictSerializer):
     """§14.6. Four policies ship as rows; a fifth is a console form.
 
     `tiers` is ordered most generous first and is validated by
-    `domain.cancellation.parse_tiers` at the model tier, which is the one that
+    `common.cancellation.parse_tiers` at the model tier, which is the one that
     also runs for the seed loader. What this adds is a per-field message.
 
     BR-106 is why editing this is safe: a booking snapshots the policy in force

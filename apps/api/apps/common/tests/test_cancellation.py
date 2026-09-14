@@ -11,7 +11,7 @@ from decimal import Decimal
 
 import pytest
 
-from apps.catalogue.domain.cancellation import (
+from apps.common.cancellation import (
     CancellationPolicyError,
     Tier,
     parse_tiers,
@@ -223,7 +223,7 @@ class TestNoPolicyNamesAppearInCode:
         import io
         import tokenize
 
-        from apps.catalogue.domain import cancellation
+        from apps.common import cancellation
 
         source = inspect.getsource(cancellation)
         # Tokenise rather than filter lines: the codes are named in the module

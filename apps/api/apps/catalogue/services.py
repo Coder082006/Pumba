@@ -52,7 +52,6 @@ from django.db import models, transaction
 
 from apps.catalogue import repositories as repo
 from apps.catalogue.domain import opening_hours
-from apps.catalogue.domain.cancellation import parse_tiers
 from apps.catalogue.domain.schedules import (
     ScheduleError,
     ScheduleRule,
@@ -77,6 +76,7 @@ from apps.catalogue.models import (
 from apps.catalogue.selectors import reference_q, visible
 from apps.common.audit import AuditAction, record_audit
 from apps.common.authz import Permission, Principal, Resource, Role
+from apps.common.cancellation import parse_tiers
 from apps.common.errors import NotFoundError, ValidationError
 from apps.common.geo import COORDINATE_PRECISION, Coordinates
 from apps.common.models import SoftDeleteModel

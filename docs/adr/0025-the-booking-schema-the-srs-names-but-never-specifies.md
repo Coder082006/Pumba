@@ -245,7 +245,7 @@ failed payment and TC-072 expects it; the implemented table has only
 
 **The tier boundary stays strict.** §14.6's prose says "> 7 days"; §20.9's
 pseudocode says `hours_before >= T.hours_before`. They differ at exactly
-168.000000 hours. `catalogue.domain.cancellation.refund_percent_at` already
+168.000000 hours. `common.cancellation.refund_percent_at` (moved from `catalogue` in Phase 7) already
 implements `>`, and TC-100/TC-101 test one second either side, where both
 readings agree. Evaluation reuses that function rather than re-deciding.
 

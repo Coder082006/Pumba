@@ -34,6 +34,13 @@ prose is ambiguous at the boundaries:
 snapshotted (BR-106). This module owns the structure and its validation,
 because §27.12 lets an administrator create a policy in Phase 3 and an invalid
 one must be rejected at the form, not discovered during a refund.
+
+**Why it lives in `common`.** It began in `catalogue`, which owns the policy
+table. Phase 7's refund evaluation in `booking` walks the same tiers, and §6.4
+forbids `booking` to import `catalogue` at all — domain layer included. Two
+copies of "which tier applies" would be two answers to a money question, so the
+rule moved to the shared kernel both may read, the way `geo` and the ISO 4217
+rule did before it. It is pure and carries the 95% gate.
 """
 
 from __future__ import annotations

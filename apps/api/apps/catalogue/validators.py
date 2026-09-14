@@ -20,7 +20,8 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 
-from apps.catalogue.domain import cancellation, hierarchy, requirements
+from apps.catalogue.domain import hierarchy, requirements
+from apps.common import cancellation
 
 __all__ = [
     "validate_iana_timezone",
