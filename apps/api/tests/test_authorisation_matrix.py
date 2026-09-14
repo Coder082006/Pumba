@@ -212,6 +212,11 @@ NO_ROWS_EXPOSED = {
     # through §9.3.2 — what is administrator-only is the *fare*, which the role
     # check gates.
     "v1:administration:admin-quote-preview": "Prices a route; resolves no protected row.",
+    # §27.7's provider console collection. GET lists every provider and POST
+    # creates one; neither resolves a caller-supplied identifier. The list is
+    # global on purpose — every role holding VERIFICATION_DECIDE holds
+    # `Scope.GLOBAL` over PROVIDER, which the detail route below re-proves.
+    "v1:administration:admin-provider-list": "Lists and creates; there is no id to supply.",
 }
 
 #: Views that *do* resolve a caller-supplied identifier, but filter by
@@ -321,6 +326,32 @@ SCOPED_BY_A_BODY_IDENTIFIER = {
 #: narrower scope — which is exactly what Phase 11 does — the build fails here
 #: and names the route that has to grow a filter.
 GLOBAL_BY_ROLE: dict[str, tuple[Permission, Resource, str]] = {
+    # §27.7's provider console. §5.2 puts verification with COMPLIANCE_ADMIN,
+    # and a provider cannot be scoped to itself here because the caller is
+    # never the provider — the portal that would be is Phase 11.
+    "v1:administration:admin-provider-detail": (
+        Permission.VERIFICATION_DECIDE,
+        Resource.PROVIDER,
+        "§27.7's provider console. Every role holding VERIFICATION_DECIDE holds "
+        "`Scope.GLOBAL` over `PROVIDER`; the provider's own rule is for the "
+        "Phase 11 portal, whose principal is not this one.",
+    ),
+    "v1:administration:admin-provider-status": (
+        Permission.VERIFICATION_DECIDE,
+        Resource.PROVIDER,
+        "§26.2's verification decision, taken by an administrator on any "
+        "provider — the same global scope as the detail route.",
+    ),
+    # Assigning an activity's seller is a catalogue edit. ACTIVITY carries a
+    # provider rule, but no provider role holds CATALOGUE_MANAGE, so every
+    # principal that can reach this route holds GLOBAL over ACTIVITY.
+    "v1:administration:admin-activity-provider": (
+        Permission.CATALOGUE_MANAGE,
+        Resource.ACTIVITY,
+        "Sets `activity.provider_id` from the catalogue console. Only "
+        "CATALOGUE_ADMIN and SUPER_ADMIN hold CATALOGUE_MANAGE, and both hold "
+        "`Scope.GLOBAL` over ACTIVITY.",
+    ),
     # §27.11's corridor and tariff amendments. §12.4 makes these
     # administrator-owned outright — "transfer prices are not provider-quoted
     # per booking; they come from an administrator-managed tariff table" — and

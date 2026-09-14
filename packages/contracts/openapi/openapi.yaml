@@ -500,6 +500,42 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/v1/admin/activities/{public_id}/provider:
+    put:
+      operationId: admin_activities_provider_update
+      description: Assigning a listing is a catalogue edit, so CATALOGUE_MANAGE gates
+        it.
+      summary: Set the provider that sells an activity
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivityProviderRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ActivityProviderRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ActivityProviderRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderRead'
+          description: ''
   /api/v1/admin/activities/{public_id}/restore:
     post:
       operationId: admin_activities_restore_create
@@ -1233,6 +1269,168 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/admin/providers:
+    get:
+      operationId: admin_providers_list
+      description: |-
+        §27.7: provider verification is COMPLIANCE_ADMIN's (§5.2).
+
+        Not a `ScopedQuerysetMixin` view, and the §37.2 matrix records why: every
+        role holding VERIFICATION_DECIDE holds `Scope.GLOBAL` over `PROVIDER`, so a
+        filter would match every row while reporting a control.
+      summary: List providers
+      parameters:
+      - in: query
+        name: provider_type
+        schema:
+          type: string
+      - in: query
+        name: verify_status
+        schema:
+          type: string
+      tags:
+      - Administration
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProviderRead'
+          description: ''
+    post:
+      operationId: admin_providers_create
+      description: Creates the provider in DRAFT. It cannot be sold until it is walked
+        to VERIFIED through the status endpoint (BR-037).
+      summary: Create a provider
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProviderWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProviderWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderRead'
+          description: ''
+  /api/v1/admin/providers/{public_id}:
+    get:
+      operationId: admin_providers_retrieve
+      description: |-
+        §27.7: provider verification is COMPLIANCE_ADMIN's (§5.2).
+
+        Not a `ScopedQuerysetMixin` view, and the §37.2 matrix records why: every
+        role holding VERIFICATION_DECIDE holds `Scope.GLOBAL` over `PROVIDER`, so a
+        filter would match every row while reporting a control.
+      summary: Read a provider
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderRead'
+          description: ''
+    patch:
+      operationId: admin_providers_partial_update
+      description: |-
+        §27.7: provider verification is COMPLIANCE_ADMIN's (§5.2).
+
+        Not a `ScopedQuerysetMixin` view, and the §37.2 matrix records why: every
+        role holding VERIFICATION_DECIDE holds `Scope.GLOBAL` over `PROVIDER`, so a
+        filter would match every row while reporting a control.
+      summary: Amend a provider
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProviderWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProviderWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProviderWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderRead'
+          description: ''
+  /api/v1/admin/providers/{public_id}/status:
+    post:
+      operationId: admin_providers_status_create
+      description: VERIFIED and REJECTED walk SRS 26.2's declared edges and audit
+        each step. SUSPENDED is taken from VERIFIED only. REJECTED and SUSPENDED require
+        a reason.
+      summary: Move a provider through verification
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderStatusRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProviderStatusRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProviderStatusRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderStatusResult'
+          description: ''
   /api/v1/admin/regions:
     post:
       operationId: admin_regions_create
@@ -3007,6 +3205,15 @@ components:
       - slug
       - summary
       - tags
+    ActivityProviderRequest:
+      type: object
+      description: The provider that sells an activity, by its public id.
+      properties:
+        provider:
+          type: string
+          format: uuid
+      required:
+      - provider
     ActivitySchedule:
       type: object
       description: |-
@@ -3925,10 +4132,20 @@ components:
           type: boolean
           default: false
         status:
-          $ref: '#/components/schemas/StatusEnum'
+          $ref: '#/components/schemas/DepartureEditStatusEnum'
       required:
       - date_from
       - to
+    DepartureEditStatusEnum:
+      enum:
+      - OPEN
+      - CLOSED
+      - CANCELLED
+      type: string
+      description: |-
+        * `OPEN` - OPEN
+        * `CLOSED` - CLOSED
+        * `CANCELLED` - CANCELLED
     Destination:
       type: object
       description: |-
@@ -5319,6 +5536,49 @@ components:
           format: date
         is_active:
           type: boolean
+    PatchedProviderWriteRequest:
+      type: object
+      description: |-
+        §7.5.3's writable columns, as the console submits them.
+
+        `region` is a slug, resolved by the service (ADR 0012). There is no
+        `verify_status`: a provider moves through §26.2's states only by the status
+        endpoint, which audits every step, and a field here would be a second door
+        that audits none. `provider_type` is accepted on create and refused on
+        update by the repository, because a type change would put every listing the
+        provider owns in breach of §7.5.3 at once.
+      properties:
+        legal_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        trading_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        provider_type:
+          $ref: '#/components/schemas/ProviderTypeEnum'
+        contact_email:
+          type: string
+          format: email
+          minLength: 1
+        contact_phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        region:
+          type: string
+          minLength: 1
+        payout_account_ref:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 120
+        payout_currency:
+          type: string
+          minLength: 1
+          maxLength: 3
     PatchedRegionWriteRequest:
       type: object
       description: |-
@@ -5652,6 +5912,176 @@ components:
       - public_id
       - remaining
       - status
+    ProviderRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        legal_name:
+          type: string
+          readOnly: true
+        trading_name:
+          type: string
+          readOnly: true
+        provider_type:
+          type: string
+          readOnly: true
+        contact_email:
+          type: string
+          readOnly: true
+        contact_phone:
+          type: string
+          readOnly: true
+        region:
+          type: string
+          readOnly: true
+        verify_status:
+          type: string
+          readOnly: true
+        verified_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        is_sellable:
+          type: boolean
+          readOnly: true
+        payout_account_ref:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        payout_currency:
+          type: string
+          readOnly: true
+        rating_avg:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,1}(?:\.\d{0,2})?$
+          readOnly: true
+        rating_count:
+          type: integer
+          readOnly: true
+      required:
+      - contact_email
+      - contact_phone
+      - id
+      - is_sellable
+      - legal_name
+      - payout_account_ref
+      - payout_currency
+      - provider_type
+      - rating_avg
+      - rating_count
+      - region
+      - trading_name
+      - verified_at
+      - verify_status
+    ProviderStatusRequest:
+      type: object
+      description: |-
+        §26.2's decision. A reason is required to reject or suspend.
+
+        §26.2 shows a rejected provider its "reasons", and a suspension is the
+        most consequential thing an administrator can do to someone the platform
+        pays; neither is acceptable as an unexplained row in the audit log.
+      properties:
+        status:
+          $ref: '#/components/schemas/ProviderStatusStatusEnum'
+        reason:
+          type: string
+          maxLength: 500
+      required:
+      - status
+    ProviderStatusResult:
+      type: object
+      properties:
+        before:
+          type: string
+          readOnly: true
+        steps:
+          type: array
+          items:
+            type: string
+          readOnly: true
+        provider:
+          allOf:
+          - $ref: '#/components/schemas/ProviderRead'
+          readOnly: true
+      required:
+      - before
+      - provider
+      - steps
+    ProviderStatusStatusEnum:
+      enum:
+      - SUBMITTED
+      - UNDER_REVIEW
+      - VERIFIED
+      - REJECTED
+      - SUSPENDED
+      type: string
+      description: |-
+        * `SUBMITTED` - SUBMITTED
+        * `UNDER_REVIEW` - UNDER_REVIEW
+        * `VERIFIED` - VERIFIED
+        * `REJECTED` - REJECTED
+        * `SUSPENDED` - SUSPENDED
+    ProviderTypeEnum:
+      enum:
+      - TRANSPORT
+      - ACCOMMODATION
+      - ACTIVITY
+      type: string
+      description: |-
+        * `TRANSPORT` - TRANSPORT
+        * `ACCOMMODATION` - ACCOMMODATION
+        * `ACTIVITY` - ACTIVITY
+    ProviderWriteRequest:
+      type: object
+      description: |-
+        §7.5.3's writable columns, as the console submits them.
+
+        `region` is a slug, resolved by the service (ADR 0012). There is no
+        `verify_status`: a provider moves through §26.2's states only by the status
+        endpoint, which audits every step, and a field here would be a second door
+        that audits none. `provider_type` is accepted on create and refused on
+        update by the repository, because a type change would put every listing the
+        provider owns in breach of §7.5.3 at once.
+      properties:
+        legal_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        trading_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        provider_type:
+          $ref: '#/components/schemas/ProviderTypeEnum'
+        contact_email:
+          type: string
+          format: email
+          minLength: 1
+        contact_phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        region:
+          type: string
+          minLength: 1
+        payout_account_ref:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 120
+        payout_currency:
+          type: string
+          minLength: 1
+          maxLength: 3
     Quote:
       type: object
       description: A priced, inventory-backed, time-boxed offer.
@@ -6022,16 +6452,6 @@ components:
             $ref: '#/components/schemas/FlightInputRequest'
       required:
       - flights
-    StatusEnum:
-      enum:
-      - OPEN
-      - CLOSED
-      - CANCELLED
-      type: string
-      description: |-
-        * `OPEN` - OPEN
-        * `CLOSED` - CLOSED
-        * `CANCELLED` - CANCELLED
     Tag:
       type: object
       properties:

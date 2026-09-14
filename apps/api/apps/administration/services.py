@@ -54,6 +54,8 @@ from apps.catalogue import services as catalogue
 from apps.common.audit import AuditAction, AuditRecord, record_audit
 from apps.common.authz import Principal
 from apps.common.errors import NotFoundError, ValidationError
+from apps.provider import services as provider
+from apps.provider.dto import ProviderDTO
 from apps.transport import services as transport
 from apps.transport.dto import LegEndpoint, LegRequest
 
@@ -64,6 +66,12 @@ __all__ = [
     "create_tariff",
     "update_tariff",
     "preview_quote",
+    "create_provider",
+    "update_provider",
+    "list_providers",
+    "get_provider",
+    "change_provider_status",
+    "assign_activity_provider",
 ]
 
 
@@ -210,6 +218,7 @@ def _audit(
     ip: str | None,
     before: dict[str, Any] | None = None,
     after: dict[str, Any] | None = None,
+    reason: str = "",
 ) -> None:
     record_audit(
         action,
@@ -220,6 +229,7 @@ def _audit(
         before=before,
         after=after,
         ip=ip,
+        reason=reason,
     )
 
 
@@ -384,3 +394,149 @@ def _endpoint(place: catalogue.TransferPlace) -> LegEndpoint:
         country_id=place.country_id,
         is_gateway=place.is_gateway,
     )
+
+
+# -- §27.7 providers ----------------------------------------------------------
+#
+# The same division of labour as the tariff console above. `provider` owns the
+# table and the verification machine; this module turns the region slug an
+# administrator typed into an id, renders it back, and writes the audit entry
+# inside the transaction that made the change.
+
+
+def _provider_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    fields = dict(payload)
+    if "region" in fields:
+        fields["region_id"] = _scope_id("region", fields.pop("region"))
+    return fields
+
+
+def _provider_payload(dto: ProviderDTO, *, regions: dict[int, str] | None = None) -> dict[str, Any]:
+    names = regions if regions is not None else catalogue.region_keys([dto.region_id])
+    return {
+        "public_id": dto.public_id,
+        "legal_name": dto.legal_name,
+        "trading_name": dto.trading_name,
+        "provider_type": dto.provider_type,
+        "contact_email": dto.contact_email,
+        "contact_phone": dto.contact_phone,
+        # A region retired out from under a provider is a real state — no SQL
+        # foreign key stops it (ADR 0012) — and an empty name says so.
+        "region": names.get(dto.region_id, ""),
+        "verify_status": dto.verify_status,
+        "verified_at": dto.verified_at,
+        "is_sellable": dto.is_sellable,
+        "payout_account_ref": dto.payout_account_ref,
+        "payout_currency": dto.payout_currency,
+        "rating_avg": dto.rating_avg,
+        "rating_count": dto.rating_count,
+    }
+
+
+@transaction.atomic
+def create_provider(
+    *, fields: dict[str, Any], principal: Principal | None, ip: str | None
+) -> dict[str, Any]:
+    dto = provider.create_provider(**_provider_fields(fields))
+    payload = _provider_payload(dto)
+    _audit(
+        AuditAction.PROVIDER_CREATED,
+        "provider",
+        dto.public_id,
+        principal=principal,
+        ip=ip,
+        after=_plain(payload),
+    )
+    return payload
+
+
+@transaction.atomic
+def update_provider(
+    public_id: UUID, *, fields: dict[str, Any], principal: Principal | None, ip: str | None
+) -> dict[str, Any]:
+    before = _provider_payload(provider.get_provider(public_id))
+    dto = provider.update_provider(public_id, **_provider_fields(fields))
+    payload = _provider_payload(dto)
+    _audit(
+        AuditAction.PROVIDER_UPDATED,
+        "provider",
+        public_id,
+        principal=principal,
+        ip=ip,
+        before=_plain(before),
+        after=_plain(payload),
+    )
+    return payload
+
+
+def list_providers(*, provider_type: str | None, verify_status: str | None) -> list[dict[str, Any]]:
+    rows = provider.list_providers(provider_type=provider_type, verify_status=verify_status)
+    regions = catalogue.region_keys([row.region_id for row in rows])
+    return [_provider_payload(row, regions=regions) for row in rows]
+
+
+def get_provider(public_id: UUID) -> dict[str, Any]:
+    return _provider_payload(provider.get_provider(public_id))
+
+
+@transaction.atomic
+def change_provider_status(
+    public_id: UUID,
+    *,
+    status: str,
+    reason: str,
+    principal: Principal | None,
+    ip: str | None,
+) -> dict[str, Any]:
+    """§26.2's decision, audited once per declared edge it passed.
+
+    One "verify" on a draft is three edges, and the log shows three entries in
+    order. A compliance reviewer reading the trail sees a provider submitted,
+    reviewed and approved — never one that skipped straight to approval.
+    """
+    change = provider.change_status(public_id, status, now=timezone.now())
+    current = change.before
+    for step in change.steps:
+        _audit(
+            AuditAction.PROVIDER_STATUS_CHANGED,
+            "provider",
+            public_id,
+            principal=principal,
+            ip=ip,
+            before={"verify_status": current},
+            after={"verify_status": step},
+            reason=reason,
+        )
+        current = step
+    return {
+        "before": change.before,
+        "steps": list(change.steps),
+        "provider": _provider_payload(change.provider),
+    }
+
+
+@transaction.atomic
+def assign_activity_provider(
+    activity_public_id: UUID,
+    *,
+    provider_public_id: UUID,
+    principal: Principal | None,
+    ip: str | None,
+) -> dict[str, Any]:
+    """Give an activity the provider that sells it.
+
+    Here because it is the one place both halves are visible: whether the
+    provider may own an ACTIVITY (§7.5.3) is a `provider` question, and the
+    column is `catalogue`'s. The write goes through `catalogue.services.update`,
+    so it is audited like every other catalogue edit, with the before and after
+    `provider_id` in the diff.
+    """
+    owner = provider.require_owner_of(provider_public_id, "ACTIVITY")
+    catalogue.update(
+        catalogue.entity_for("activity"),
+        activity_public_id,
+        fields={"provider_id": owner.id},
+        principal=principal,
+        ip=ip,
+    )
+    return {"activity": activity_public_id, "provider": _provider_payload(owner)}

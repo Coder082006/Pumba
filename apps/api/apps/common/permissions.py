@@ -34,6 +34,7 @@ __all__ = [
     "IsTourist",
     "tourist_id_of",
     "CATALOGUE_ADMIN_PERMISSIONS",
+    "PROVIDER_ADMIN_PERMISSIONS",
 ]
 
 
@@ -189,6 +190,17 @@ def tourist_id_of(request: Request) -> int:
 CATALOGUE_ADMIN_PERMISSIONS: list[type[BasePermission]] = [
     IsAuthenticatedPrincipal,
     HasPermission.for_(Permission.CATALOGUE_MANAGE),
+    EmailVerified,
+    MfaSatisfied,
+]
+
+
+#: §27.7's provider verification console. VERIFICATION_DECIDE, which §5.2 gives
+#: COMPLIANCE_ADMIN and SUPER_ADMIN. Separate from the catalogue list because
+#: approving who the platform pays is not a catalogue edit.
+PROVIDER_ADMIN_PERMISSIONS: list[type[BasePermission]] = [
+    IsAuthenticatedPrincipal,
+    HasPermission.for_(Permission.VERIFICATION_DECIDE),
     EmailVerified,
     MfaSatisfied,
 ]

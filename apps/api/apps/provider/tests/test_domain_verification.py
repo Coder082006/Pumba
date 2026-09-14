@@ -17,7 +17,7 @@ from apps.provider.domain.verification import (
     VerifyState,
     is_sellable,
     may_own,
-    path_to_verified,
+    path_to,
 )
 from apps.provider.models import Provider, ProviderTypeChoice, VerifyStatus
 
@@ -80,30 +80,32 @@ class TestSellability:
         assert not is_sellable(state)
 
 
-class TestTheWalkToVerified:
+class TestTheWalk:
     @pytest.mark.parametrize("start", list(VerifyState))
     def test_every_hop_is_a_declared_edge_ending_verified(self, start: VerifyState) -> None:
-        route = path_to_verified(start)
         current = start
-        for step in route:
+        for step in path_to(start, S.VERIFIED):
             current = VERIFY_MACHINE.transition(current, step)
         assert current is S.VERIFIED
 
     def test_a_draft_passes_through_submission_and_review(self) -> None:
         """The admin's "verify" action must leave the trail §26.2 describes."""
-        assert path_to_verified(S.DRAFT) == (S.SUBMITTED, S.UNDER_REVIEW, S.VERIFIED)
+        assert path_to(S.DRAFT, S.VERIFIED) == (S.SUBMITTED, S.UNDER_REVIEW, S.VERIFIED)
 
-    def test_a_verified_provider_needs_no_steps(self) -> None:
-        assert path_to_verified(S.VERIFIED) == ()
+    def test_a_rejection_of_a_draft_is_reviewed_first(self) -> None:
+        assert path_to(S.DRAFT, S.REJECTED) == (S.SUBMITTED, S.UNDER_REVIEW, S.REJECTED)
 
-    def test_a_broken_route_fails_loudly(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """If the table changes under the routes, the walk refuses rather than
-        handing back a path the machine would reject halfway along."""
-        from apps.provider.domain import verification
+    def test_a_rejected_provider_is_resubmitted_before_approval(self) -> None:
+        assert path_to(S.REJECTED, S.VERIFIED) == (S.SUBMITTED, S.UNDER_REVIEW, S.VERIFIED)
 
-        monkeypatch.setitem(verification._ROUTES, S.DRAFT, (S.VERIFIED,))
-        with pytest.raises(AssertionError, match="not a declared edge"):
-            path_to_verified(S.DRAFT)
+    def test_being_there_already_needs_no_steps(self) -> None:
+        assert path_to(S.VERIFIED, S.VERIFIED) == ()
+
+    def test_an_unreachable_target_is_refused(self) -> None:
+        """Once verified, a provider cannot be walked back to a rejection —
+        §26.2 draws no such edge, and suspension is the answer it gives."""
+        with pytest.raises(IllegalTransitionError):
+            path_to(S.VERIFIED, S.REJECTED)
 
 
 class TestListingOwnership:

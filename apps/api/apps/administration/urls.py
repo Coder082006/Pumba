@@ -21,8 +21,12 @@ stopped being checked.
 from django.urls import path
 
 from apps.administration.views import (
+    AdminActivityProviderView,
     AdminCorridorCreateView,
     AdminCorridorDetailView,
+    AdminProviderDetailView,
+    AdminProviderListView,
+    AdminProviderStatusView,
     AdminQuotePreviewView,
     AdminTariffCreateView,
     AdminTariffDetailView,
@@ -51,5 +55,22 @@ urlpatterns = [
         "admin/transport/quote-preview",
         AdminQuotePreviewView.as_view(),
         name="admin-quote-preview",
+    ),
+    # §27.7's provider console, ADR 0025.
+    path("admin/providers", AdminProviderListView.as_view(), name="admin-provider-list"),
+    path(
+        "admin/providers/<uuid:public_id>",
+        AdminProviderDetailView.as_view(),
+        name="admin-provider-detail",
+    ),
+    path(
+        "admin/providers/<uuid:public_id>/status",
+        AdminProviderStatusView.as_view(),
+        name="admin-provider-status",
+    ),
+    path(
+        "admin/activities/<uuid:public_id>/provider",
+        AdminActivityProviderView.as_view(),
+        name="admin-activity-provider",
     ),
 ]

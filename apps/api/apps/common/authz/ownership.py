@@ -93,6 +93,9 @@ class Resource(StrEnum):
     TRANSFER_CORRIDOR = "TRANSFER_CORRIDOR"
     TRANSFER_TARIFF = "TRANSFER_TARIFF"
 
+    # Phase 7 - the party a booking is payable to (§7.5.3, ADR 0025).
+    PROVIDER = "PROVIDER"
+
 
 class Scope(StrEnum):
     OWNED = "OWNED"
@@ -178,6 +181,18 @@ def _provider_listed(
     for role in (Role.PROVIDER_OWNER, Role.PROVIDER_STAFF):
         rules[(role, resource)] = _own("provider_id", row_field)
     return rules
+
+
+def _provider_record() -> dict[tuple[Role, Resource], OwnershipRule]:
+    rules: dict[Role, OwnershipRule] = {role: _NONE for role in Role}
+    rules[Role.COMPLIANCE_ADMIN] = _GLOBAL
+    rules[Role.SUPER_ADMIN] = _GLOBAL
+    rules[Role.CATALOGUE_ADMIN] = _GLOBAL_READ
+    rules[Role.SUPPORT_AGENT] = _GLOBAL_READ
+    rules[Role.FINANCE_OFFICER] = _GLOBAL_READ
+    rules[Role.PROVIDER_OWNER] = _own("provider_id", "id")
+    rules[Role.PROVIDER_STAFF] = _own("provider_id", "id")
+    return {(role, Resource.PROVIDER): rule for role, rule in rules.items()}
 
 
 #: Every (role, resource) pair, stated. See the totality test.
@@ -292,6 +307,18 @@ OWNERSHIP: Mapping[tuple[Role, Resource], OwnershipRule] = MappingProxyType(
         **_administered(Resource.VEHICLE_CLASS),
         **_administered(Resource.TRANSFER_CORRIDOR),
         **_administered(Resource.TRANSFER_TARIFF),
+        # --- provider (§7.5.3, §26.2, §27.7) -----------------------------------
+        # Not `_administered`, because the catalogue console is the wrong owner.
+        # §27.7 puts provider verification in COMPLIANCE_ADMIN's hands, and
+        # §5.2 gives that role VERIFICATION_DECIDE. A catalogue administrator
+        # reads providers — assigning a listing to one means choosing one — but
+        # does not create or approve them. Finance reads them for payouts.
+        #
+        # A provider reaches its own row and no other, by `id`, which is what
+        # §5.2's `provider_id` link means on the provider table itself. No
+        # endpoint uses that path until the Phase 11 portal; the rule is stated
+        # now for the reason `_provider_listed` gives.
+        **_provider_record(),
     }
 )
 

@@ -90,6 +90,14 @@ class AuditAction(StrEnum):
     CATALOGUE_DELETED = "catalogue.deleted"
     CATALOGUE_RESTORED = "catalogue.restored"
 
+    # Phase 7 — the provider console (§27.7). A status change is its own member
+    # rather than an update, because §27.7's verification decision is the
+    # record a compliance review looks for, and burying it in a generic diff
+    # would make it the easiest administrative action to miss.
+    PROVIDER_CREATED = "provider.created"
+    PROVIDER_UPDATED = "provider.updated"
+    PROVIDER_STATUS_CHANGED = "provider.status_changed"
+
 
 @dataclass(frozen=True, slots=True)
 class AuditRecord:

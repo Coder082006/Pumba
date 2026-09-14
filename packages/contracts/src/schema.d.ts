@@ -277,6 +277,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/activities/{public_id}/provider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the provider that sells an activity
+         * @description Assigning a listing is a catalogue edit, so CATALOGUE_MANAGE gates it.
+         */
+        put: operations["admin_activities_provider_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/activities/{public_id}/restore": {
         parameters: {
             query?: never;
@@ -776,6 +796,86 @@ export interface paths {
          *     `repositories._WRITABLE` exists to close.
          */
         post: operations["admin_markets_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List providers
+         * @description §27.7: provider verification is COMPLIANCE_ADMIN's (§5.2).
+         *
+         *     Not a `ScopedQuerysetMixin` view, and the §37.2 matrix records why: every
+         *     role holding VERIFICATION_DECIDE holds `Scope.GLOBAL` over `PROVIDER`, so a
+         *     filter would match every row while reporting a control.
+         */
+        get: operations["admin_providers_list"];
+        put?: never;
+        /**
+         * Create a provider
+         * @description Creates the provider in DRAFT. It cannot be sold until it is walked to VERIFIED through the status endpoint (BR-037).
+         */
+        post: operations["admin_providers_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/providers/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a provider
+         * @description §27.7: provider verification is COMPLIANCE_ADMIN's (§5.2).
+         *
+         *     Not a `ScopedQuerysetMixin` view, and the §37.2 matrix records why: every
+         *     role holding VERIFICATION_DECIDE holds `Scope.GLOBAL` over `PROVIDER`, so a
+         *     filter would match every row while reporting a control.
+         */
+        get: operations["admin_providers_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Amend a provider
+         * @description §27.7: provider verification is COMPLIANCE_ADMIN's (§5.2).
+         *
+         *     Not a `ScopedQuerysetMixin` view, and the §37.2 matrix records why: every
+         *     role holding VERIFICATION_DECIDE holds `Scope.GLOBAL` over `PROVIDER`, so a
+         *     filter would match every row while reporting a control.
+         */
+        patch: operations["admin_providers_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/providers/{public_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a provider through verification
+         * @description VERIFIED and REJECTED walk SRS 26.2's declared edges and audit each step. SUSPENDED is taken from VERIFIED only. REJECTED and SUSPENDED require a reason.
+         */
+        post: operations["admin_providers_status_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1863,6 +1963,11 @@ export interface components {
             destination: components["schemas"]["Destination"];
             media: components["schemas"]["Media"][];
         };
+        /** @description The provider that sells an activity, by its public id. */
+        ActivityProviderRequest: {
+            /** Format: uuid */
+            provider: string;
+        };
         /** @description The rule as the console reads it back — days, never the mask.
          *
          *     Asymmetry with the write side would be the bug worth having a test for: a
@@ -2254,8 +2359,15 @@ export interface components {
             price_override?: string;
             /** @default false */
             clear_price: boolean;
-            status?: components["schemas"]["StatusEnum"];
+            status?: components["schemas"]["DepartureEditStatusEnum"];
         };
+        /**
+         * @description * `OPEN` - OPEN
+         *     * `CLOSED` - CLOSED
+         *     * `CANCELLED` - CANCELLED
+         * @enum {string}
+         */
+        DepartureEditStatusEnum: "OPEN" | "CLOSED" | "CANCELLED";
         /** @description §7.5.6.
          *
          *     `timezone` is here because §7.2 renders timestamps in the destination's
@@ -2823,6 +2935,25 @@ export interface components {
             launch_date?: string | null;
             is_active?: boolean;
         };
+        /** @description §7.5.3's writable columns, as the console submits them.
+         *
+         *     `region` is a slug, resolved by the service (ADR 0012). There is no
+         *     `verify_status`: a provider moves through §26.2's states only by the status
+         *     endpoint, which audits every step, and a field here would be a second door
+         *     that audits none. `provider_type` is accepted on create and refused on
+         *     update by the repository, because a type change would put every listing the
+         *     provider owns in breach of §7.5.3 at once. */
+        PatchedProviderWriteRequest: {
+            legal_name?: string;
+            trading_name?: string;
+            provider_type?: components["schemas"]["ProviderTypeEnum"];
+            /** Format: email */
+            contact_email?: string;
+            contact_phone?: string;
+            region?: string;
+            payout_account_ref?: string | null;
+            payout_currency?: string;
+        };
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
@@ -2987,6 +3118,74 @@ export interface components {
             readonly remaining: number;
             /** Format: decimal */
             readonly price_override: string | null;
+        };
+        ProviderRead: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly legal_name: string;
+            readonly trading_name: string;
+            readonly provider_type: string;
+            readonly contact_email: string;
+            readonly contact_phone: string;
+            readonly region: string;
+            readonly verify_status: string;
+            /** Format: date-time */
+            readonly verified_at: string | null;
+            readonly is_sellable: boolean;
+            readonly payout_account_ref: string | null;
+            readonly payout_currency: string;
+            /** Format: decimal */
+            readonly rating_avg: string;
+            readonly rating_count: number;
+        };
+        /** @description §26.2's decision. A reason is required to reject or suspend.
+         *
+         *     §26.2 shows a rejected provider its "reasons", and a suspension is the
+         *     most consequential thing an administrator can do to someone the platform
+         *     pays; neither is acceptable as an unexplained row in the audit log. */
+        ProviderStatusRequest: {
+            status: components["schemas"]["ProviderStatusStatusEnum"];
+            reason?: string;
+        };
+        ProviderStatusResult: {
+            readonly before: string;
+            readonly steps: string[];
+            readonly provider: components["schemas"]["ProviderRead"];
+        };
+        /**
+         * @description * `SUBMITTED` - SUBMITTED
+         *     * `UNDER_REVIEW` - UNDER_REVIEW
+         *     * `VERIFIED` - VERIFIED
+         *     * `REJECTED` - REJECTED
+         *     * `SUSPENDED` - SUSPENDED
+         * @enum {string}
+         */
+        ProviderStatusStatusEnum: "SUBMITTED" | "UNDER_REVIEW" | "VERIFIED" | "REJECTED" | "SUSPENDED";
+        /**
+         * @description * `TRANSPORT` - TRANSPORT
+         *     * `ACCOMMODATION` - ACCOMMODATION
+         *     * `ACTIVITY` - ACTIVITY
+         * @enum {string}
+         */
+        ProviderTypeEnum: "TRANSPORT" | "ACCOMMODATION" | "ACTIVITY";
+        /** @description §7.5.3's writable columns, as the console submits them.
+         *
+         *     `region` is a slug, resolved by the service (ADR 0012). There is no
+         *     `verify_status`: a provider moves through §26.2's states only by the status
+         *     endpoint, which audits every step, and a field here would be a second door
+         *     that audits none. `provider_type` is accepted on create and refused on
+         *     update by the repository, because a type change would put every listing the
+         *     provider owns in breach of §7.5.3 at once. */
+        ProviderWriteRequest: {
+            legal_name?: string;
+            trading_name?: string;
+            provider_type?: components["schemas"]["ProviderTypeEnum"];
+            /** Format: email */
+            contact_email?: string;
+            contact_phone?: string;
+            region?: string;
+            payout_account_ref?: string | null;
+            payout_currency?: string;
         };
         /** @description A priced, inventory-backed, time-boxed offer. */
         Quote: {
@@ -3160,13 +3359,6 @@ export interface components {
         SetFlightsRequest: {
             flights: components["schemas"]["FlightInputRequest"][];
         };
-        /**
-         * @description * `OPEN` - OPEN
-         *     * `CLOSED` - CLOSED
-         *     * `CANCELLED` - CANCELLED
-         * @enum {string}
-         */
-        StatusEnum: "OPEN" | "CLOSED" | "CANCELLED";
         Tag: {
             /** Format: uuid */
             public_id: string;
@@ -3834,6 +4026,33 @@ export interface operations {
             };
         };
     };
+    admin_activities_provider_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivityProviderRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ActivityProviderRequest"];
+                "multipart/form-data": components["schemas"]["ActivityProviderRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderRead"];
+                };
+            };
+        };
+    };
     admin_activities_restore_create: {
         parameters: {
             query?: never;
@@ -4403,6 +4622,128 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    admin_providers_list: {
+        parameters: {
+            query?: {
+                provider_type?: string;
+                verify_status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderRead"][];
+                };
+            };
+        };
+    };
+    admin_providers_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ProviderWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ProviderWriteRequest"];
+                "multipart/form-data": components["schemas"]["ProviderWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderRead"];
+                };
+            };
+        };
+    };
+    admin_providers_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderRead"];
+                };
+            };
+        };
+    };
+    admin_providers_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedProviderWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedProviderWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedProviderWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderRead"];
+                };
+            };
+        };
+    };
+    admin_providers_status_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderStatusRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ProviderStatusRequest"];
+                "multipart/form-data": components["schemas"]["ProviderStatusRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderStatusResult"];
+                };
             };
         };
     };

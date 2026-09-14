@@ -21,8 +21,8 @@ provider ends; it is either sellable or it is not.
 
 **There is no DRAFT → VERIFIED edge, and the administrator's "verify" action
 does not create one.** In Phase 7 there is no provider login, so an
-administrator drives every step — but `path_to_verified` walks the edges §26.2
-draws and the service audits each one. An administrator who could jump straight
+administrator drives every step — but `path_to` walks the edges §26.2 draws and
+the service audits each one. An administrator who could jump straight
 to VERIFIED would leave a history that says a provider was never submitted or
 reviewed, which is the one thing a verification trail exists to show (ADR 0025).
 """
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from apps.common.state_machine import StateMachine, Transition
+from apps.common.state_machine import IllegalTransitionError, StateMachine, Transition
 
 __all__ = [
     "ProviderType",
@@ -39,7 +39,7 @@ __all__ = [
     "VERIFY_MACHINE",
     "ListingKind",
     "is_sellable",
-    "path_to_verified",
+    "path_to",
     "may_own",
 ]
 
@@ -97,34 +97,38 @@ def is_sellable(state: VerifyState) -> bool:
 _SELLABLE = frozenset({VerifyState.VERIFIED})
 
 
-def path_to_verified(state: VerifyState) -> tuple[VerifyState, ...]:
-    """The declared steps from `state` to VERIFIED, excluding `state` itself.
+def path_to(source: VerifyState, target: VerifyState) -> tuple[VerifyState, ...]:
+    """The shortest run of declared edges from `source` to `target`.
 
-    Empty when already verified. Every hop is a declared edge — asserted below,
-    so a change to the table that broke the walk fails loudly here rather than
-    producing a path the machine would refuse halfway along.
+    Excludes `source`; empty when they are equal. Derived from `VERIFY_MACHINE`
+    rather than written out per state, so the walk cannot disagree with the
+    table — a route list kept beside the machine is a second statement of the
+    edges, and the first to be edited leaves the other wrong.
+
+    Breadth-first over six states, and the neighbours are visited in a fixed
+    order, so the same request always produces the same trail.
     """
-    route: tuple[VerifyState, ...] = _ROUTES[state]
-    current = state
-    for step in route:
-        if not VERIFY_MACHINE.can(current, step):
-            raise AssertionError(f"{current} -> {step} is not a declared edge")
-        current = step
-    return route
-
-
-_ROUTES: dict[VerifyState, tuple[VerifyState, ...]] = {
-    VerifyState.DRAFT: (VerifyState.SUBMITTED, VerifyState.UNDER_REVIEW, VerifyState.VERIFIED),
-    VerifyState.SUBMITTED: (VerifyState.UNDER_REVIEW, VerifyState.VERIFIED),
-    VerifyState.UNDER_REVIEW: (VerifyState.VERIFIED,),
-    VerifyState.REJECTED: (
-        VerifyState.SUBMITTED,
-        VerifyState.UNDER_REVIEW,
-        VerifyState.VERIFIED,
-    ),
-    VerifyState.SUSPENDED: (VerifyState.VERIFIED,),
-    VerifyState.VERIFIED: (),
-}
+    if source is target:
+        return ()
+    previous: dict[VerifyState, VerifyState] = {}
+    frontier = [source]
+    seen = {source}
+    while frontier:
+        following: list[VerifyState] = []
+        for state in frontier:
+            for step in sorted(VERIFY_MACHINE.allowed_targets(state)):
+                if step in seen:
+                    continue
+                seen.add(step)
+                previous[step] = state
+                if step is target:
+                    route = [step]
+                    while route[-1] in previous and previous[route[-1]] is not source:
+                        route.append(previous[route[-1]])
+                    return tuple(reversed(route))
+                following.append(step)
+        frontier = following
+    raise IllegalTransitionError(VERIFY_MACHINE.name, source, target)
 
 
 class ListingKind(StrEnum):

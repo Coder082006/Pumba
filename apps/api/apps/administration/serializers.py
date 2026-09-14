@@ -30,6 +30,11 @@ __all__ = [
     "TariffReadSerializer",
     "PreviewOptionSerializer",
     "QuotePreviewResultSerializer",
+    "ProviderWriteSerializer",
+    "ProviderReadSerializer",
+    "ProviderStatusSerializer",
+    "ProviderStatusResultSerializer",
+    "ActivityProviderSerializer",
 ]
 
 
@@ -166,3 +171,77 @@ class QuotePreviewResultSerializer(serializers.Serializer[Any]):
     origin = serializers.CharField(read_only=True)
     target = serializers.CharField(read_only=True)
     options = PreviewOptionSerializer(many=True, read_only=True)
+
+
+# -- §27.7 providers ----------------------------------------------------------
+
+
+class ProviderWriteSerializer(StrictSerializer):
+    """§7.5.3's writable columns, as the console submits them.
+
+    `region` is a slug, resolved by the service (ADR 0012). There is no
+    `verify_status`: a provider moves through §26.2's states only by the status
+    endpoint, which audits every step, and a field here would be a second door
+    that audits none. `provider_type` is accepted on create and refused on
+    update by the repository, because a type change would put every listing the
+    provider owns in breach of §7.5.3 at once.
+    """
+
+    legal_name = serializers.CharField(max_length=200, required=False)
+    trading_name = serializers.CharField(max_length=200, required=False)
+    provider_type = serializers.ChoiceField(
+        choices=["TRANSPORT", "ACCOMMODATION", "ACTIVITY"], required=False
+    )
+    contact_email = serializers.EmailField(required=False)
+    contact_phone = serializers.CharField(max_length=20, required=False)
+    region = serializers.CharField(required=False)
+    payout_account_ref = serializers.CharField(max_length=120, required=False, allow_null=True)
+    payout_currency = serializers.CharField(max_length=3, required=False)
+
+
+class ProviderReadSerializer(serializers.Serializer[Any]):
+    id = serializers.UUIDField(source="public_id", read_only=True)
+    legal_name = serializers.CharField(read_only=True)
+    trading_name = serializers.CharField(read_only=True)
+    provider_type = serializers.CharField(read_only=True)
+    contact_email = serializers.CharField(read_only=True)
+    contact_phone = serializers.CharField(read_only=True)
+    region = serializers.CharField(read_only=True)
+    verify_status = serializers.CharField(read_only=True)
+    verified_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    is_sellable = serializers.BooleanField(read_only=True)
+    payout_account_ref = serializers.CharField(read_only=True, allow_null=True)
+    payout_currency = serializers.CharField(read_only=True)
+    rating_avg = serializers.DecimalField(max_digits=3, decimal_places=2, read_only=True)
+    rating_count = serializers.IntegerField(read_only=True)
+
+
+class ProviderStatusSerializer(StrictSerializer):
+    """§26.2's decision. A reason is required to reject or suspend.
+
+    §26.2 shows a rejected provider its "reasons", and a suspension is the
+    most consequential thing an administrator can do to someone the platform
+    pays; neither is acceptable as an unexplained row in the audit log.
+    """
+
+    status = serializers.ChoiceField(
+        choices=["SUBMITTED", "UNDER_REVIEW", "VERIFIED", "REJECTED", "SUSPENDED"]
+    )
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        if attrs["status"] in {"REJECTED", "SUSPENDED"} and not attrs.get("reason", "").strip():
+            raise serializers.ValidationError({"reason": "A reason is required."})
+        return attrs
+
+
+class ProviderStatusResultSerializer(serializers.Serializer[Any]):
+    before = serializers.CharField(read_only=True)
+    steps = serializers.ListField(child=serializers.CharField(), read_only=True)
+    provider = ProviderReadSerializer(read_only=True)
+
+
+class ActivityProviderSerializer(StrictSerializer):
+    """The provider that sells an activity, by its public id."""
+
+    provider = serializers.UUIDField()

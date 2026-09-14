@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -33,7 +33,8 @@ from apps.administration import serializers as ser
 from apps.administration import services
 from apps.common.authentication import principal_from_request
 from apps.common.envelope import success_envelope
-from apps.common.permissions import CATALOGUE_ADMIN_PERMISSIONS
+from apps.common.errors import ValidationError
+from apps.common.permissions import CATALOGUE_ADMIN_PERMISSIONS, PROVIDER_ADMIN_PERMISSIONS
 
 __all__ = [
     "AdminCorridorCreateView",
@@ -41,6 +42,10 @@ __all__ = [
     "AdminTariffCreateView",
     "AdminTariffDetailView",
     "AdminQuotePreviewView",
+    "AdminProviderListView",
+    "AdminProviderDetailView",
+    "AdminProviderStatusView",
+    "AdminActivityProviderView",
 ]
 
 _TAGS = ["Administration"]
@@ -174,3 +179,141 @@ class AdminQuotePreviewView(_AdminView):
             self._validated(request, ser.QuotePreviewSerializer, partial=False)
         )
         return Response(success_envelope(dict(ser.QuotePreviewResultSerializer(result).data)))
+
+
+# -- §27.7 providers ----------------------------------------------------------
+
+#: What a provider cannot be created without. The serializer marks every field
+#: optional so one class serves create and PATCH; the difference is stated here.
+_REQUIRED_ON_CREATE = (
+    "legal_name",
+    "trading_name",
+    "provider_type",
+    "contact_email",
+    "contact_phone",
+    "region",
+)
+
+
+class _ProviderAdminView(_AdminView):
+    """§27.7: provider verification is COMPLIANCE_ADMIN's (§5.2).
+
+    Not a `ScopedQuerysetMixin` view, and the §37.2 matrix records why: every
+    role holding VERIFICATION_DECIDE holds `Scope.GLOBAL` over `PROVIDER`, so a
+    filter would match every row while reporting a control.
+    """
+
+    permission_classes = PROVIDER_ADMIN_PERMISSIONS
+
+
+class AdminProviderListView(_ProviderAdminView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("provider_type", str, required=False),
+            OpenApiParameter("verify_status", str, required=False),
+        ],
+        responses={200: ser.ProviderReadSerializer(many=True)},
+        summary="List providers",
+        tags=_TAGS,
+    )
+    def get(self, request: Request) -> Response:
+        rows = services.list_providers(
+            provider_type=request.query_params.get("provider_type") or None,
+            verify_status=request.query_params.get("verify_status") or None,
+        )
+        return Response(success_envelope(ser.ProviderReadSerializer(rows, many=True).data))
+
+    @extend_schema(
+        request=ser.ProviderWriteSerializer,
+        responses={201: ser.ProviderReadSerializer},
+        summary="Create a provider",
+        description=(
+            "Creates the provider in DRAFT. It cannot be sold until it is walked "
+            "to VERIFIED through the status endpoint (BR-037)."
+        ),
+        tags=_TAGS,
+    )
+    def post(self, request: Request) -> Response:
+        fields = self._validated(request, ser.ProviderWriteSerializer, partial=False)
+        missing = [name for name in _REQUIRED_ON_CREATE if name not in fields]
+        if missing:
+            raise ValidationError(
+                "These fields are required.",
+                details=[{"field": name, "issue": "required"} for name in missing],
+            )
+        dto = services.create_provider(
+            fields=fields, principal=principal_from_request(request), ip=self._ip(request)
+        )
+        return Response(
+            success_envelope(dict(ser.ProviderReadSerializer(dto).data)),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AdminProviderDetailView(_ProviderAdminView):
+    @extend_schema(
+        responses={200: ser.ProviderReadSerializer}, summary="Read a provider", tags=_TAGS
+    )
+    def get(self, request: Request, public_id: UUID) -> Response:
+        dto = services.get_provider(public_id)
+        return Response(success_envelope(dict(ser.ProviderReadSerializer(dto).data)))
+
+    @extend_schema(
+        request=ser.ProviderWriteSerializer,
+        responses={200: ser.ProviderReadSerializer},
+        summary="Amend a provider",
+        tags=_TAGS,
+    )
+    def patch(self, request: Request, public_id: UUID) -> Response:
+        dto = services.update_provider(
+            public_id,
+            fields=self._validated(request, ser.ProviderWriteSerializer, partial=True),
+            principal=principal_from_request(request),
+            ip=self._ip(request),
+        )
+        return Response(success_envelope(dict(ser.ProviderReadSerializer(dto).data)))
+
+
+class AdminProviderStatusView(_ProviderAdminView):
+    @extend_schema(
+        request=ser.ProviderStatusSerializer,
+        responses={200: ser.ProviderStatusResultSerializer},
+        summary="Move a provider through verification",
+        description=(
+            "VERIFIED and REJECTED walk SRS 26.2's declared edges and audit each "
+            "step. SUSPENDED is taken from VERIFIED only. REJECTED and SUSPENDED "
+            "require a reason."
+        ),
+        tags=_TAGS,
+    )
+    def post(self, request: Request, public_id: UUID) -> Response:
+        body = self._validated(request, ser.ProviderStatusSerializer, partial=False)
+        result = services.change_provider_status(
+            public_id,
+            status=body["status"],
+            reason=body.get("reason", ""),
+            principal=principal_from_request(request),
+            ip=self._ip(request),
+        )
+        return Response(success_envelope(dict(ser.ProviderStatusResultSerializer(result).data)))
+
+
+class AdminActivityProviderView(_AdminView):
+    """Assigning a listing is a catalogue edit, so CATALOGUE_MANAGE gates it."""
+
+    @extend_schema(
+        request=ser.ActivityProviderSerializer,
+        responses={200: ser.ProviderReadSerializer},
+        summary="Set the provider that sells an activity",
+        tags=_TAGS,
+    )
+    def put(self, request: Request, public_id: UUID) -> Response:
+        body = self._validated(request, ser.ActivityProviderSerializer, partial=False)
+        result = services.assign_activity_provider(
+            public_id,
+            provider_public_id=body["provider"],
+            principal=principal_from_request(request),
+            ip=self._ip(request),
+        )
+        provider = dict(ser.ProviderReadSerializer(result["provider"]).data)
+        return Response(success_envelope(provider))

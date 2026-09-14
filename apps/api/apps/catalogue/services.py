@@ -43,12 +43,12 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from django.contrib.gis.geos import Point
-from django.db import transaction
+from django.db import models, transaction
 
 from apps.catalogue import repositories as repo
 from apps.catalogue.domain import opening_hours
@@ -98,6 +98,7 @@ __all__ = [
     "TransferPlace",
     "transfer_places",
     "resolve_scope_ref",
+    "region_keys",
     "activity_facts",
     "attraction_facts",
     "opening_status",
@@ -1375,6 +1376,20 @@ def resolve_scope_ref(kind: str, natural_key: str) -> int | None:
     else:
         raise ValidationError(f"{kind!r} is not a tariff scope; expected 'country' or 'region'.")
     return None if row is None else int(row.id)
+
+
+def region_keys(ids: Sequence[int]) -> dict[int, str]:
+    """Region slugs by id — the reverse of `resolve_scope_ref("region", …)`.
+
+    A provider stores its operating region as an id (ADR 0012) and the console
+    shows it by the name an administrator typed. Soft-deleted regions are
+    included: a provider operating in a region since retired still operates
+    somewhere, and an empty name would hide that rather than show it.
+    """
+    # `all_objects` is declared on the abstract base, so it types as that base.
+    manager = cast("models.Manager[Region]", Region.all_objects)
+    rows = manager.filter(id__in=set(ids)).values_list("id", "slug")
+    return {int(row_id): str(slug) for row_id, slug in rows}
 
 
 def activity_facts(ids: Sequence[int]) -> dict[int, ActivityFacts]:
