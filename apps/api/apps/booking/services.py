@@ -48,7 +48,7 @@ from apps.booking.domain.lifecycle import Actor, BookingState, apply, force
 from apps.booking.dto import BasketDTO, BookingDTO
 from apps.booking.models import Booking, BookingActivity, BookingType
 from apps.common.config import get_setting
-from apps.common.errors import ConflictError, InventoryUnavailableError
+from apps.common.errors import ConflictError, InventoryUnavailableError, NotFoundError
 from apps.common.events import DomainEvent, publish
 from apps.inventory import services as inventory
 from apps.inventory.dto import HoldDTO, HoldRequest
@@ -71,6 +71,11 @@ __all__ = [
     "ConfirmationDTO",
     "confirm_trip",
     "ComponentFailedAfterCapture",
+    "BookingCancelled",
+    "BookingNotAwaitingError",
+    "accept_request",
+    "decline_request",
+    "expire_provider_responses",
 ]
 
 
@@ -762,3 +767,215 @@ def confirm_trip(
         awaiting_provider=tuple(awaiting),
         failed=tuple(failed),
     )
+
+
+# -- §14.4: on-request activities -------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BookingCancelled(DomainEvent):
+    """A booking ended CANCELLED, and what is owed back.
+
+    `refund_amount` is computed here and carried as a string, so Phase 8's
+    refund handler issues exactly what was decided (BR-043) rather than deciding
+    again.
+    """
+
+    name = "booking.cancelled"
+    booking_public_id: str = ""
+    reference: str = ""
+    trip_id: int = 0
+    provider_id: int = 0
+    cancelled_by: str = ""
+    reason: str = ""
+    refund_amount: str = "0"
+    currency: str = ""
+
+
+class BookingNotAwaitingError(ConflictError):
+    """The booking is not waiting for its provider — §32.3's ILLEGAL_TRANSITION."""
+
+    code = "ILLEGAL_TRANSITION"
+
+
+def _awaiting(public_id: UUID) -> Booking:
+    row = Booking.objects.select_for_update().filter(public_id=public_id).first()
+    if row is None:
+        raise NotFoundError()
+    if row.status != BookingState.AWAITING_PROVIDER.value:
+        raise BookingNotAwaitingError(
+            f"{row.reference} is {row.status}, not waiting for its provider."
+        )
+    return row
+
+
+def _return_capacity(row: Booking) -> None:
+    """BR-048: a cancelled booking's sold seats go back on sale immediately."""
+    activity = BookingActivity.objects.filter(booking=row).first()
+    if activity is not None:
+        inventory.return_sold(departure_id=activity.activity_departure_id, quantity=row.pax_count)
+
+
+def _end_trip_if_every_component_is_cancelled(trip_id: int) -> None:
+    live = {
+        BookingState.PENDING.value,
+        BookingState.AWAITING_PROVIDER.value,
+        BookingState.CONFIRMED.value,
+        BookingState.IN_PROGRESS.value,
+        BookingState.COMPLETED.value,
+    }
+    if not Booking.objects.filter(trip_id=trip_id, status__in=live).exists():
+        trip_services.mark_cancelled(trip_id)
+
+
+def _cancel_for_supply(
+    row: Booking,
+    *,
+    actor: Actor,
+    actor_user_id: int | None,
+    context: dict[str, object],
+    code: str,
+    reason: str,
+    now: datetime,
+) -> None:
+    """AWAITING_PROVIDER → CANCELLED with BR-045's full refund.
+
+    §14.4: a decline or a lapsed window "auto-cancels with full refund", and
+    BR-045 extends that to the service fee: the tourist is never penalised for
+    supply failure. So the refund is everything this component cost.
+    """
+    target = apply(BookingState(row.status), BookingState.CANCELLED, actor=actor, context=context)
+    repo.set_status(
+        row,
+        target.value,
+        cancelled_at=now,
+        cancelled_by="PROVIDER",
+        cancellation_reason=code,
+    )
+    repo.record_transition(
+        row,
+        from_status=BookingState.AWAITING_PROVIDER.value,
+        to_status=target.value,
+        actor_role=actor.value,
+        actor_user_id=actor_user_id,
+        reason=reason,
+        occurred_at=now,
+    )
+    _return_capacity(row)
+    publish(
+        BookingCancelled(
+            booking_public_id=str(row.public_id),
+            reference=row.reference,
+            trip_id=row.trip_id,
+            provider_id=row.provider_id,
+            cancelled_by="PROVIDER",
+            reason=code,
+            refund_amount=str(row.gross_amount + row.fee_amount + row.tax_amount),
+            currency=row.currency,
+        )
+    )
+    _end_trip_if_every_component_is_cancelled(row.trip_id)
+
+
+@transaction.atomic
+def accept_request(
+    public_id: UUID,
+    *,
+    actor_user_id: int | None,
+    now: datetime | None = None,
+) -> BookingDTO:
+    """§20.2 AWAITING_PROVIDER → CONFIRMED, "within provider_response_hours".
+
+    The deadline is the rule, not the sweep (ADR 0025 decision 7): an acceptance
+    one second late is refused even if the timeout job has not run yet, so the
+    job's cadence never becomes extra grace for the provider.
+    """
+    now = now or timezone.now()
+    row = _awaiting(public_id)
+    target = apply(
+        BookingState(row.status),
+        BookingState.CONFIRMED,
+        actor=Actor.PROVIDER,
+        context={"now": now, "response_due_at": row.response_due_at},
+    )
+    repo.set_status(row, target.value, confirmed_at=now)
+    repo.record_transition(
+        row,
+        from_status=BookingState.AWAITING_PROVIDER.value,
+        to_status=target.value,
+        actor_role=Actor.PROVIDER.value,
+        actor_user_id=actor_user_id,
+        reason="Accepted by the provider.",
+        occurred_at=now,
+    )
+    publish(
+        BookingConfirmed(
+            booking_public_id=str(row.public_id),
+            reference=row.reference,
+            trip_id=row.trip_id,
+            provider_id=row.provider_id,
+            status=target.value,
+        )
+    )
+    return _booking_dto(row, "")
+
+
+@transaction.atomic
+def decline_request(
+    public_id: UUID,
+    *,
+    actor_user_id: int | None,
+    reason: str,
+    now: datetime | None = None,
+) -> BookingDTO:
+    """§20.2 AWAITING_PROVIDER → CANCELLED, "rejected → automatic full refund"."""
+    now = now or timezone.now()
+    row = _awaiting(public_id)
+    _cancel_for_supply(
+        row,
+        actor=Actor.PROVIDER,
+        actor_user_id=actor_user_id,
+        context={"provider_declined": True},
+        code="PROVIDER_DECLINED",
+        reason=reason or "Declined by the provider.",
+        now=now,
+    )
+    return _booking_dto(row, "")
+
+
+def expire_provider_responses(*, now: datetime | None = None) -> int:
+    """§14.4's timeout: an on-request booking unanswered past its deadline
+    "auto-cancels with full refund".
+
+    One transaction per booking, re-read under lock, so a provider's acceptance
+    racing the sweep resolves one way or the other and never both. Returns how
+    many were cancelled.
+    """
+    now = now or timezone.now()
+    due = list(
+        Booking.objects.filter(status=BookingState.AWAITING_PROVIDER.value, response_due_at__lt=now)
+        .order_by("id")
+        .values_list("public_id", flat=True)
+    )
+    cancelled = 0
+    for public_id in due:
+        with transaction.atomic():
+            row = Booking.objects.select_for_update().filter(public_id=public_id).first()
+            if (
+                row is None
+                or row.status != BookingState.AWAITING_PROVIDER.value
+                or row.response_due_at is None
+                or row.response_due_at >= now
+            ):
+                continue
+            _cancel_for_supply(
+                row,
+                actor=Actor.SYSTEM,
+                actor_user_id=None,
+                context={"response_window_elapsed": True},
+                code="PROVIDER_RESPONSE_TIMEOUT",
+                reason="The provider did not respond within the response window.",
+                now=now,
+            )
+            cancelled += 1
+    return cancelled

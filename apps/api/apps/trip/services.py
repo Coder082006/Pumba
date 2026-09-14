@@ -105,6 +105,7 @@ __all__ = [
     "abandon_payment",
     "mark_confirmed",
     "mark_unfulfillable",
+    "mark_cancelled",
     "TripConfirmed",
     "PriceChangedError",
     "mark_priced",
@@ -1628,6 +1629,28 @@ def mark_confirmed(trip_id: int, *, booking_ids: Sequence[int], now: datetime) -
             row.save(update_fields=["is_locked", "updated_at"])
 
     publish(TripConfirmed(trip_public_id=str(trip.public_id), tourist_id=trip.tourist_id))
+    return True
+
+
+@transaction.atomic
+def mark_cancelled(trip_id: int) -> bool:
+    """§20.5: "Any state -> CANCELLED (… all component bookings end cancelled)".
+
+    `booking` decides that every component has ended cancelled and calls this;
+    the trip does not count bookings, which are not its rows. Idempotent: a trip
+    already CANCELLED, or in a state with no CANCELLED edge, reports nothing
+    moved.
+    """
+    trip = Trip.objects.select_for_update().filter(pk=trip_id).first()
+    if trip is None:
+        return False
+    current = TripState(trip.status)
+    if TripState.CANCELLED not in TRIP_MACHINE.allowed_targets(current):
+        return False
+    trip.status = TRIP_MACHINE.transition(current, TripState.CANCELLED)
+    trip.version += 1
+    trip.save(update_fields=["status", "version", "updated_at"])
+    publish(TripCancelled(trip_public_id=str(trip.public_id), tourist_id=trip.tourist_id))
     return True
 
 

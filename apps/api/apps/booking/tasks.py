@@ -27,7 +27,7 @@ from apps.trip import services as trip_services
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["release_expired_holds", "reconcile_inventory"]
+__all__ = ["release_expired_holds", "reconcile_inventory", "expire_provider_responses"]
 
 
 @shared_task(name="booking.release_expired_holds", queue="default")
@@ -114,3 +114,17 @@ def reconcile_inventory() -> dict[str, int]:
             drift.held_by_live_holds,
         )
     return {"drifted": len(drifts)}
+
+
+@shared_task(name="booking.expire_provider_responses", queue="default")
+def expire_provider_responses() -> dict[str, int]:
+    """§14.4's on-request timeout, every five minutes (ADR 0025 decision 7).
+
+    The SRS names no job and no cadence for it. Five minutes is housekeeping,
+    not the rule: the deadline stored on the booking is what refuses a late
+    acceptance, so the sweep only cleans up bookings nobody touched.
+    """
+    cancelled = booking_services.expire_provider_responses()
+    if cancelled:
+        logger.info("expire_provider_responses: %s on-request bookings cancelled", cancelled)
+    return {"cancelled": cancelled}

@@ -74,6 +74,7 @@ __all__ = [
     "extend_holds",
     "held_departures",
     "settle_capture",
+    "return_sold",
     "release",
     "release_expired",
     "reconcile",
@@ -695,6 +696,21 @@ def settle_capture(*, trip_id: int, claims: Mapping[int, int], now: datetime) ->
         committed.add(departure_id)
 
     return SettlementDTO(committed=frozenset(committed), lost=lost)
+
+
+@transaction.atomic
+def return_sold(*, departure_id: int, quantity: int) -> None:
+    """Put `quantity` sold seats back on sale — BR-048.
+
+    Called when a confirmed or awaiting booking is cancelled. The departure is
+    locked first; the counter cannot go below zero because the `CHECK` on the
+    row would refuse it, and a refusal there means a booking was cancelled twice
+    — which the booking machine is what prevents.
+    """
+    if quantity <= 0:
+        return
+    repo.lock_departures([departure_id])
+    repo.release_sold(departure_id, quantity=quantity)
 
 
 @transaction.atomic

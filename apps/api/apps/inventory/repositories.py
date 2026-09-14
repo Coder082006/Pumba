@@ -76,6 +76,7 @@ __all__ = [
     "add_held",
     "move_held_to_sold",
     "release_held",
+    "release_sold",
     "create_hold",
     "live_holds_of_trip",
     "extend_hold",
@@ -232,6 +233,18 @@ def move_held_to_sold(departure_id: int, *, quantity: int) -> None:
         capacity_held=F("capacity_held") - quantity,
         capacity_sold=F("capacity_sold") + quantity,
         version=F("version") + 1,
+    )
+
+
+def release_sold(departure_id: int, *, quantity: int) -> None:
+    """`capacity_sold -= quantity` — BR-048's "cancellation releases inventory".
+
+    The caller holds the row lock. A cancelled booking's seats return to sale at
+    once, before any refund settles, because a seat nobody will occupy is a seat
+    somebody else could have booked.
+    """
+    ActivityDeparture.objects.filter(id=departure_id).update(
+        capacity_sold=F("capacity_sold") - quantity, version=F("version") + 1
     )
 
 
