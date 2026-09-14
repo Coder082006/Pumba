@@ -44,8 +44,6 @@ __all__ = [
     "BookingStatusHistory",
 ]
 
-_MONEY = {"max_digits": 14, "decimal_places": 2}
-
 
 class BookingType(models.TextChoices):
     """§7.5.12. ACCOMMODATION is reserved, not live (ADR 0013)."""
@@ -122,17 +120,17 @@ class Booking(BaseModel, VersionedModel):
 
     #: The component's price — its itinerary line total. The service fee is
     #: *not* inside it (ADR 0025 decision 3, after §22.1).
-    gross_amount = models.DecimalField(**_MONEY)
+    gross_amount = models.DecimalField(max_digits=14, decimal_places=2)
     #: This component's share of the trip's service fee and tax. ADR 0025.
-    fee_amount = models.DecimalField(**_MONEY, default=Decimal("0.00"))
-    tax_amount = models.DecimalField(**_MONEY, default=Decimal("0.00"))
+    fee_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    tax_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     currency = models.CharField(max_length=3)
 
     #: Snapshotted at basket creation (TC-060).
     commission_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     #: Computed from the frozen rate at capture (§20.8 step 14).
-    commission_amount = models.DecimalField(**_MONEY, null=True, blank=True)
-    net_amount = models.DecimalField(**_MONEY, null=True, blank=True)
+    commission_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    net_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
 
     #: Which policy this was sold under (ADR 0025 decision 4). Null for a
     #: transfer, which has no listing.
