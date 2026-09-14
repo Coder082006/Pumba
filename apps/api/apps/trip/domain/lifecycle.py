@@ -82,6 +82,9 @@ TRIP_MACHINE: StateMachine[TripState] = StateMachine(
         Transition(TripState.PRICED, TripState.DRAFT),
         # payment failed
         Transition(TripState.PENDING_PAYMENT, TripState.DRAFT),
+        # §20.5: "payment failed -> back to PRICED". The quote still stands, so
+        # the tourist may try another card without re-pricing. ADR 0025.
+        Transition(TripState.PENDING_PAYMENT, TripState.PRICED),
         # payment captured — §20.8's confirmation routine
         Transition(TripState.PENDING_PAYMENT, TripState.CONFIRMED),
         # first booking IN_PROGRESS

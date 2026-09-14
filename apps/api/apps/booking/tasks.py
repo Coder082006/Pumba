@@ -21,6 +21,7 @@ import logging
 from celery import shared_task
 from django.utils import timezone
 
+from apps.booking import services as booking_services
 from apps.inventory import services as inventory
 from apps.trip import services as trip_services
 
@@ -40,7 +41,9 @@ def release_expired_holds() -> dict[str, int]:
 
         1. `inventory.release_expired` — mark each dead hold EXPIRED and give
            its capacity back, one transaction per hold, under lock
-        2. `trip.expire_quote` — return each affected trip to DRAFT
+        2. `booking.fail_basket` for a trip with a basket (bookings FAILED,
+           trip PENDING_PAYMENT → DRAFT), otherwise `trip.expire_quote`
+           (PRICED → DRAFT)
 
     **Capacity first.** A tourist whose trip returned to DRAFT while its seats
     were still held would find the planner editable and the departure
@@ -60,7 +63,14 @@ def release_expired_holds() -> dict[str, int]:
 
     moved = 0
     for trip_id in dict.fromkeys(trip_ids):
-        if trip_services.expire_quote(trip_id):
+        # A trip with a basket fails it — bookings FAILED, trip to DRAFT — and a
+        # trip with only a quote expires the quote. `fail_basket` answers zero
+        # for the second, which is how the two are told apart without asking
+        # `trip` for a status this job would then have to interpret.
+        failed = booking_services.fail_basket(
+            trip_id, cause=booking_services.BasketFailure.HOLD_EXPIRED, now=now
+        )
+        if failed or trip_services.expire_quote(trip_id):
             moved += 1
 
     if trip_ids:

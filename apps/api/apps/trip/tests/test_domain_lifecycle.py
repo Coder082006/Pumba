@@ -50,7 +50,7 @@ class TestTheDeclaredSet:
         [
             (S.DRAFT, {S.PRICED, S.CANCELLED}),
             (S.PRICED, {S.PENDING_PAYMENT, S.DRAFT, S.CANCELLED}),
-            (S.PENDING_PAYMENT, {S.CONFIRMED, S.DRAFT, S.CANCELLED}),
+            (S.PENDING_PAYMENT, {S.CONFIRMED, S.DRAFT, S.PRICED, S.CANCELLED}),
             (S.CONFIRMED, {S.IN_PROGRESS, S.CANCELLED}),
             (S.IN_PROGRESS, {S.COMPLETED, S.CANCELLED}),
             (S.COMPLETED, set()),

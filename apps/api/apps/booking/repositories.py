@@ -29,6 +29,8 @@ __all__ = [
     "create_transfer",
     "record_transition",
     "of_trip",
+    "lock_of_trip",
+    "set_status",
 ]
 
 #: How many references to try before giving up. ADR 0025 via
@@ -99,3 +101,27 @@ def of_trip(trip_id: int, *, statuses: Iterable[str] | None = None) -> list[Book
     if statuses is not None:
         rows = rows.filter(status__in=list(statuses))
     return list(rows.order_by("id"))
+
+
+def lock_of_trip(trip_id: int, *, statuses: Iterable[str]) -> list[Booking]:
+    """A trip's bookings in `statuses`, locked in ascending primary key (hard rule 12)."""
+    return list(
+        Booking.objects.select_for_update()
+        .filter(trip_id=trip_id, status__in=list(statuses))
+        .order_by("id")
+    )
+
+
+def set_status(row: Booking, status: str, **fields: Any) -> Booking:
+    """Write an already-validated status. §20.1: the only writer of this column.
+
+    Does not consult the machine — `services` has, and a second check here would
+    be the second place the rule lives. `version` moves with every write, for
+    §7.7's optimistic locking.
+    """
+    row.status = status
+    for name, value in fields.items():
+        setattr(row, name, value)
+    row.version += 1
+    row.save(update_fields=["status", *fields, "version", "updated_at"])
+    return row

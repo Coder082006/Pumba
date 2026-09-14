@@ -36,6 +36,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from enum import StrEnum
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from django.db import transaction
@@ -43,11 +44,11 @@ from django.utils import timezone
 
 from apps.booking import repositories as repo
 from apps.booking.domain.allocation import allocate
-from apps.booking.domain.lifecycle import BookingState
+from apps.booking.domain.lifecycle import Actor, BookingState, apply
 from apps.booking.dto import BasketDTO, BookingDTO
 from apps.booking.models import Booking, BookingType
 from apps.common.config import get_setting
-from apps.common.errors import ConflictError
+from apps.common.errors import ConflictError, InventoryUnavailableError
 from apps.inventory import services as inventory
 from apps.inventory.dto import HoldDTO, HoldRequest
 from apps.provider import services as provider
@@ -63,6 +64,8 @@ __all__ = [
     "TripNotPayableError",
     "NotBookableError",
     "create_basket",
+    "BasketFailure",
+    "fail_basket",
 ]
 
 
@@ -355,6 +358,21 @@ def create_basket(
             "Some parts of this trip cannot be booked right now.", details=problems
         )
 
+    # §20.2's "hold live". A payment that failed leaves the quote standing and
+    # the seats released, so the token alone does not prove capacity is held.
+    held = inventory.held_departures(trip_id=basis.trip_id, now=now)
+    unheld = [
+        line
+        for line in basis.lines
+        if line.item_type == BookingType.ACTIVITY and line.activity_departure_id not in held
+    ]
+    if unheld:
+        raise InventoryUnavailableError(
+            "The seats for this trip are no longer held. Get a new price to hold them again.",
+            code="HOLD_EXPIRED",
+            details=[{"item": str(line.item_public_id), "title": line.title} for line in unheld],
+        )
+
     fees = allocate(basis.fee_amount, [line.gross_amount for line in basis.lines])
     taxes = allocate(basis.tax_amount, [line.gross_amount for line in basis.lines])
 
@@ -431,3 +449,69 @@ def create_basket(
         payment_expires_at=window,
         bookings=tuple(created),
     )
+
+
+# -- releasing a basket -------------------------------------------------------
+
+
+class BasketFailure(StrEnum):
+    """Why a basket will not be paid for — §20.2's PENDING → FAILED guard."""
+
+    HOLD_EXPIRED = "HOLD_EXPIRED"
+    PAYMENT_FAILED = "PAYMENT_FAILED"
+
+
+@transaction.atomic
+def fail_basket(trip_id: int, *, cause: BasketFailure, now: datetime | None = None) -> int:
+    """§20.2 PENDING → FAILED for every booking in the basket, and what follows.
+
+    TC-072's shape: "Payment FAILED; holds RELEASED; bookings FAILED; trip PRICED".
+    A hold that expired instead is the same basket ending for a different reason,
+    and the trip goes to DRAFT rather than PRICED because the offer itself lapsed
+    (`trip.abandon_payment`).
+
+    Returns how many bookings failed; zero means the trip had no basket, which
+    lets the expiry sweeper fall back to expiring a plain quote.
+
+    **Order: bookings, then capacity, then the trip.** The bookings are locked
+    first in ascending id (hard rule 12) so a confirmation racing this sees them
+    FAILED and stops. Releasing capacity is idempotent — after an expiry the
+    sweeper has already given it back — and the trip moves last, so it never
+    reads as editable while its bookings still claim seats.
+
+    §17.5 asks the sweeper to "defer once and raise an alert rather than
+    releasing under an in-flight payment". There is no payment table until
+    Phase 8, so there is never a payment in flight to defer for; the check
+    arrives with the table it reads.
+    """
+    now = now or timezone.now()
+    rows = repo.lock_of_trip(trip_id, statuses=[BookingState.PENDING.value])
+    if not rows:
+        return 0
+
+    context = {
+        "hold_expired": cause is BasketFailure.HOLD_EXPIRED,
+        "payment_failed": cause is BasketFailure.PAYMENT_FAILED,
+    }
+    for row in rows:
+        target = apply(
+            BookingState(row.status), BookingState.FAILED, actor=Actor.SYSTEM, context=context
+        )
+        repo.set_status(row, target.value)
+        repo.record_transition(
+            row,
+            from_status=BookingState.PENDING.value,
+            to_status=target.value,
+            actor_role=Actor.SYSTEM.value,
+            actor_user_id=None,
+            reason=(
+                "The held capacity expired before payment completed."
+                if cause is BasketFailure.HOLD_EXPIRED
+                else "Payment failed."
+            ),
+            occurred_at=now,
+        )
+
+    inventory.release(trip_id=trip_id)
+    trip_services.abandon_payment(trip_id, quote_still_stands=cause is BasketFailure.PAYMENT_FAILED)
+    return len(rows)

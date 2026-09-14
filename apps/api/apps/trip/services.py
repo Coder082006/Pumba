@@ -102,6 +102,7 @@ __all__ = [
     "quote_basis",
     "basket_basis",
     "open_payment",
+    "abandon_payment",
     "PriceChangedError",
     "mark_priced",
     "expire_quote",
@@ -1584,6 +1585,33 @@ def mark_priced(
         )
     )
     return _dto(trip)
+
+
+@transaction.atomic
+def abandon_payment(trip_id: int, *, quote_still_stands: bool) -> bool:
+    """A basket that will not be paid for: the trip leaves PENDING_PAYMENT.
+
+    §20.5 draws two ways out and they mean different things:
+
+    - **payment failed → PRICED.** The quote still stands, so the tourist may
+      try another card without re-pricing (`quote_still_stands=True`).
+    - **quote expired → DRAFT.** The held capacity lapsed, so the offer is gone
+      and the plan becomes editable again (`quote_still_stands=False`).
+
+    Takes the storage id and no principal: the callers are the expiry sweeper
+    and, in Phase 8, the payment webhook. Returns whether anything moved, so an
+    idempotent job can report honestly.
+    """
+    trip = Trip.objects.select_for_update().filter(pk=trip_id).first()
+    if trip is None or TripState(trip.status) is not TripState.PENDING_PAYMENT:
+        return False
+    if quote_still_stands:
+        trip.status = TRIP_MACHINE.transition(TripState(trip.status), TripState.PRICED)
+        trip.version += 1
+        trip.save(update_fields=["status", "version", "updated_at"])
+    else:
+        repo.unprice_trip(trip)
+    return True
 
 
 @transaction.atomic

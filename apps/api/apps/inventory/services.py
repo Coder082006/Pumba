@@ -70,6 +70,7 @@ __all__ = [
     "hold",
     "commit",
     "extend_holds",
+    "held_departures",
     "release",
     "release_expired",
     "reconcile",
@@ -567,6 +568,20 @@ def commit(*, trip_id: int, now: datetime) -> int:
     for row in live:
         _finish(row, state=HoldState.COMMITTED)
     return len(live)
+
+
+def held_departures(*, trip_id: int, now: datetime) -> frozenset[int]:
+    """The departures this trip holds live capacity on, right now.
+
+    §20.2's DRAFT → PENDING guard is "valid quote token; hold live", and a valid
+    token does not imply a live hold: a failed payment returns the trip to
+    PRICED with its quote intact and its capacity given back. The basket asks
+    this before it books, so a quote that outlived its seats cannot become a
+    booking for seats nobody holds.
+    """
+    return frozenset(
+        row.resource_id for row in repo.live_holds_of_trip(trip_id) if row.is_live(now=now)
+    )
 
 
 @transaction.atomic
