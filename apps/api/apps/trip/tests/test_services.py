@@ -18,7 +18,7 @@ from uuid import uuid4
 import pytest
 
 from apps.common.errors import ConflictError, NotFoundError, ValidationError
-from apps.common.events import clear_subscribers, subscribe
+from apps.common.events import restored_subscribers, subscribe
 from apps.trip import services
 from apps.trip.models import ItemType, ItineraryItem, Trip, TripStatus
 from apps.trip.tests import external_rows
@@ -34,9 +34,8 @@ END = date(2027, 6, 6)
 def _no_stray_subscribers() -> object:
     """Events are global. A handler left behind by one test firing inside
     another is the sort of coupling that makes a suite order-dependent."""
-    clear_subscribers()
-    yield
-    clear_subscribers()
+    with restored_subscribers():
+        yield
 
 
 def a_destination() -> object:

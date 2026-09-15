@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, ClassVar, TypeVar, overload
@@ -33,7 +34,15 @@ from apps.common.context import get_request_id
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["DomainEvent", "subscribe", "publish", "clear_subscribers", "get_subscribers"]
+__all__ = [
+    "DomainEvent",
+    "subscribe",
+    "publish",
+    "clear_subscribers",
+    "isolated_subscribers",
+    "restored_subscribers",
+    "get_subscribers",
+]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -110,6 +119,43 @@ def get_subscribers(event_type: type[DomainEvent]) -> list[Handler]:
 def clear_subscribers() -> None:
     """Test helper. Never call from application code."""
     _subscribers.clear()
+
+
+@contextmanager
+def restored_subscribers() -> Iterator[None]:
+    """The bus as it is now, and back to exactly this afterwards.
+
+    For the suite-wide fixture: a handler a test registers must not survive it,
+    and the handlers an `AppConfig.ready()` registered at start-up must survive
+    the test — they are the application's own wiring, and a suite that removed
+    them would be testing a system nobody runs.
+    """
+    saved = {event_type: list(handlers) for event_type, handlers in _subscribers.items()}
+    try:
+        yield
+    finally:
+        _subscribers.clear()
+        _subscribers.update(saved)
+
+
+@contextmanager
+def isolated_subscribers() -> Iterator[None]:
+    """An empty bus for the duration, and the real one back afterwards.
+
+    A bare `clear_subscribers()` in a fixture does half the job: it stops one
+    test's handler firing inside another, and it also throws away every
+    handler an `AppConfig.ready()` registered at start-up — for the rest of the
+    process, because `ready()` runs once. The application's own subscribers
+    would then silently not run for every test that came later, which is the
+    failure a cleanup fixture exists to prevent, not one it should cause.
+    """
+    saved = {event_type: list(handlers) for event_type, handlers in _subscribers.items()}
+    _subscribers.clear()
+    try:
+        yield
+    finally:
+        _subscribers.clear()
+        _subscribers.update(saved)
 
 
 def publish(event: DomainEvent) -> None:

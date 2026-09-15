@@ -70,12 +70,19 @@ def _clear_cache():
 @pytest.fixture(autouse=True)
 def _reset_event_subscribers():
     """The event bus is process-global; a subscriber registered by one test
-    must not fire during another."""
-    from apps.common.events import clear_subscribers
+    must not fire during another.
 
-    clear_subscribers()
-    yield
-    clear_subscribers()
+    It is restored rather than emptied. `clear_subscribers()` here also threw
+    away every handler an `AppConfig.ready()` had registered at start-up —
+    permanently, since `ready()` runs once per process — so the application's
+    own subscribers were absent from every test in the suite. A test asserting
+    one of them fires would have failed with the handler correctly wired,
+    which is the opposite of what this fixture is for.
+    """
+    from apps.common.events import restored_subscribers
+
+    with restored_subscribers():
+        yield
 
 
 @pytest.fixture(autouse=True)

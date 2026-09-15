@@ -12,7 +12,13 @@ from dataclasses import dataclass
 import pytest
 from django.db import transaction
 
-from apps.common.events import DomainEvent, clear_subscribers, get_subscribers, publish, subscribe
+from apps.common.events import (
+    DomainEvent,
+    get_subscribers,
+    isolated_subscribers,
+    publish,
+    subscribe,
+)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -28,9 +34,8 @@ class PaymentCaptured(DomainEvent):
 
 @pytest.fixture(autouse=True)
 def _clean_bus():
-    clear_subscribers()
-    yield
-    clear_subscribers()
+    with isolated_subscribers():
+        yield
 
 
 class TestSubscription:
