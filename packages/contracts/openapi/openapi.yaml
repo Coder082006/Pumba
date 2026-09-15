@@ -7831,6 +7831,12 @@ components:
           - as_of
           - source
           readOnly: true
+        quote_expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
         subtotal_amount:
           type: string
           format: decimal
@@ -7916,12 +7922,6 @@ components:
           - source
           readOnly: true
         priced_at:
-          type:
-          - string
-          - 'null'
-          format: date-time
-          readOnly: true
-        quote_expires_at:
           type:
           - string
           - 'null'
@@ -8158,6 +8158,12 @@ components:
           - as_of
           - source
           readOnly: true
+        quote_expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
       required:
       - adults
       - children
@@ -8166,6 +8172,7 @@ components:
       - end_date
       - infants
       - public_id
+      - quote_expires_at
       - reference
       - start_date
       - status

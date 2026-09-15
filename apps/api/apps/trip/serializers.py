@@ -190,6 +190,9 @@ class TripSummarySerializer(serializers.Serializer[Any]):
     #: discrepancy would be defended forever as a rounding quirk.
     total_amount_display = DisplayMoneyField(amount_field="total_amount")
 
+    #: §24.24: "drafts show their expiry". Null when nothing is being held.
+    quote_expires_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
 
 class TripSerializer(TripSummarySerializer):
     subtotal_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
@@ -201,7 +204,6 @@ class TripSerializer(TripSummarySerializer):
     fee_amount_display = DisplayMoneyField(amount_field="fee_amount")
     tax_amount_display = DisplayMoneyField(amount_field="tax_amount")
     priced_at = serializers.DateTimeField(read_only=True, allow_null=True)
-    quote_expires_at = serializers.DateTimeField(read_only=True, allow_null=True)
     confirmed_at = serializers.DateTimeField(read_only=True, allow_null=True)
     cancelled_at = serializers.DateTimeField(read_only=True, allow_null=True)
     version = serializers.IntegerField(read_only=True)

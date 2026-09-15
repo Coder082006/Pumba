@@ -18,10 +18,11 @@ import { byDay, type ItineraryItem, type Trip, getTrip } from '@/lib/trips';
  * (§24.21), so splitting them would mean fetching the same trip twice to show
  * two halves of one answer.
  *
- * **Continue to Payment is disabled, and says why.** §24.20's action leads to
- * `POST /trips/{id}/quote`, which converts a plan into an inventory-backed,
- * time-boxed offer (§9.4.5) — that is the booking engine, Phase 7. A button
- * that looked live and 404ed would be worse than one that explains itself.
+ * **Continue leads to checkout** (Phase 7). §24.20's action converts the plan
+ * into a held, time-boxed offer and then a basket. Payment itself is Phase 8,
+ * so checkout reserves the seats for the payment window and says plainly that
+ * nothing has been charged — a button labelled "pay" that took no money would
+ * be the product lying at the moment it most needs to be believed.
  *
  * **Blocking errors disable Continue and link to the offending item** (§24.20).
  * `has_errors` is the server's, computed once in §10.6; a client that counted
@@ -95,6 +96,9 @@ export default function TripSummaryPage({ params }: { params: Promise<{ id: stri
   const currency = trip.currency;
   const groups = groupByService(itinerary?.items ?? []);
   const blocked = itinerary?.has_errors ?? false;
+  // A basket can only be made from a plan or a priced quote; past that the
+  // bookings exist and checkout would be refused anyway (TRIP_NOT_PAYABLE).
+  const bookable = trip.status === 'DRAFT' || trip.status === 'PRICED';
   const hasAttractions = (itinerary?.items ?? []).some((i) => i.item_type === 'ATTRACTION');
 
   return (
@@ -252,17 +256,28 @@ export default function TripSummaryPage({ params }: { params: Promise<{ id: stri
       </section>
 
       <section className="border-t border-border pt-6">
-        <button
-          type="button"
-          disabled
-          className="rounded-md bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground opacity-60"
-        >
-          Continue to payment
-        </button>
+        {blocked || !bookable ? (
+          <button
+            type="button"
+            disabled
+            className="rounded-md bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground opacity-60"
+          >
+            Continue to checkout
+          </button>
+        ) : (
+          <Link
+            href={`/trips/${id}/checkout`}
+            className="inline-block rounded-md bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors duration-fast ease-out hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Continue to checkout
+          </Link>
+        )}
         <p className="mt-2 text-sm text-muted-foreground">
           {blocked
             ? 'Fix the errors above first — they are listed against the items they affect.'
-            : 'Booking and payment are not built yet. This trip is planned and priced; nothing can be reserved until the booking engine lands.'}
+            : !bookable
+              ? 'This trip is past checkout. Its bookings are on your trips page.'
+              : 'Checkout holds your places and creates your bookings. Payment arrives in the next release, so nothing is charged yet.'}
         </p>
       </section>
     </div>

@@ -209,6 +209,7 @@ def to_summary_dto(trip: Trip, refs: _Refs) -> TripSummaryDTO | None:
         infants=trip.infants,
         currency=trip.currency,
         total_amount=trip.total_amount,
+        quote_expires_at=trip.quote_expires_at,
     )
 
 

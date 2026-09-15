@@ -248,6 +248,8 @@ class TripSummaryDTO:
     infants: int
     currency: str
     total_amount: Decimal
+    #: §24.24: "drafts show their expiry". When a priced quote stops standing.
+    quote_expires_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

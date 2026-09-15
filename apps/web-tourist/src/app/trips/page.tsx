@@ -1,10 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
-import { Money } from '@pumba/ui';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { LocalTime, Money } from '@pumba/ui';
 
 import { ApiRequestError } from '@/lib/api';
+import {
+  EMPTY_SEGMENT,
+  SEGMENT_LABEL,
+  SEGMENTS,
+  segmentOf,
+  tripStatusLabel,
+  type Segment,
+} from '@/lib/trip-segments';
 import { listTrips, type TripSummary } from '@/lib/trips';
 
 /**
@@ -20,6 +28,12 @@ import { listTrips, type TripSummary } from '@/lib/trips';
  * `Trip`: no itinerary, no flights. Rendering the detail shape here would load
  * a fortnight of items per card and teach this page to depend on fields the
  * list endpoint will later stop sending.
+ *
+ * §24.24 segments the list — Upcoming, Active, Past, Drafts — with an empty
+ * state per segment and a draft's expiry shown. The segmenting rule is
+ * `lib/trip-segments`, tested there; the page only draws it. It opens on the
+ * first segment that has something in it, so a tourist with one draft does not
+ * land on an empty "Upcoming".
  */
 
 type State =
@@ -30,6 +44,18 @@ type State =
 
 export default function MyTripsPage() {
   const [state, setState] = useState<State>({ status: 'loading' });
+  const [chosen, setChosen] = useState<Segment | null>(null);
+
+  const bySegment = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const groups: Record<Segment, TripSummary[]> = { UPCOMING: [], ACTIVE: [], PAST: [], DRAFTS: [] };
+    if (state.status === 'ready') {
+      for (const trip of state.trips) groups[segmentOf(trip, today)].push(trip);
+    }
+    return groups;
+  }, [state]);
+
+  const segment: Segment = chosen ?? SEGMENTS.find((key) => bySegment[key].length > 0) ?? 'UPCOMING';
 
   const load = useCallback(async () => {
     setState({ status: 'loading' });
@@ -124,35 +150,80 @@ export default function MyTripsPage() {
       ) : null}
 
       {state.status === 'ready' && state.trips.length > 0 ? (
-        <ul className="space-y-3">
-          {state.trips.map((trip) => (
-            <li key={trip.public_id}>
-              <Link
-                href={`/trips/${trip.public_id}`}
-                className="block rounded-lg border border-border p-4 transition-colors duration-fast ease-out hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5"
+        <div className="space-y-4">
+          <div role="tablist" aria-label="Your trips" className="flex flex-wrap gap-2">
+            {SEGMENTS.map((key) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={segment === key}
+                onClick={() => setChosen(key)}
+                className={`rounded-full border px-4 py-1.5 text-sm transition-colors duration-fast ease-out ${
+                  segment === key
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border hover:bg-muted'
+                }`}
               >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="font-display text-lg font-semibold tracking-tight">
-                    {trip.title ?? trip.destination.name}
-                  </p>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                    {trip.status}
-                  </span>
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {trip.destination.name} · {trip.start_date} to {trip.end_date} ·{' '}
-                  {trip.adults + trip.children} travelling
-                </p>
-                <p className="mt-2 text-sm font-medium">
-                  <Money value={{ amount: trip.total_amount, currency: trip.currency }} />
-                </p>
-                {/* The reference, quietly. Nobody reads it until they email
-                    support, and then it is the only thing that matters. */}
-                <p className="mt-1 font-mono text-xs text-muted-foreground">{trip.reference}</p>
-              </Link>
-            </li>
-          ))}
-        </ul>
+                {SEGMENT_LABEL[key]} ({bySegment[key].length})
+              </button>
+            ))}
+          </div>
+
+          {bySegment[segment].length === 0 ? (
+            <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+              {EMPTY_SEGMENT[segment]}{' '}
+              {segment === 'DRAFTS' || segment === 'UPCOMING' ? (
+                <Link href="/trips/new" className="text-primary hover:underline">
+                  Plan a trip
+                </Link>
+              ) : null}
+            </p>
+          ) : (
+            <ul className="space-y-3" role="tabpanel">
+              {bySegment[segment].map((trip) => (
+                <li key={trip.public_id}>
+                  <Link
+                    href={
+                      trip.status === 'CONFIRMED' || trip.status === 'IN_PROGRESS'
+                        ? `/trips/${trip.public_id}/confirmation`
+                        : `/trips/${trip.public_id}`
+                    }
+                    className="block rounded-lg border border-border p-4 transition-colors duration-fast ease-out hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="font-display text-lg font-semibold tracking-tight">
+                        {trip.title ?? trip.destination.name}
+                      </p>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                        {tripStatusLabel(trip.status)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {trip.destination.name} · {trip.start_date} to {trip.end_date} ·{' '}
+                      {trip.adults + trip.children} travelling
+                    </p>
+                    <p className="mt-2 text-sm font-medium">
+                      <Money
+                        value={{ amount: trip.total_amount, currency: trip.currency }}
+                        display={trip.total_amount_display}
+                      />
+                    </p>
+                    {segment === 'DRAFTS' && trip.quote_expires_at ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Price held until{' '}
+                        <LocalTime value={trip.quote_expires_at} timeZone={trip.destination.timezone} />
+                      </p>
+                    ) : null}
+                    {/* The reference, quietly. Nobody reads it until they email
+                        support, and then it is the only thing that matters. */}
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">{trip.reference}</p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       ) : null}
     </div>
   );

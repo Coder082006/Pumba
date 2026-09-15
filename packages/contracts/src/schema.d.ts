@@ -3998,6 +3998,8 @@ export interface components {
                 as_of: string;
                 source: string;
             } | null;
+            /** Format: date-time */
+            readonly quote_expires_at: string | null;
             /** Format: decimal */
             readonly subtotal_amount: string;
             /** Format: decimal */
@@ -4030,8 +4032,6 @@ export interface components {
             } | null;
             /** Format: date-time */
             readonly priced_at: string | null;
-            /** Format: date-time */
-            readonly quote_expires_at: string | null;
             /** Format: date-time */
             readonly confirmed_at: string | null;
             /** Format: date-time */
@@ -4098,6 +4098,8 @@ export interface components {
                 as_of: string;
                 source: string;
             } | null;
+            /** Format: date-time */
+            readonly quote_expires_at: string | null;
         };
         /** @description §9.1: `public_id` only. Never `id`, never a credential. */
         User: {
