@@ -108,6 +108,7 @@ __all__ = [
     "mark_unfulfillable",
     "mark_cancelled",
     "voucher_facts",
+    "booked_titles",
     "TripConfirmed",
     "PriceChangedError",
     "mark_priced",
@@ -1632,6 +1633,19 @@ def mark_confirmed(trip_id: int, *, booking_ids: Sequence[int], now: datetime) -
 
     publish(TripConfirmed(trip_public_id=str(trip.public_id), tourist_id=trip.tourist_id))
     return True
+
+
+def booked_titles(booking_ids: Sequence[int]) -> dict[int, str]:
+    """The itinerary item title for each booking id — what the component is called.
+
+    A booking stores no title (§7.5.12), and a list of bookings reading
+    "ACTIVITY, ACTIVITY, TRANSFER" is not a list anybody can use.
+    """
+    wanted = {int(value) for value in booking_ids}
+    if not wanted:
+        return {}
+    rows = ItineraryItem.objects.filter(booking_id__in=wanted).values_list("booking_id", "title")
+    return {int(booking_id): str(title) for booking_id, title in rows if booking_id is not None}
 
 
 def voucher_facts(trip_id: int, *, booking_ids: Sequence[int]) -> dict[int, VoucherFactsDTO]:

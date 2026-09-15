@@ -95,6 +95,8 @@ class Resource(StrEnum):
 
     # Phase 7 - the party a booking is payable to (§7.5.3, ADR 0025).
     PROVIDER = "PROVIDER"
+    # Phase 7 - a component booking (§7.5.12). API-05: "List, scoped by role".
+    BOOKING = "BOOKING"
 
 
 class Scope(StrEnum):
@@ -193,6 +195,17 @@ def _provider_record() -> dict[tuple[Role, Resource], OwnershipRule]:
     rules[Role.PROVIDER_OWNER] = _own("provider_id", "id")
     rules[Role.PROVIDER_STAFF] = _own("provider_id", "id")
     return {(role, Resource.PROVIDER): rule for role, rule in rules.items()}
+
+
+def _booking_record() -> dict[tuple[Role, Resource], OwnershipRule]:
+    rules: dict[Role, OwnershipRule] = {role: _NONE for role in Role}
+    rules[Role.TOURIST] = _own("tourist_id", "tourist_id")
+    rules[Role.PROVIDER_OWNER] = _own("provider_id", "provider_id")
+    rules[Role.PROVIDER_STAFF] = _own("provider_id", "provider_id")
+    rules[Role.SUPPORT_AGENT] = _GLOBAL_READ
+    rules[Role.FINANCE_OFFICER] = _GLOBAL_READ
+    rules[Role.SUPER_ADMIN] = _GLOBAL
+    return {(role, Resource.BOOKING): rule for role, rule in rules.items()}
 
 
 #: Every (role, resource) pair, stated. See the totality test.
@@ -319,6 +332,13 @@ OWNERSHIP: Mapping[tuple[Role, Resource], OwnershipRule] = MappingProxyType(
         # endpoint uses that path until the Phase 11 portal; the rule is stated
         # now for the reason `_provider_listed` gives.
         **_provider_record(),
+        # --- booking (§7.5.12, API-05) -----------------------------------------
+        # §9.3.5: "List, scoped by role". A tourist reaches their own bookings
+        # and a provider the bookings it sells; support and finance read every
+        # booking (§5.2 "read all … bookings"); SUPER_ADMIN manages them. A
+        # driver's rule is by assignment and arrives with dispatch (Phase 9),
+        # so it is NONE, stated rather than left out.
+        **_booking_record(),
     }
 )
 

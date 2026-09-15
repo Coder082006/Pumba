@@ -37,6 +37,9 @@ __all__ = [
     "BasketSerializer",
     "CancellationSerializer",
     "TripCancellationSerializer",
+    "BookingDetailSerializer",
+    "CancelRequestSerializer",
+    "DeclineRequestSerializer",
 ]
 
 
@@ -169,3 +172,37 @@ class TripCancellationSerializer(serializers.Serializer[Any]):
     def get_cancelled_at(self, obj: Any) -> str | None:
         stamp = obj.trip.cancelled_at
         return None if stamp is None else stamp.isoformat()
+
+
+class HistorySerializer(serializers.Serializer[Any]):
+    """BR-032: who moved it, from what, to what, and why."""
+
+    from_status = serializers.CharField(read_only=True, allow_null=True)
+    to_status = serializers.CharField(read_only=True)
+    actor_role = serializers.CharField(read_only=True)
+    reason = serializers.CharField(read_only=True)
+    occurred_at = serializers.DateTimeField(read_only=True)
+
+
+class ProviderContactSerializer(serializers.Serializer[Any]):
+    """§9.3.5: the detail carries "provider contact"."""
+
+    name = serializers.CharField(read_only=True)
+    phone = serializers.CharField(read_only=True)
+    email = serializers.CharField(read_only=True)
+
+
+class BookingDetailSerializer(BookingSerializer):
+    """`GET /bookings/{id}` — "Detail incl. status history and provider contact"."""
+
+    provider = ProviderContactSerializer(read_only=True, allow_null=True)
+    history = HistorySerializer(many=True, read_only=True)
+    has_voucher = serializers.BooleanField(read_only=True)
+
+
+class CancelRequestSerializer(StrictSerializer):
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+
+class DeclineRequestSerializer(StrictSerializer):
+    reason = serializers.CharField(max_length=500)

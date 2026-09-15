@@ -96,6 +96,9 @@ __all__ = [
     "VoucherIntegrityError",
     "issue_voucher",
     "voucher_document",
+    "BookingDetailDTO",
+    "list_bookings",
+    "booking_detail",
 ]
 
 
@@ -1402,3 +1405,81 @@ def voucher_document(row: Booking) -> tuple[str, bytes]:
             f"The voucher for {row.reference} could not be reproduced exactly."
         )
     return f"{row.reference}-voucher-{voucher.issue_number}.pdf", data
+
+
+# -- API-05: reading bookings --------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BookingDetailDTO:
+    """`GET /bookings/{id}` — the booking, its history and its provider's contact."""
+
+    public_id: UUID
+    reference: str
+    booking_type: str
+    status: str
+    title: str
+    starts_at: datetime
+    ends_at: datetime
+    pax_count: int
+    gross_amount: Decimal
+    fee_amount: Decimal
+    tax_amount: Decimal
+    currency: str
+    cancellation_policy_code: str
+    confirmed_at: datetime | None
+    cancelled_at: datetime | None
+    response_due_at: datetime | None
+    provider: dict[str, str] | None
+    history: tuple[dict[str, object], ...]
+    has_voucher: bool
+
+
+def list_bookings(rows: Sequence[Booking]) -> list[BookingDTO]:
+    """The rows the caller's scoped selector already chose, with their titles."""
+    titles = trip_services.booked_titles([row.pk for row in rows])
+    return [_booking_dto(row, titles.get(row.pk, "")) for row in rows]
+
+
+def booking_detail(row: Booking) -> BookingDetailDTO:
+    base = _booking_dto(row, trip_services.booked_titles([row.pk]).get(row.pk, ""))
+    seller = provider.providers_by_id([row.provider_id]).get(row.provider_id)
+    history: tuple[dict[str, object], ...] = tuple(
+        {
+            "from_status": entry.from_status,
+            "to_status": entry.to_status,
+            "actor_role": entry.actor_role,
+            "reason": entry.reason,
+            "occurred_at": entry.occurred_at,
+        }
+        for entry in row.history.order_by("occurred_at", "id")
+    )
+    return BookingDetailDTO(
+        public_id=base.public_id,
+        reference=base.reference,
+        booking_type=base.booking_type,
+        status=base.status,
+        title=base.title,
+        starts_at=base.starts_at,
+        ends_at=base.ends_at,
+        pax_count=base.pax_count,
+        gross_amount=base.gross_amount,
+        fee_amount=base.fee_amount,
+        tax_amount=base.tax_amount,
+        currency=base.currency,
+        cancellation_policy_code=base.cancellation_policy_code,
+        confirmed_at=base.confirmed_at,
+        cancelled_at=base.cancelled_at,
+        response_due_at=base.response_due_at,
+        provider=(
+            {
+                "name": seller.trading_name,
+                "phone": seller.contact_phone,
+                "email": seller.contact_email,
+            }
+            if seller
+            else None
+        ),
+        history=history,
+        has_voucher=row.vouchers.exists(),
+    )

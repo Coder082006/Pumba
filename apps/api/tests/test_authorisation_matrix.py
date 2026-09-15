@@ -217,6 +217,9 @@ NO_ROWS_EXPOSED = {
     # global on purpose — every role holding VERIFICATION_DECIDE holds
     # `Scope.GLOBAL` over PROVIDER, which the detail route below re-proves.
     "v1:administration:admin-provider-list": "Lists and creates; there is no id to supply.",
+    # API-05's list. It exposes rows, but only through
+    # `booking.selectors.visible_to(principal)`, and it takes no identifier.
+    "v1:booking:booking-list": "Lists by principal through `scoped`; there is no id to supply.",
 }
 
 #: Views that *do* resolve a caller-supplied identifier, but filter by
@@ -268,6 +271,27 @@ SCOPED_BY_A_SELECTOR = {
         "`booking.create_basket` loads the trip through `trip.services.basket_basis`, "
         "which fetches via `trip.selectors.trips_of(tourist_id)` — the owner is in "
         "the WHERE clause, and the trip is locked through the same selector."
+    ),
+    "v1:booking:booking-detail": (
+        "Resolves the booking through `booking.selectors.one_visible_to`, which "
+        "applies `scoped(..., Resource.BOOKING)` before the row is fetched."
+    ),
+    "v1:booking:booking-cancellation-preview": (
+        "Resolves the booking through `booking.selectors.one_visible_to`."
+    ),
+    "v1:booking:booking-cancel": (
+        "Resolves the booking through `booking.selectors.one_visible_to` with "
+        "`write=True`, so a read-only global role reaches nothing."
+    ),
+    "v1:booking:booking-voucher": (
+        "Resolves the booking through `booking.selectors.one_visible_to`."
+    ),
+    "v1:booking:booking-accept": (
+        "Resolves the booking through `booking.selectors.one_visible_to` with "
+        "`write=True`; a provider reaches only rows whose `provider_id` is its own."
+    ),
+    "v1:booking:booking-decline": (
+        "Resolves the booking through `booking.selectors.one_visible_to` with `write=True`."
     ),
     "v1:booking:trip-quote": (
         "`booking.quote_trip` loads the trip through `trip.services.quote_basis`, "

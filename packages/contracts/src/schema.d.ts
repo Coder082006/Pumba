@@ -1400,6 +1400,154 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the bookings you may see
+         * @description `GET /bookings` — T/P/D, "List, scoped by role".
+         */
+        get: operations["bookings_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bookings/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a booking
+         * @description `GET /bookings/{id}` — "Detail incl. status history and provider contact".
+         */
+        get: operations["bookings_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bookings/{public_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept an on-request booking
+         * @description §26.6: a provider accepts or declines within the response window.
+         *
+         *     PROVIDER_BOOKING_MANAGE and the booking's own `provider_id`. There is no
+         *     provider login until Phase 11, so today only SUPER_ADMIN — who holds that
+         *     permission globally — can reach these; the scoping is already the portal's.
+         */
+        post: operations["bookings_accept_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bookings/{public_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a booking
+         * @description A tourist is refunded under the booking's own snapshotted policy (BR-040); a provider cancelling refunds the tourist in full, fee included (BR-045). 409 CANCELLATION_NOT_PERMITTED once the booking has started (BR-042).
+         */
+        post: operations["bookings_cancel_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bookings/{public_id}/cancellation-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What cancelling this booking would refund
+         * @description `GET /bookings/{id}/cancellation-preview` — T, §20.9, BR-043.
+         */
+        get: operations["bookings_cancellation_preview_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bookings/{public_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline an on-request booking
+         * @description §26.6: a provider accepts or declines within the response window.
+         *
+         *     PROVIDER_BOOKING_MANAGE and the booking's own `provider_id`. There is no
+         *     provider login until Phase 11, so today only SUPER_ADMIN — who holds that
+         *     permission globally — can reach these; the scoping is already the portal's.
+         */
+        post: operations["bookings_decline_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bookings/{public_id}/voucher": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download this booking's voucher
+         * @description `POST /bookings/{id}/voucher` — T, "Generate/download PDF voucher" (ADR 0026).
+         */
+        post: operations["bookings_voucher_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/config": {
         parameters: {
             query?: never;
@@ -2245,6 +2393,58 @@ export interface components {
             /** Format: date-time */
             readonly response_due_at: string | null;
         };
+        /** @description `GET /bookings/{id}` — "Detail incl. status history and provider contact". */
+        BookingDetail: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly reference: string;
+            readonly booking_type: string;
+            readonly status: string;
+            readonly title: string;
+            /** Format: date-time */
+            readonly starts_at: string;
+            /** Format: date-time */
+            readonly ends_at: string;
+            readonly pax_count: number;
+            /** Format: decimal */
+            readonly gross_amount: string;
+            readonly gross_amount_display: {
+                amount: string;
+                currency: string;
+                rate: string;
+                /** Format: date-time */
+                as_of: string;
+                source: string;
+            } | null;
+            /** Format: decimal */
+            readonly fee_amount: string;
+            /** Format: decimal */
+            readonly tax_amount: string;
+            readonly currency: string;
+            readonly cancellation_policy_code: string;
+            /** Format: date-time */
+            readonly confirmed_at: string | null;
+            /** Format: date-time */
+            readonly cancelled_at: string | null;
+            /** Format: date-time */
+            readonly response_due_at: string | null;
+            readonly provider: components["schemas"]["ProviderContact"] | null;
+            readonly history: components["schemas"]["History"][];
+            readonly has_voucher: boolean;
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
+        CancelRequestRequest: {
+            reason?: string;
+        };
         /** @description One component's refund, previewed or done — §20.9, BR-043. */
         Cancellation: {
             readonly booking: components["schemas"]["Booking"];
@@ -2444,6 +2644,19 @@ export interface components {
             /** @default 0 */
             infants: number;
             title?: string | null;
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
+        DeclineRequestRequest: {
+            reason: string;
         };
         /** @description One departure — §7.5.9's row as §24.10 renders it.
          *
@@ -2680,6 +2893,15 @@ export interface components {
             checks: {
                 [key: string]: unknown;
             };
+        };
+        /** @description BR-032: who moved it, from what, to what, and why. */
+        History: {
+            readonly from_status: string | null;
+            readonly to_status: string;
+            readonly actor_role: string;
+            readonly reason: string;
+            /** Format: date-time */
+            readonly occurred_at: string;
         };
         Itinerary: {
             readonly version: number;
@@ -3240,6 +3462,12 @@ export interface components {
          * @enum {string}
          */
         PropertyTypeEnum: "HOTEL" | "RESORT" | "LODGE" | "GUESTHOUSE" | "APARTMENT";
+        /** @description §9.3.5: the detail carries "provider contact". */
+        ProviderContact: {
+            readonly name: string;
+            readonly phone: string;
+            readonly email: string;
+        };
         /** @description One departure with all three counters — §26.5's grid cell.
          *
          *     The public `DepartureSerializer` above publishes `remaining` and refuses to
@@ -5531,6 +5759,165 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    bookings_list: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"][];
+                };
+            };
+        };
+    };
+    bookings_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingDetail"];
+                };
+            };
+        };
+    };
+    bookings_accept_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
+            };
+        };
+    };
+    bookings_cancel_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CancelRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CancelRequestRequest"];
+                "multipart/form-data": components["schemas"]["CancelRequestRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cancellation"];
+                };
+            };
+        };
+    };
+    bookings_cancellation_preview_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cancellation"];
+                };
+            };
+        };
+    };
+    bookings_decline_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeclineRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DeclineRequestRequest"];
+                "multipart/form-data": components["schemas"]["DeclineRequestRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
+            };
+        };
+    };
+    bookings_voucher_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
             };
         };
     };

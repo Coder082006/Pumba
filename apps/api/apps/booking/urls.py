@@ -17,6 +17,13 @@ from __future__ import annotations
 from django.urls import path
 
 from apps.booking.views import (
+    BookingAcceptView,
+    BookingCancellationPreviewView,
+    BookingCancelView,
+    BookingDeclineView,
+    BookingDetailView,
+    BookingListView,
+    BookingVoucherView,
     TripCancellationPreviewView,
     TripCancelView,
     TripConfirmView,
@@ -38,4 +45,16 @@ urlpatterns = [
         TripCancellationPreviewView.as_view(),
         name="trip-cancellation-preview",
     ),
+    # API-05, §9.3.5.
+    path("bookings", BookingListView.as_view(), name="booking-list"),
+    path("bookings/<uuid:public_id>", BookingDetailView.as_view(), name="booking-detail"),
+    path(
+        "bookings/<uuid:public_id>/cancellation-preview",
+        BookingCancellationPreviewView.as_view(),
+        name="booking-cancellation-preview",
+    ),
+    path("bookings/<uuid:public_id>/cancel", BookingCancelView.as_view(), name="booking-cancel"),
+    path("bookings/<uuid:public_id>/voucher", BookingVoucherView.as_view(), name="booking-voucher"),
+    path("bookings/<uuid:public_id>/accept", BookingAcceptView.as_view(), name="booking-accept"),
+    path("bookings/<uuid:public_id>/decline", BookingDeclineView.as_view(), name="booking-decline"),
 ]

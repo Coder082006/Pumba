@@ -2189,6 +2189,205 @@ paths:
       responses:
         '202':
           description: No response body
+  /api/v1/bookings:
+    get:
+      operationId: bookings_list
+      description: '`GET /bookings` — T/P/D, "List, scoped by role".'
+      summary: List the bookings you may see
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+      tags:
+      - booking
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/{public_id}:
+    get:
+      operationId: bookings_retrieve
+      description: '`GET /bookings/{id}` — "Detail incl. status history and provider
+        contact".'
+      summary: Read a booking
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - booking
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDetail'
+          description: ''
+  /api/v1/bookings/{public_id}/accept:
+    post:
+      operationId: bookings_accept_create
+      description: |-
+        §26.6: a provider accepts or declines within the response window.
+
+        PROVIDER_BOOKING_MANAGE and the booking's own `provider_id`. There is no
+        provider login until Phase 11, so today only SUPER_ADMIN — who holds that
+        permission globally — can reach these; the scoping is already the portal's.
+      summary: Accept an on-request booking
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - booking
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/{public_id}/cancel:
+    post:
+      operationId: bookings_cancel_create
+      description: A tourist is refunded under the booking's own snapshotted policy
+        (BR-040); a provider cancelling refunds the tourist in full, fee included
+        (BR-045). 409 CANCELLATION_NOT_PERMITTED once the booking has started (BR-042).
+      summary: Cancel a booking
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - booking
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CancelRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CancelRequestRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cancellation'
+          description: ''
+  /api/v1/bookings/{public_id}/cancellation-preview:
+    get:
+      operationId: bookings_cancellation_preview_retrieve
+      description: '`GET /bookings/{id}/cancellation-preview` — T, §20.9, BR-043.'
+      summary: What cancelling this booking would refund
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - booking
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cancellation'
+          description: ''
+  /api/v1/bookings/{public_id}/decline:
+    post:
+      operationId: bookings_decline_create
+      description: |-
+        §26.6: a provider accepts or declines within the response window.
+
+        PROVIDER_BOOKING_MANAGE and the booking's own `provider_id`. There is no
+        provider login until Phase 11, so today only SUPER_ADMIN — who holds that
+        permission globally — can reach these; the scoping is already the portal's.
+      summary: Decline an on-request booking
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - booking
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeclineRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeclineRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeclineRequestRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+          description: ''
+  /api/v1/bookings/{public_id}/voucher:
+    post:
+      operationId: bookings_voucher_create
+      description: '`POST /bookings/{id}/voucher` — T, "Generate/download PDF voucher"
+        (ADR 0026).'
+      summary: Download this booking's voucher
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - booking
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/v1/config:
     get:
       operationId: config
@@ -3894,6 +4093,151 @@ components:
       - status
       - tax_amount
       - title
+    BookingDetail:
+      type: object
+      description: '`GET /bookings/{id}` — "Detail incl. status history and provider
+        contact".'
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        booking_type:
+          type: string
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          readOnly: true
+        starts_at:
+          type: string
+          format: date-time
+          readOnly: true
+        ends_at:
+          type: string
+          format: date-time
+          readOnly: true
+        pax_count:
+          type: integer
+          readOnly: true
+        gross_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        gross_amount_display:
+          type:
+          - object
+          - 'null'
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+            rate:
+              type: string
+            as_of:
+              type: string
+              format: date-time
+            source:
+              type: string
+          required:
+          - amount
+          - currency
+          - rate
+          - as_of
+          - source
+          readOnly: true
+        fee_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        tax_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        cancellation_policy_code:
+          type: string
+          readOnly: true
+        confirmed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        cancelled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        response_due_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        provider:
+          oneOf:
+          - $ref: '#/components/schemas/ProviderContact'
+          - type: 'null'
+          readOnly: true
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/History'
+          readOnly: true
+        has_voucher:
+          type: boolean
+          readOnly: true
+      required:
+      - booking_type
+      - cancellation_policy_code
+      - cancelled_at
+      - confirmed_at
+      - currency
+      - ends_at
+      - fee_amount
+      - gross_amount
+      - gross_amount_display
+      - has_voucher
+      - history
+      - id
+      - pax_count
+      - provider
+      - reference
+      - response_due_at
+      - starts_at
+      - status
+      - tax_amount
+      - title
+    CancelRequestRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
+      properties:
+        reason:
+          type: string
+          maxLength: 500
     Cancellation:
       type: object
       description: One component's refund, previewed or done — §20.9, BR-043.
@@ -4369,6 +4713,26 @@ components:
       - destination
       - end_date
       - start_date
+    DeclineRequestRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - reason
     Departure:
       type: object
       description: |-
@@ -4902,6 +5266,34 @@ components:
       - checks
       - status
       - version
+    History:
+      type: object
+      description: 'BR-032: who moved it, from what, to what, and why.'
+      properties:
+        from_status:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        to_status:
+          type: string
+          readOnly: true
+        actor_role:
+          type: string
+          readOnly: true
+        reason:
+          type: string
+          readOnly: true
+        occurred_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - actor_role
+      - from_status
+      - occurred_at
+      - reason
+      - to_status
     Itinerary:
       type: object
       properties:
@@ -6204,6 +6596,23 @@ components:
         * `LODGE` - Lodge
         * `GUESTHOUSE` - Guesthouse
         * `APARTMENT` - Apartment
+    ProviderContact:
+      type: object
+      description: '§9.3.5: the detail carries "provider contact".'
+      properties:
+        name:
+          type: string
+          readOnly: true
+        phone:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          readOnly: true
+      required:
+      - email
+      - name
+      - phone
     ProviderDeparture:
       type: object
       description: |-
