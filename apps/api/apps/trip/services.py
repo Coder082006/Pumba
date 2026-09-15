@@ -45,7 +45,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from django.contrib.gis.geos import Point
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.catalogue import services as catalogue
@@ -624,11 +624,20 @@ def delete_trip(public_id: UUID, *, tourist_id: int) -> None:
             f"a trip in {trip.status} has bookings behind it and cannot be deleted; "
             "cancel it instead"
         )
-    locked = ItineraryItem.objects.filter(itinerary__trip_id=trip.pk, is_locked=True).exists()
-    if locked:
+    # `booking_id` rather than `is_locked`, and the difference is the whole
+    # guard: a basket that failed leaves the link in place while unlocking the
+    # row, and the trip lands back in DRAFT. Deleting it then would take the
+    # itinerary out from under a `booking` row that still names this trip —
+    # §7.2 keeps those, and a record pointing at nothing is worse than a trip
+    # the tourist cannot tidy away.
+    booked = (
+        ItineraryItem.objects.filter(itinerary__trip_id=trip.pk)
+        .filter(models.Q(booking_id__isnull=False) | models.Q(is_locked=True))
+        .exists()
+    )
+    if booked:
         raise ConflictError(
-            "part of this trip is covered by a confirmed booking and cannot be deleted; "
-            "cancel it instead"
+            "this trip has bookings against it and cannot be deleted; cancel it instead"
         )
 
     event = TripDeleted(trip_public_id=str(trip.public_id), tourist_id=tourist_id, trip_id=trip.pk)
