@@ -137,6 +137,10 @@ class TestRegister:
                         new in Phase 7. §20.9 keeps the service fee on a tourist
                         cancellation inside seven days of the start, and a window
                         is a threshold hard rule 5 puts in a row. ADR 0025.
+            support.    Phase 7, ADR 0026 / §41.10. `support.contact` is printed
+                        on every voucher. No real contact exists yet, so the
+                        default is a marked, non-routable placeholder — the same
+                        launch blocker the web client's placeholders record.
             transfer.   Phase 7, ADR 0025. `transfer.cancellation_policy_code`
                         names the policy every transfer booking snapshots. A
                         transfer has no listing to carry one, and §26.4 makes
@@ -168,6 +172,7 @@ class TestRegister:
                     "map.",
                     "transfer.",
                     "refund.",
+                    "support.",
                     "client.",
                     "currency.",
                     "feature.",

@@ -32,8 +32,9 @@ capacity for an itinerary that cannot be sold.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
@@ -46,17 +47,25 @@ from apps.booking import repositories as repo
 from apps.booking.domain.allocation import allocate
 from apps.booking.domain.cancellation import Party, Refund, evaluate
 from apps.booking.domain.lifecycle import ACTORS, Actor, BookingState, apply, force
+from apps.booking.domain.voucher import money_text, party_text, policy_summary, when_text
 from apps.booking.dto import BasketDTO, BookingDTO
-from apps.booking.models import Booking, BookingActivity, BookingType
+from apps.booking.models import Booking, BookingActivity, BookingType, BookingVoucher
 from apps.common.config import get_setting
-from apps.common.errors import ConflictError, InventoryUnavailableError, NotFoundError
+from apps.common.errors import (
+    ConflictError,
+    InventoryUnavailableError,
+    NotFoundError,
+    PlatformError,
+)
 from apps.common.events import DomainEvent, publish
+from apps.common.ports_registry import get_document_port, get_storage_port
 from apps.inventory import services as inventory
 from apps.inventory.dto import HoldDTO, HoldRequest
 from apps.provider import services as provider
 from apps.provider.dto import ProviderDTO
 from apps.trip import services as trip_services
 from apps.trip.dto import BasketLineDTO, TripDTO
+from ports.document import VoucherContent
 
 __all__ = [
     "QuoteResult",
@@ -84,6 +93,9 @@ __all__ = [
     "TripCancellationDTO",
     "preview_trip_cancellation",
     "cancel_trip",
+    "VoucherIntegrityError",
+    "issue_voucher",
+    "voucher_document",
 ]
 
 
@@ -743,6 +755,10 @@ def confirm_trip(
             fields["response_due_at"] = now + window
             awaiting.append(row.reference)
         repo.set_status(row, target.value, **fields)
+        if target is BookingState.CONFIRMED:
+            # §41.8: "Vouchers generate for every confirmed booking" — in the
+            # transaction that confirms it, so one cannot exist without the other.
+            issue_voucher(row, issued_by=forced_by, reason="", now=now)
         repo.record_transition(
             row,
             from_status=BookingState.PENDING.value,
@@ -907,6 +923,7 @@ def accept_request(
         context={"now": now, "response_due_at": row.response_due_at},
     )
     repo.set_status(row, target.value, confirmed_at=now)
+    issue_voucher(row, issued_by=actor_user_id, reason="", now=now)
     repo.record_transition(
         row,
         from_status=BookingState.AWAITING_PROVIDER.value,
@@ -1273,3 +1290,115 @@ def cancel_trip(
         refund_amount=sum((c.refund_amount for c in components), Decimal("0.00")),
         components=components,
     )
+
+
+# -- ADR 0026: vouchers ------------------------------------------------------------
+
+
+class VoucherIntegrityError(PlatformError):
+    """A re-rendered voucher did not match the hash recorded when it was issued.
+
+    A 500 and an alert, never a quietly different document: a voucher is
+    something a tourist may already have printed and a provider may already
+    have seen, and one that changed on a second download is worse than none.
+    """
+
+    status_code = 500
+    code = "VOUCHER_INTEGRITY"
+
+
+def _voucher_content(row: Booking, *, issue: int, now: datetime) -> VoucherContent:
+    facts = trip_services.voucher_facts(row.trip_id, booking_ids=[row.pk]).get(row.pk)
+    seller = provider.providers_by_id([row.provider_id]).get(row.provider_id)
+    activity = BookingActivity.objects.filter(booking=row).first()
+    party = (
+        party_text(adults=activity.pax_adult, children=activity.pax_child)
+        if activity is not None
+        else f"{row.pax_count} traveller{'s' if row.pax_count != 1 else ''}"
+    )
+    snapshot = row.cancellation_policy_snapshot or {}
+    return VoucherContent(
+        booking_reference=row.reference,
+        trip_reference=facts.trip_reference if facts else "",
+        issue_number=issue,
+        issued_at=now,
+        service_title=facts.title if facts else row.booking_type.title(),
+        service_kind=row.booking_type.title(),
+        when=when_text(row.starts_at, facts.timezone if facts else "UTC"),
+        party=party,
+        provider_name=seller.trading_name if seller else "",
+        provider_contact=(f"{seller.contact_phone} · {seller.contact_email}" if seller else ""),
+        meeting_point=facts.meeting_point if facts else "",
+        amount_paid=money_text(row.gross_amount + row.fee_amount + row.tax_amount, row.currency),
+        cancellation_terms=policy_summary(list(snapshot.get("tiers", []))),
+        support_contact=str(get_setting("support.contact")),
+    )
+
+
+def _render(content: VoucherContent) -> bytes:
+    return get_document_port().render_voucher(content)
+
+
+def issue_voucher(
+    row: Booking, *, issued_by: int | None, reason: str, now: datetime | None = None
+) -> BookingVoucher:
+    """Issue the next voucher for a booking — ADR 0026 decisions 3 and 5.
+
+    The content is frozen onto the record and the rendered file's hash beside
+    it. The file itself goes to storage after commit, because a file stored for
+    a transaction that then rolled back would describe a voucher nobody issued.
+    """
+    now = now or timezone.now()
+    issue = (
+        BookingVoucher.objects.filter(booking=row)
+        .order_by("-issue_number")
+        .values_list("issue_number", flat=True)
+        .first()
+        or 0
+    ) + 1
+    content = _voucher_content(row, issue=issue, now=now)
+    data = _render(content)
+    key = f"vouchers/{row.public_id}/{issue}.pdf"
+    stored = asdict(content)
+    stored["issued_at"] = content.issued_at.isoformat()
+    voucher = BookingVoucher.objects.create(
+        booking=row,
+        issue_number=issue,
+        content=stored,
+        storage_key=key,
+        sha256=hashlib.sha256(data).hexdigest(),
+        size_bytes=len(data),
+        issued_at=now,
+        issued_by_user_id=issued_by,
+        reason=reason,
+    )
+    transaction.on_commit(
+        lambda: get_storage_port().put(key=key, data=data, content_type="application/pdf")
+    )
+    return voucher
+
+
+def voucher_document(row: Booking) -> tuple[str, bytes]:
+    """The latest issue's file, and its filename — `POST /bookings/{id}/voucher`.
+
+    Read from storage when it is there. When it is not — every current
+    environment stores objects in a per-process fake — the record is re-rendered
+    and served **only if** its hash matches the one recorded at issue.
+    """
+    voucher = BookingVoucher.objects.filter(booking=row).order_by("-issue_number").first()
+    if voucher is None:
+        raise NotFoundError("This booking has no voucher yet; it is issued on confirmation.")
+
+    storage = get_storage_port()
+    if storage.exists(voucher.storage_key):
+        data = storage.get(voucher.storage_key)
+    else:
+        fields = dict(voucher.content)
+        fields["issued_at"] = datetime.fromisoformat(str(fields["issued_at"]))
+        data = _render(VoucherContent(**fields))
+
+    if hashlib.sha256(data).hexdigest() != voucher.sha256:
+        raise VoucherIntegrityError(
+            f"The voucher for {row.reference} could not be reproduced exactly."
+        )
+    return f"{row.reference}-voucher-{voucher.issue_number}.pdf", data

@@ -175,6 +175,15 @@ SETTINGS_REGISTER: dict[str, Setting] = {
         # is how a broken client generation is retired, and that must not need
         # a deployment of the API to do.
         Setting("client.min_supported_version", "1.0.0", "§23.13 forced-upgrade floor"),
+        # §41.10 puts "the support number" on every voucher. None has been
+        # supplied, so the default is the same non-routable RFC 2606 address
+        # the web client's placeholders use — a launch blocker, set as a row so
+        # clearing it is an administrator's edit (ADR 0026).
+        Setting(
+            "support.contact",
+            "support@example.com (placeholder)",
+            "§41.10: the support contact printed on every voucher",
+        ),
         Setting(
             "currency.enabled",
             ["USD", "EUR", "GBP", "TZS"],

@@ -75,6 +75,7 @@ from apps.trip.dto import (
     QuoteLineDTO,
     TripDTO,
     TripSummaryDTO,
+    VoucherFactsDTO,
 )
 from apps.trip.models import (
     ItemType,
@@ -106,6 +107,7 @@ __all__ = [
     "mark_confirmed",
     "mark_unfulfillable",
     "mark_cancelled",
+    "voucher_facts",
     "TripConfirmed",
     "PriceChangedError",
     "mark_priced",
@@ -1630,6 +1632,49 @@ def mark_confirmed(trip_id: int, *, booking_ids: Sequence[int], now: datetime) -
 
     publish(TripConfirmed(trip_public_id=str(trip.public_id), tourist_id=trip.tourist_id))
     return True
+
+
+def voucher_facts(trip_id: int, *, booking_ids: Sequence[int]) -> dict[int, VoucherFactsDTO]:
+    """The trip's side of each booked component's voucher, by booking id.
+
+    The title is the itinerary item's, which is the listing's name as it was
+    when the item was added. The meeting point is the activity's own text, or
+    for a transfer the place it starts from. Read at issue time and frozen into
+    the voucher record, so a renamed listing does not rewrite a voucher already
+    in somebody's hands.
+    """
+    trip = Trip.objects.select_related("itinerary").filter(pk=trip_id).first()
+    itinerary = getattr(trip, "itinerary", None) if trip is not None else None
+    if trip is None or itinerary is None:
+        return {}
+    wanted = set(booking_ids)
+    rows = [row for row in itinerary.items.all() if row.booking_id in wanted]
+
+    home = catalogue.transfer_places("destination", [trip.destination_id]).get(trip.destination_id)
+    zone = home.timezone if home is not None else "UTC"
+    terms = catalogue.sale_terms([row.activity_id for row in rows if row.activity_id])
+    origins = catalogue.transfer_places(
+        "destination", [row.origin_destination_id for row in rows if row.origin_destination_id]
+    )
+
+    facts: dict[int, VoucherFactsDTO] = {}
+    for row in rows:
+        if row.item_type == ItemType.TRANSFER:
+            origin = origins.get(row.origin_destination_id or 0)
+            meeting = f"Pickup at {origin.destination_name}" if origin else "Pickup as arranged"
+        else:
+            term = terms.get(row.activity_id or 0)
+            meeting = (term.meeting_point if term else "") or "See the activity's listing"
+        assert row.booking_id is not None
+        facts[int(row.booking_id)] = VoucherFactsDTO(
+            booking_id=int(row.booking_id),
+            trip_reference=trip.reference,
+            title=row.title,
+            item_type=row.item_type,
+            timezone=zone,
+            meeting_point=meeting,
+        )
+    return facts
 
 
 @transaction.atomic

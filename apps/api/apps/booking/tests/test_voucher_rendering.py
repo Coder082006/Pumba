@@ -32,7 +32,6 @@ CONTENT = VoucherContent(
     amount_paid="76,000.00 TZS",
     cancellation_terms="Full refund more than 7 days before; half between 7 days and 48 hours.",
     support_contact="support@pumba.example",
-    lead_traveller="Ada Lovelace",
 )
 
 

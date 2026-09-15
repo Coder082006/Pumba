@@ -61,7 +61,6 @@ class ReportLabDocuments:
             (content.service_kind, content.service_title),
             ("When", content.when),
             ("Travellers", content.party),
-            ("Lead traveller", content.lead_traveller),
             ("Meeting point", content.meeting_point),
             ("Provider", content.provider_name),
             ("Provider contact", content.provider_contact),

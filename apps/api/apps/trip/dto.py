@@ -59,6 +59,7 @@ __all__ = [
     "QuoteBasisDTO",
     "BasketLineDTO",
     "BasketBasisDTO",
+    "VoucherFactsDTO",
 ]
 
 
@@ -355,3 +356,15 @@ class BasketBasisDTO:
     tax_amount: Decimal
     total_amount: Decimal
     lines: tuple[BasketLineDTO, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class VoucherFactsDTO:
+    """What a voucher needs from the trip about one booked component (ADR 0026)."""
+
+    booking_id: int
+    trip_reference: str
+    title: str
+    item_type: str
+    timezone: str
+    meeting_point: str

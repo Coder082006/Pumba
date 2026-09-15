@@ -42,6 +42,7 @@ __all__ = [
     "BookingActivity",
     "BookingTransfer",
     "BookingStatusHistory",
+    "BookingVoucher",
 ]
 
 
@@ -328,5 +329,36 @@ class BookingStatusHistory(TimestampedModel):
         constraints = [
             models.CheckConstraint(
                 condition=~Q(actor_role=""), name="booking_history_names_an_actor"
+            ),
+        ]
+
+
+class BookingVoucher(TimestampedModel):
+    """One issue of a booking's voucher — ADR 0026 decision 3.
+
+    The record, not the file, is the voucher. `content` is exactly what was
+    rendered, so a re-render reproduces the same bytes and `sha256` is a check,
+    not a label. Re-issuing adds issue *n + 1*; nothing here is ever updated.
+    """
+
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="vouchers")
+    issue_number = models.PositiveSmallIntegerField()
+    content = models.JSONField()
+    storage_key = models.CharField(max_length=200)
+    sha256 = models.CharField(max_length=64)
+    size_bytes = models.PositiveIntegerField()
+    issued_at = models.DateTimeField()
+    issued_by_user_id = models.BigIntegerField(null=True, blank=True, default=None)
+    reason = models.CharField(max_length=500, blank=True, default="")
+
+    class Meta:
+        db_table = "booking_voucher"
+        ordering = ["booking_id", "issue_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["booking", "issue_number"], name="booking_voucher_issue_unique"
+            ),
+            models.CheckConstraint(
+                condition=Q(issue_number__gte=1), name="booking_voucher_issue_positive"
             ),
         ]

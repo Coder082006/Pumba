@@ -1428,6 +1428,7 @@ class SaleTerms:
     provider_id: int | None
     confirmation_mode: str
     cancellation_policy_id: int | None
+    meeting_point: str = ""
 
 
 def sale_terms(ids: Sequence[int]) -> dict[int, SaleTerms]:
@@ -1437,15 +1438,16 @@ def sale_terms(ids: Sequence[int]) -> dict[int, SaleTerms]:
         return {}
     manager = cast("models.Manager[Activity]", Activity.all_objects)
     rows = manager.filter(id__in=wanted).values_list(
-        "id", "provider_id", "confirmation_mode", "cancellation_policy_id"
+        "id", "provider_id", "confirmation_mode", "cancellation_policy_id", "meeting_point_text"
     )
     return {
         int(row_id): SaleTerms(
             provider_id=None if seller is None else int(seller),
             confirmation_mode=str(mode),
             cancellation_policy_id=None if policy is None else int(policy),
+            meeting_point=str(meeting or ""),
         )
-        for row_id, seller, mode, policy in rows
+        for row_id, seller, mode, policy, meeting in rows
     }
 
 

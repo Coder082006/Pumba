@@ -27,7 +27,9 @@ class VoucherContent:
 
     Times are already formatted in the destination's timezone, with the zone
     named: a renderer that converted would be a second place the trip's
-    timezone rule lived. There is no driver and no pickup PIN until those exist.
+    timezone rule lived. There is no driver and no pickup PIN until those exist,
+    and no traveller name: `booking` may not read `identity` (§6.4), and the
+    booking and trip references are what a provider looks a guest up by.
     """
 
     booking_reference: str
@@ -45,7 +47,6 @@ class VoucherContent:
     amount_paid: str
     cancellation_terms: str
     support_contact: str
-    lead_traveller: str
 
 
 @runtime_checkable
