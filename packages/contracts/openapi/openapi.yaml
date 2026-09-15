@@ -2272,6 +2272,12 @@ paths:
         name: status
         schema:
           type: string
+      - in: query
+        name: trip
+        schema:
+          type: string
+          format: uuid
+        description: Only one of your trips. §24.23 lists a trip's own bookings.
       tags:
       - booking
       security:

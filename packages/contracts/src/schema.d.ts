@@ -5901,6 +5901,8 @@ export interface operations {
         parameters: {
             query?: {
                 status?: string;
+                /** @description Only one of your trips. §24.23 lists a trip's own bookings. */
+                trip?: string;
             };
             header?: never;
             path?: never;

@@ -77,6 +77,22 @@ class TestListing:
         client, _ = _booked()
         assert _data(client.get("/api/v1/bookings", {"status": "CANCELLED"})) == []
 
+    def test_it_filters_to_one_of_your_trips(self) -> None:
+        client, booking = _booked()
+        trip = django_apps.get_model("trip", "Trip").objects.get(id=booking.trip_id)
+        [row] = _data(client.get("/api/v1/bookings", {"trip": str(trip.public_id)}))
+        assert row["reference"] == booking.reference
+
+    def test_naming_somebody_else_s_trip_lists_nothing(self) -> None:
+        _, booking = _booked()
+        trip = django_apps.get_model("trip", "Trip").objects.get(id=booking.trip_id)
+        stranger, _ = _signed_in()
+        assert _data(stranger.get("/api/v1/bookings", {"trip": str(trip.public_id)})) == []
+
+    def test_a_malformed_trip_lists_nothing(self) -> None:
+        client, _ = _booked()
+        assert _data(client.get("/api/v1/bookings", {"trip": "not-a-uuid"})) == []
+
     def test_anonymous_is_401(self) -> None:
         assert APIClient().get("/api/v1/bookings").status_code == 401
 

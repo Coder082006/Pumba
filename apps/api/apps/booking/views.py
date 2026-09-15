@@ -249,16 +249,33 @@ class BookingListView(APIView):
     permission_classes = [IsAuthenticatedPrincipal]
 
     @extend_schema(
-        parameters=[OpenApiParameter("status", str, required=False)],
+        parameters=[
+            OpenApiParameter("status", str, required=False),
+            OpenApiParameter(
+                "trip",
+                UUID,
+                required=False,
+                description="Only one of your trips. §24.23 lists a trip's own bookings.",
+            ),
+        ],
         responses={200: ser.BookingSerializer(many=True)},
         summary="List the bookings you may see",
         tags=["booking"],
     )
     def get(self, request: Request) -> Response:
-        rows = selectors.visible_to(principal_from_request(request)).order_by("starts_at", "id")
+        principal = principal_from_request(request)
+        rows = selectors.visible_to(principal).order_by("starts_at", "id")
         wanted = request.query_params.get("status")
         if wanted:
             rows = rows.filter(status=wanted)
+        trip = request.query_params.get("trip")
+        if trip:
+            # Resolved through the tourist's own trips, so naming somebody
+            # else's trip is the same empty answer as naming none (§30.3).
+            trip_id = services.owned_trip_id(
+                trip, tourist_id=None if principal is None else principal.tourist_id
+            )
+            rows = rows.filter(trip_id=trip_id) if trip_id is not None else rows.none()
         dtos = services.list_bookings(list(rows[:200]))
         return Response(success_envelope(ser.BookingSerializer(dtos, many=True).data))
 

@@ -98,6 +98,7 @@ __all__ = [
     "voucher_document",
     "BookingDetailDTO",
     "list_bookings",
+    "owned_trip_id",
     "booking_detail",
     "ForcedTransitionDTO",
     "force_transition",
@@ -1613,3 +1614,18 @@ def reissue_voucher(public_id: UUID, *, actor_user_id: int, reason: str) -> Book
     if not row.vouchers.exists():
         raise ConflictError("Only a confirmed booking's voucher can be re-issued.")
     return issue_voucher(row, issued_by=actor_user_id, reason=reason)
+
+
+def owned_trip_id(public_id: str | UUID, *, tourist_id: int | None) -> int | None:
+    """The storage id of one of this tourist's trips, or `None` for anything else.
+
+    `None` rather than a 404, because the caller is filtering a list: a trip that
+    is not yours narrows the list to nothing, exactly as a trip that does not
+    exist does.
+    """
+    if tourist_id is None:
+        return None
+    try:
+        return trip_services.quote_basis(UUID(str(public_id)), tourist_id=tourist_id).trip_id
+    except (NotFoundError, ValueError):
+        return None
