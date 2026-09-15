@@ -17,10 +17,15 @@ import { ApiRequestError } from '@/lib/api';
 
 const listTrips = vi.fn();
 const deleteTrip = vi.fn();
+const cancelTripBookings = vi.fn();
 
 vi.mock('@/lib/trips', () => ({
   listTrips: (...args: unknown[]) => listTrips(...args),
   deleteTrip: (...args: unknown[]) => deleteTrip(...args),
+}));
+
+vi.mock('@/lib/booking', () => ({
+  cancelTripBookings: (...args: unknown[]) => cancelTripBookings(...args),
 }));
 
 function trip(overrides: Record<string, unknown> = {}) {
@@ -47,7 +52,7 @@ afterEach(() => {
 });
 
 describe('the delete control', () => {
-  it('is offered for a plan and withheld from a trip with bookings', async () => {
+  it('is offered for a plan, and a reservation is offered a cancellation instead', async () => {
     listTrips.mockResolvedValue([
       trip(),
       trip({ public_id: 'trip-2', status: 'PENDING_PAYMENT', title: 'Reserved' }),
@@ -55,8 +60,30 @@ describe('the delete control', () => {
 
     render(<MyTripsPage />);
 
-    // Both are filed under Drafts; only one of them may be deleted.
+    // Both are filed under Drafts. Deleting a reservation would destroy a
+    // booking record, so that row is offered the cancellation instead.
     await waitFor(() => expect(screen.getAllByText(/Delete this plan/)).toHaveLength(1));
+    expect(screen.getAllByText(/Cancel this reservation/)).toHaveLength(1);
+  });
+
+  it('cancels a reservation rather than deleting it, and files it under Past', async () => {
+    listTrips.mockResolvedValue([
+      trip({ status: 'PENDING_PAYMENT', title: 'Reserved' }),
+    ]);
+    cancelTripBookings.mockResolvedValue({ refund_amount: '0.00' });
+
+    render(<MyTripsPage />);
+    fireEvent.click(await screen.findByText(/Cancel this reservation/));
+    fireEvent.click(screen.getByText(/Yes, cancel it/));
+
+    await waitFor(() => expect(cancelTripBookings).toHaveBeenCalledWith('trip-1'));
+    expect(deleteTrip).not.toHaveBeenCalled();
+    // The trip is still a trip — it leaves Drafts for Past rather than the
+    // list, which is the difference between cancelling and deleting.
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Past (1)' })).toBeTruthy());
+    expect(screen.getByRole('tab', { name: 'Drafts (0)' })).toBeTruthy();
+    expect(screen.queryByText(/Cancel this reservation/)).toBeNull();
+    expect(screen.queryByText(/Delete this plan/)).toBeNull();
   });
 
   it('takes two presses, and only the second one calls the server', async () => {

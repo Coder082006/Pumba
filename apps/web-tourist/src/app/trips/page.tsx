@@ -13,6 +13,7 @@ import {
   tripStatusLabel,
   type Segment,
 } from '@/lib/trip-segments';
+import { cancelTripBookings } from '@/lib/booking';
 import { deleteTrip, listTrips, type TripSummary } from '@/lib/trips';
 
 /**
@@ -35,18 +36,25 @@ import { deleteTrip, listTrips, type TripSummary } from '@/lib/trips';
  * first segment that has something in it, so a tourist with one draft does not
  * land on an empty "Upcoming".
  *
- * **A draft can be thrown away here, and only a draft.** DELETABLE is read off
- * the trip's status rather than off the segment: Drafts also holds a
- * PENDING_PAYMENT trip, which has bookings behind it and is the server's 409,
- * so offering the button there would be offering a refusal.
+ * **A draft is thrown away; a reservation is cancelled.** Both tidy a row out
+ * of Drafts, and they are not the same act, so the card offers whichever one
+ * the trip's status permits. A plan (DRAFT or PRICED) is deleted outright. A
+ * PENDING_PAYMENT trip has bookings against it, which §7.2 keeps, so it is
+ * cancelled instead — the seats go back, the bookings become CANCELLED and the
+ * trip moves to Past rather than vanishing. A delete button there would be the
+ * server's 409 with extra steps.
  *
  * The confirmation is a second press of the same button rather than a
- * `window.confirm`. Deleting is irreversible and one stray click should not do
- * it, but a modal for a plan nobody has paid for is heavier than the act.
+ * `window.confirm`. Neither act is reversible and one stray click should not
+ * do either, but a modal for a plan nobody has paid for is heavier than the
+ * act itself.
  */
 
 /** Trip statuses the server will actually delete — `DISCARDABLE_STATES`. */
 const DELETABLE = new Set(['DRAFT', 'PRICED']);
+
+/** Reserved and not yet paid: cancellable, never deletable. */
+const CANCELLABLE = new Set(['PENDING_PAYMENT']);
 
 type State =
   | { status: 'loading' }
@@ -116,6 +124,35 @@ export default function MyTripsPage() {
         error instanceof ApiRequestError && error.status === 409
           ? 'That trip has bookings against it, so it is cancelled rather than deleted.'
           : 'That trip could not be deleted just now.',
+      );
+    } finally {
+      setRemoving(null);
+    }
+  }, []);
+
+  const cancel = useCallback(async (trip: TripSummary) => {
+    setRemoving(trip.public_id);
+    setProblem(null);
+    try {
+      await cancelTripBookings(trip.public_id);
+      // Restated rather than removed, unlike a delete: the trip still exists,
+      // in a state that files it under Past, and the row has to say so.
+      setState((current) =>
+        current.status === 'ready'
+          ? {
+              status: 'ready',
+              trips: current.trips.map((row) =>
+                row.public_id === trip.public_id ? { ...row, status: 'CANCELLED' } : row,
+              ),
+            }
+          : current,
+      );
+      setConfirming(null);
+    } catch (error) {
+      setProblem(
+        error instanceof ApiRequestError && error.status === 409
+          ? 'Part of this trip has already started, so it can no longer be cancelled here.'
+          : 'That reservation could not be cancelled just now.',
       );
     } finally {
       setRemoving(null);
@@ -264,7 +301,7 @@ export default function MyTripsPage() {
                         support, and then it is the only thing that matters. */}
                     <p className="mt-1 font-mono text-xs text-muted-foreground">{trip.reference}</p>
                   </Link>
-                  {DELETABLE.has(trip.status) ? (
+                  {DELETABLE.has(trip.status) || CANCELLABLE.has(trip.status) ? (
                     <p className="mt-1 flex justify-end gap-3 text-xs">
                       {confirming === trip.public_id ? (
                         <>
@@ -278,10 +315,16 @@ export default function MyTripsPage() {
                           <button
                             type="button"
                             disabled={removing === trip.public_id}
-                            onClick={() => void remove(trip)}
+                            onClick={() =>
+                              void (DELETABLE.has(trip.status) ? remove(trip) : cancel(trip))
+                            }
                             className="font-semibold text-destructive-ink hover:underline disabled:opacity-60"
                           >
-                            {removing === trip.public_id ? 'Deleting…' : 'Delete for good'}
+                            {removing === trip.public_id
+                              ? 'Working…'
+                              : DELETABLE.has(trip.status)
+                                ? 'Delete for good'
+                                : 'Yes, cancel it'}
                           </button>
                         </>
                       ) : (
@@ -293,7 +336,9 @@ export default function MyTripsPage() {
                           }}
                           className="text-muted-foreground hover:text-destructive-ink hover:underline"
                         >
-                          Delete this plan
+                          {DELETABLE.has(trip.status)
+                            ? 'Delete this plan'
+                            : 'Cancel this reservation'}
                         </button>
                       )}
                     </p>
