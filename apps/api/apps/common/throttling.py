@@ -41,6 +41,7 @@ __all__ = [
     "AuthenticatedReadThrottle",
     "CatalogueReadThrottle",
     "TripQuoteThrottle",
+    "PaymentIntentThrottle",
     "parse_limit",
 ]
 
@@ -185,6 +186,19 @@ class TripQuoteThrottle(SettingsRateThrottle):
         resolved = getattr(request, "resolver_match", None)
         kwargs = getattr(resolved, "kwargs", None)
         return dict(kwargs) if isinstance(kwargs, dict) else {}
+
+
+class PaymentIntentThrottle(SettingsRateThrottle):
+    """§9.6: 10 / hour / tourist for `POST /payments/intents`.
+
+    Per tourist, which is what the setting says and is the right unit: a
+    tourist paying for two trips in an evening is ordinary, and forty intents
+    in an hour is either a broken client or somebody walking a stolen card
+    through a decline loop. §21.8 throttles a *trip* after three consecutive
+    failures; this is the wider net around it.
+    """
+
+    setting_key = "ratelimit.payment_intent"
 
 
 class CatalogueReadThrottle(SettingsRateThrottle):

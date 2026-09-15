@@ -102,6 +102,12 @@ class AuditAction(StrEnum):
     BOOKING_FORCED = "booking.force_transition"
     VOUCHER_REISSUED = "booking.voucher_reissued"
 
+    # Phase 8 — §21.8's hard failure. TC-073: a client that submits its own
+    # amount is charged the server's figure, and the attempt is recorded
+    # because the difference between a stale page and a tampering attempt is
+    # visible only over time.
+    PAYMENT_AMOUNT_MISMATCH = "payment.amount_mismatch"
+
 
 @dataclass(frozen=True, slots=True)
 class AuditRecord:

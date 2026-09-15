@@ -85,6 +85,11 @@ def _reset_event_subscribers():
         yield
 
 
+#: The double each no-default port resolves to under test. Checked against the
+#: registry below, so the two cannot drift apart silently.
+_TEST_DOUBLES = {"payment": "ports.fakes.FakePaymentGateway"}
+
+
 @pytest.fixture(autouse=True)
 def _ports_are_always_fakes(settings) -> None:  # type: ignore[no-untyped-def]
     """No test may reach a real provider — rule 13, SRS §34.8.
@@ -103,9 +108,14 @@ def _ports_are_always_fakes(settings) -> None:  # type: ignore[no-untyped-def]
     `apps.common.ports_registry`. Cleared on the way in and out because the
     resolution is `@cache`d per process.
     """
-    from apps.common.ports_registry import reset_ports
+    from apps.common.ports_registry import _NO_DEFAULT, reset_ports
 
-    settings.PORT_ADAPTERS = {}
+    # Emptying the map sends every port back to its fake — except the ones that
+    # have none. ADR 0027 gives `payment` no default on purpose, so a test that
+    # reaches it must name the double, exactly as `config.settings.ci` does.
+    # Derived from the registry rather than listed, so a second such port fails
+    # here on the day it is added rather than in whichever test first needs it.
+    settings.PORT_ADAPTERS = {name: _TEST_DOUBLES[name] for name in _NO_DEFAULT}
     reset_ports()
     yield
     reset_ports()

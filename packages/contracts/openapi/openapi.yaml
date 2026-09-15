@@ -2719,6 +2719,88 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/payments/{public_id}:
+    get:
+      operationId: payments_retrieve
+      description: |-
+        `GET /payments/{id}` — §9.3.7.
+
+        A payment that is not this tourist's is absent rather than forbidden
+        (§30.3), which the service enforces by filtering rather than comparing.
+      summary: Payment status
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - payment
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+          description: ''
+  /api/v1/payments/intents:
+    post:
+      operationId: payments_intents_create
+      description: 'The amount is computed from the trip and is never taken from the
+        request (BR-060). Returns a method-specific action: a client secret for a
+        card, a redirect, or a mobile-money prompt. `Idempotency-Key` is required.'
+      summary: Start paying for a reserved trip
+      tags:
+      - payment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentIntentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PaymentIntentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PaymentIntentRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+          description: ''
+  /api/v1/payments/methods:
+    get:
+      operationId: payments_methods_list
+      description: |-
+        `GET /payments/methods` — §9.3.7.
+
+        §9.3.7 describes this as the methods available "for the tourist's country
+        and currency". In 8a there is one rail and the honest answer is short: cards
+        in the currencies §18.3 supports, and mobile money named as not yet
+        available rather than omitted — a tourist in Zanzibar who is offered no
+        mobile money should be told why, not left to wonder.
+      summary: Payment methods available to this tourist
+      tags:
+      - payment
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentMethod'
+          description: ''
   /api/v1/search:
     get:
       operationId: search_list
@@ -6655,6 +6737,141 @@ components:
           - 'null'
           minLength: 1
           maxLength: 140
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        trip_id:
+          type: string
+          format: uuid
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        method:
+          type: string
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        action:
+          oneOf:
+          - $ref: '#/components/schemas/PaymentAction'
+          - type: 'null'
+          readOnly: true
+        failure_code:
+          type: string
+          readOnly: true
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        captured_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        created_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+      required:
+      - action
+      - amount
+      - captured_at
+      - created_at
+      - currency
+      - expires_at
+      - failure_code
+      - id
+      - method
+      - status
+      - trip_id
+    PaymentAction:
+      type: object
+      properties:
+        type:
+          type: string
+          readOnly: true
+        payload:
+          type: object
+          additionalProperties:
+            type: string
+          readOnly: true
+      required:
+      - payload
+      - type
+    PaymentIntentRequest:
+      type: object
+      description: §9.4.7's request.
+      properties:
+        trip_id:
+          type: string
+          format: uuid
+        method:
+          allOf:
+          - $ref: '#/components/schemas/PaymentMethodEnum'
+          default: CARD
+        currency:
+          type: string
+          minLength: 1
+          maxLength: 3
+        return_url:
+          type: string
+          format: uri
+        amount:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+      required:
+      - trip_id
+    PaymentMethod:
+      type: object
+      description: |-
+        `GET /payments/methods` — what this tourist may actually use.
+
+        The human-readable name is `display_name` rather than `label`: DRF's own
+        `Field.label` is a different thing (the form label of the field itself),
+        and declaring one here shadows it.
+      properties:
+        method:
+          type: string
+          readOnly: true
+        display_name:
+          type: string
+          readOnly: true
+        currencies:
+          type: array
+          items:
+            type: string
+          readOnly: true
+        available:
+          type: boolean
+          readOnly: true
+        unavailable_reason:
+          type: string
+          readOnly: true
+      required:
+      - available
+      - currencies
+      - display_name
+      - method
+      - unavailable_reason
     PaymentMethodEnum:
       enum:
       - CARD

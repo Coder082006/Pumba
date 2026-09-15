@@ -1,4 +1,132 @@
-"""Interface layer (SRS §8.2 layer 1). No business logic, no ORM queries.
+"""payment module — SRS §6.4.
 
-Phase 1: skeleton only.
+Interface layer (SRS §8.2 layer 1). §9.4.7's endpoints.
+
+Thin, like every other view here: parse, call one service function, serialise.
+`TripNotPayableError`, `QuoteExpiredError` and the port's own `ValidationError`
+are deliberately not caught — §8.7's hierarchy carries the status code and
+§9.2's handler builds the envelope, so a `try/except` here would be a second
+place deciding what a lapsed quote's HTTP status is.
+
+**`Idempotency-Key` is required on the intent** (§9.1, A6: "required on all
+POST that create bookings, payments or assignments"). A retry after a timeout
+must return the payment it already created rather than taking a second one,
+which is TC-074 — and the decorator is what makes that true even when the first
+response never reached the browser.
 """
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from drf_spectacular.utils import extend_schema
+from rest_framework import status
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.common.config import get_setting
+from apps.common.envelope import success_envelope
+from apps.common.idempotency import idempotent
+from apps.common.permissions import IsTourist, tourist_id_of
+from apps.common.throttling import PaymentIntentThrottle
+from apps.payment import serializers as ser
+from apps.payment import services
+from apps.payment.models import PaymentMethod
+
+__all__ = ["PaymentIntentView", "PaymentDetailView", "PaymentMethodsView"]
+
+_TAGS = ["payment"]
+
+
+class PaymentIntentView(APIView):
+    """`POST /payments/intents` — §9.4.7."""
+
+    permission_classes = [IsTourist]
+    throttle_classes = [PaymentIntentThrottle]
+
+    @extend_schema(
+        request=ser.PaymentIntentSerializer,
+        responses={201: ser.PaymentSerializer},
+        summary="Start paying for a reserved trip",
+        description=(
+            "The amount is computed from the trip and is never taken from the "
+            "request (BR-060). Returns a method-specific action: a client "
+            "secret for a card, a redirect, or a mobile-money prompt. "
+            "`Idempotency-Key` is required."
+        ),
+        tags=_TAGS,
+    )
+    @idempotent
+    def post(self, request: Request) -> Response:
+        payload = ser.PaymentIntentSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        body = payload.validated_data
+        payment = services.initiate(
+            body["trip_id"],
+            tourist_id=tourist_id_of(request),
+            method=PaymentMethod(body.get("method", PaymentMethod.CARD)),
+            return_url=body.get("return_url") or None,
+            client_amount=body.get("amount"),
+        )
+        return Response(
+            success_envelope(ser.PaymentSerializer(payment).data),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class PaymentDetailView(APIView):
+    """`GET /payments/{id}` — §9.3.7.
+
+    A payment that is not this tourist's is absent rather than forbidden
+    (§30.3), which the service enforces by filtering rather than comparing.
+    """
+
+    permission_classes = [IsTourist]
+
+    @extend_schema(
+        responses={200: ser.PaymentSerializer},
+        summary="Payment status",
+        tags=_TAGS,
+    )
+    def get(self, request: Request, public_id: UUID) -> Response:
+        payment = services.payment_detail(public_id, tourist_id=tourist_id_of(request))
+        return Response(success_envelope(ser.PaymentSerializer(payment).data))
+
+
+class PaymentMethodsView(APIView):
+    """`GET /payments/methods` — §9.3.7.
+
+    §9.3.7 describes this as the methods available "for the tourist's country
+    and currency". In 8a there is one rail and the honest answer is short: cards
+    in the currencies §18.3 supports, and mobile money named as not yet
+    available rather than omitted — a tourist in Zanzibar who is offered no
+    mobile money should be told why, not left to wonder.
+    """
+
+    permission_classes = [IsTourist]
+
+    @extend_schema(
+        responses={200: ser.PaymentMethodSerializer(many=True)},
+        summary="Payment methods available to this tourist",
+        tags=_TAGS,
+    )
+    def get(self, request: Request) -> Response:
+        currencies = list(get_setting("currency.enabled"))
+        methods = [
+            {
+                "method": "CARD",
+                "display_name": "Card",
+                "currencies": currencies,
+                "available": True,
+                "unavailable_reason": "",
+            },
+            {
+                "method": "MOBILE_MONEY",
+                "display_name": "Mobile money",
+                "currencies": ["TZS"],
+                "available": False,
+                "unavailable_reason": "Mobile money is not available yet.",
+            },
+        ]
+        return Response(success_envelope(ser.PaymentMethodSerializer(methods, many=True).data))

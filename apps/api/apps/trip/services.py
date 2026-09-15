@@ -115,6 +115,7 @@ __all__ = [
     "PriceChangedError",
     "mark_priced",
     "expire_quote",
+    "public_id_of_trip",
     "TripPriced",
     "ItineraryGenerated",
     "DEFERRED_INPUTS",
@@ -1841,6 +1842,21 @@ def abandon_payment(trip_id: int, *, quote_still_stands: bool) -> bool:
 
 
 @transaction.atomic
+def public_id_of_trip(trip_id: int) -> UUID:
+    """The public id behind a storage id, for a module that only has the latter.
+
+    `payment` stores `trip_id` as a plain integer (ADR 0012) and may not read
+    this module's models (`private-trip`), so without this it could not name
+    the trip it took money for. Raises rather than returning `None`: a payment
+    row whose trip has vanished is not a missing value, it is a broken invariant
+    (§20.4), and answering `None` would let it render as an empty field.
+    """
+    trip = Trip.objects.filter(pk=trip_id).values_list("public_id", flat=True).first()
+    if trip is None:
+        raise NotFoundError(f"no trip {trip_id}")
+    return UUID(str(trip))
+
+
 def expire_quote(trip_id: int) -> bool:
     """§20.5's `PRICED --quote expired--> DRAFT`, and TC-052's second half.
 

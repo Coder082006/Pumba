@@ -1771,6 +1771,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/payments/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Payment status
+         * @description `GET /payments/{id}` — §9.3.7.
+         *
+         *     A payment that is not this tourist's is absent rather than forbidden
+         *     (§30.3), which the service enforces by filtering rather than comparing.
+         */
+        get: operations["payments_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payments/intents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start paying for a reserved trip
+         * @description The amount is computed from the trip and is never taken from the request (BR-060). Returns a method-specific action: a client secret for a card, a redirect, or a mobile-money prompt. `Idempotency-Key` is required.
+         */
+        post: operations["payments_intents_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payments/methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Payment methods available to this tourist
+         * @description `GET /payments/methods` — §9.3.7.
+         *
+         *     §9.3.7 describes this as the methods available "for the tourist's country
+         *     and currency". In 8a there is one rail and the honest answer is short: cards
+         *     in the currencies §18.3 supports, and mobile money named as not yet
+         *     available rather than omitted — a tourist in Zanzibar who is offered no
+         *     mobile money should be told why, not left to wonder.
+         */
+        get: operations["payments_methods_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search": {
         parameters: {
             query?: never;
@@ -3481,6 +3550,55 @@ export interface components {
             children?: number;
             infants?: number;
             title?: string | null;
+        };
+        Payment: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly trip_id: string;
+            readonly status: string;
+            readonly method: string;
+            readonly currency: string;
+            /** Format: decimal */
+            readonly amount: string;
+            readonly action: components["schemas"]["PaymentAction"] | null;
+            readonly failure_code: string;
+            /** Format: date-time */
+            readonly expires_at: string | null;
+            /** Format: date-time */
+            readonly captured_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string | null;
+        };
+        PaymentAction: {
+            readonly type: string;
+            readonly payload: {
+                [key: string]: string;
+            };
+        };
+        /** @description §9.4.7's request. */
+        PaymentIntentRequest: {
+            /** Format: uuid */
+            trip_id: string;
+            /** @default CARD */
+            method: components["schemas"]["PaymentMethodEnum"];
+            currency?: string;
+            /** Format: uri */
+            return_url?: string;
+            /** Format: decimal */
+            amount?: string | null;
+        };
+        /** @description `GET /payments/methods` — what this tourist may actually use.
+         *
+         *     The human-readable name is `display_name` rather than `label`: DRF's own
+         *     `Field.label` is a different thing (the form label of the field itself),
+         *     and declaring one here shadows it. */
+        PaymentMethod: {
+            readonly method: string;
+            readonly display_name: string;
+            readonly currencies: string[];
+            readonly available: boolean;
+            readonly unavailable_reason: string;
         };
         /**
          * @description * `CARD` - CARD
@@ -6301,6 +6419,71 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    payments_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payment"];
+                };
+            };
+        };
+    };
+    payments_intents_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentIntentRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PaymentIntentRequest"];
+                "multipart/form-data": components["schemas"]["PaymentIntentRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payment"];
+                };
+            };
+        };
+    };
+    payments_methods_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentMethod"][];
+                };
             };
         };
     };

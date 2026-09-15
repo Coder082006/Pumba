@@ -315,7 +315,13 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": "/api/v[0-9]",
     "COMPONENT_SPLIT_REQUEST": True,
     "SORT_OPERATIONS": True,
-    "ENUM_NAME_OVERRIDES": {},
+    # One choice set, one component name. `booking` calls the field
+    # `payment_method` and `payment` calls it `method`, so the generator sees
+    # the same two values under two names and refuses to guess which the
+    # schema means. Naming it here is the fix the warning asks for.
+    "ENUM_NAME_OVERRIDES": {
+        "PaymentMethodEnum": ["CARD", "MOBILE_MONEY"],
+    },
 }
 
 # ---------------------------------------------------------------------------
