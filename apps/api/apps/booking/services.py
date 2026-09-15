@@ -48,7 +48,7 @@ from apps.booking.domain.allocation import allocate
 from apps.booking.domain.cancellation import Party, Refund, evaluate
 from apps.booking.domain.lifecycle import ACTORS, Actor, BookingState, apply, force
 from apps.booking.domain.voucher import money_text, party_text, policy_summary, when_text
-from apps.booking.dto import BasketDTO, BookingDTO
+from apps.booking.dto import BasketDTO, BookingDTO, VoucherDTO
 from apps.booking.models import Booking, BookingActivity, BookingType, BookingVoucher
 from apps.common.config import get_setting
 from apps.common.errors import (
@@ -1348,7 +1348,7 @@ def _render(content: VoucherContent) -> bytes:
 
 def issue_voucher(
     row: Booking, *, issued_by: int | None, reason: str, now: datetime | None = None
-) -> BookingVoucher:
+) -> VoucherDTO:
     """Issue the next voucher for a booking — ADR 0026 decisions 3 and 5.
 
     The content is frozen onto the record and the rendered file's hash beside
@@ -1382,7 +1382,12 @@ def issue_voucher(
     transaction.on_commit(
         lambda: get_storage_port().put(key=key, data=data, content_type="application/pdf")
     )
-    return voucher
+    return VoucherDTO(
+        booking_reference=row.reference,
+        issue_number=voucher.issue_number,
+        issued_at=voucher.issued_at,
+        sha256=voucher.sha256,
+    )
 
 
 def voucher_document(row: Booking) -> tuple[str, bytes]:
@@ -1606,7 +1611,7 @@ def _cancel_as_platform(row: Booking, *, actor_user_id: int, reason: str, now: d
     _end_trip_if_every_component_is_cancelled(row.trip_id)
 
 
-def reissue_voucher(public_id: UUID, *, actor_user_id: int, reason: str) -> BookingVoucher:
+def reissue_voucher(public_id: UUID, *, actor_user_id: int, reason: str) -> VoucherDTO:
     """§27.9: "re-issue a voucher", with a reason. Issue n + 1; earlier ones kept."""
     row = Booking.objects.filter(public_id=public_id).first()
     if row is None:

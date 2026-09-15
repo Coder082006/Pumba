@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-__all__ = ["BookingDTO", "BasketDTO"]
+__all__ = ["BookingDTO", "BasketDTO", "VoucherDTO"]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -47,3 +47,13 @@ class BasketDTO:
     #: When the held capacity is released if payment has not completed.
     payment_expires_at: datetime
     bookings: tuple[BookingDTO, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class VoucherDTO:
+    """One issue of a booking's voucher, as a caller outside the module sees it."""
+
+    booking_reference: str
+    issue_number: int
+    issued_at: datetime
+    sha256: str
