@@ -3368,6 +3368,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/Quote'
           description: ''
+  /api/v1/webhooks/psp/{provider}:
+    post:
+      operationId: webhooks_psp_create
+      description: Signature-verified and idempotent. A duplicate event id is acknowledged
+        without reprocessing (TC-071); an event that would not advance the payment
+        is recorded and ignored (§21.5).
+      summary: Payment provider callback
+      parameters:
+      - in: path
+        name: provider
+        schema:
+          type: string
+        required: true
+      tags:
+      - payment
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
 components:
   schemas:
     Accommodation:

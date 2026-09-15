@@ -21,12 +21,14 @@ from uuid import UUID
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.common.config import get_setting
 from apps.common.envelope import success_envelope
+from apps.common.errors import ValidationError
 from apps.common.idempotency import idempotent
 from apps.common.permissions import IsTourist, tourist_id_of
 from apps.common.throttling import PaymentIntentThrottle
@@ -34,7 +36,12 @@ from apps.payment import serializers as ser
 from apps.payment import services
 from apps.payment.models import PaymentMethod
 
-__all__ = ["PaymentIntentView", "PaymentDetailView", "PaymentMethodsView"]
+__all__ = [
+    "PaymentIntentView",
+    "PaymentDetailView",
+    "PaymentMethodsView",
+    "PspWebhookView",
+]
 
 _TAGS = ["payment"]
 
@@ -130,3 +137,53 @@ class PaymentMethodsView(APIView):
             },
         ]
         return Response(success_envelope(ser.PaymentMethodSerializer(methods, many=True).data))
+
+
+class PspWebhookView(APIView):
+    """`POST /webhooks/psp/{provider}` — §9.4.8.
+
+    **Unauthenticated by session, authenticated by signature.** There is no
+    principal here and no token: the PSP proves who it is with an HMAC over the
+    body, which the adapter verifies along with §21.5's five-minute freshness
+    window. `AllowAny` is therefore not a gap — the authentication is the
+    signature, and a request that fails it never reaches the state machine.
+
+    **Always 200 once the event is durably stored**, whatever happened next.
+    §9.4.8 is explicit about this, and the reason is operational: a PSP that
+    receives anything else retries, and a retry storm against a handler that is
+    already failing turns one broken transition into thousands. A verification
+    failure is the exception — 400, because that request was not from the PSP
+    at all and there is nothing to retry.
+
+    The raw body is read rather than the parsed payload, because the signature
+    is over the bytes: DRF's JSON round-trip would re-order keys and change
+    whitespace, and the HMAC would stop matching a body that was never altered.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list[type] = []
+
+    @extend_schema(
+        request=None,
+        responses={200: None},
+        summary="Payment provider callback",
+        description=(
+            "Signature-verified and idempotent. A duplicate event id is "
+            "acknowledged without reprocessing (TC-071); an event that would "
+            "not advance the payment is recorded and ignored (§21.5)."
+        ),
+        tags=_TAGS,
+    )
+    def post(self, request: Request, provider: str) -> Response:
+        try:
+            outcome = services.ingest_webhook(
+                provider=provider,
+                payload=request.body,
+                headers={key: str(value) for key, value in request.headers.items()},
+            )
+        except ValidationError:
+            # Never the envelope's 422: an unverified payload is not a
+            # malformed request from a client we know, it is a request from
+            # somebody we cannot identify.
+            return Response({"received": False}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"received": True, "outcome": outcome.value})

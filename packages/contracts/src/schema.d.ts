@@ -2156,6 +2156,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/webhooks/psp/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Payment provider callback
+         * @description Signature-verified and idempotent. A duplicate event id is acknowledged without reprocessing (TC-071); an event that would not advance the payment is recorded and ignored (§21.5).
+         */
+        post: operations["webhooks_psp_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6921,6 +6941,26 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Quote"];
                 };
+            };
+        };
+    };
+    webhooks_psp_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

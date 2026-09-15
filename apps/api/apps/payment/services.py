@@ -40,20 +40,29 @@ from apps.common.config import get_setting
 from apps.common.errors import ConflictError, NotFoundError, ValidationError
 from apps.common.money import Money
 from apps.common.ports_registry import get_payment_port
+from apps.common.state_machine import GuardFailedError, IllegalTransitionError
 from apps.inventory import services as inventory
 from apps.payment import repositories as repo
-from apps.payment.domain.lifecycle import PaymentState
+from apps.payment.domain.lifecycle import PaymentState, advances
 from apps.payment.domain.lifecycle import apply as apply_transition
 from apps.payment.dto import PaymentActionDTO, PaymentDTO
-from apps.payment.models import Payment, PaymentMethod, PaymentStatus
+from apps.payment.models import (
+    Payment,
+    PaymentMethod,
+    PaymentStatus,
+    PaymentWebhookEvent,
+    WebhookOutcome,
+)
 from apps.trip import services as trip_services
-from ports.payment import PaymentIntent
+from ports.payment import PaymentIntent, PaymentIntentStatus, WebhookEvent
 from ports.payment import PaymentMethod as PortMethod
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "initiate",
+    "ingest_webhook",
+    "apply_psp_state",
     "payment_for_trip",
     "payment_detail",
     "TripNotPayableError",
@@ -305,3 +314,241 @@ def payment_detail(public_id: UUID, *, tourist_id: int | None) -> PaymentDTO:
     if row is None or (tourist_id is not None and row.tourist_id != tourist_id):
         raise NotFoundError(f"no payment {public_id}")
     return _dto(row, trip_public_id=trip_services.public_id_of_trip(row.trip_id))
+
+
+# ---------------------------------------------------------------------------
+# §9.4.8 — the webhook, and §21.5's poller behind it
+# ---------------------------------------------------------------------------
+
+
+#: The port's statuses, which mirror §21.4's, onto this module's states. A
+#: lookup rather than a cast, so a port that grows a status fails loudly in a
+#: test rather than passing an unknown string into the machine.
+_PORT_STATE = {
+    PaymentIntentStatus.INITIATED: PaymentState.INITIATED,
+    PaymentIntentStatus.PENDING: PaymentState.PENDING,
+    PaymentIntentStatus.AUTHORISED: PaymentState.AUTHORISED,
+    PaymentIntentStatus.CAPTURED: PaymentState.CAPTURED,
+    PaymentIntentStatus.FAILED: PaymentState.FAILED,
+    PaymentIntentStatus.EXPIRED: PaymentState.EXPIRED,
+}
+
+
+def ingest_webhook(*, provider: str, payload: bytes, headers: dict[str, str]) -> WebhookOutcome:
+    """`POST /webhooks/psp/{provider}` — §9.4.8, §21.5.
+
+    In the SRS's order, and every step of it matters:
+
+    1. **Verify.** An unverified payload never reaches the state machine. A bad
+       signature raises here and no row is written — an unsigned body is not
+       evidence of anything.
+    2. **Store.** The raw event is committed before it is interpreted, so a bug
+       in step 4 costs a transition and never the event itself.
+    3. **Deduplicate.** An event id already stored is acknowledged and dropped
+       (TC-071). The unique index decides that, not a check followed by an act.
+    4. **Apply**, under an advisory lock, in a second transaction.
+
+    Between 3 and 4 the gateway is asked what the payment actually is, outside
+    any transaction. PM4 makes the PSP the authority, and an event saying
+    "captured" is worth less than the intent saying what was captured and for
+    how much — which is also what stops a replayed body from asserting an
+    amount.
+    """
+    event = get_payment_port().verify_webhook(payload=payload, headers=headers)
+
+    with transaction.atomic():
+        if PaymentWebhookEvent.objects.filter(psp_event_id=event.event_id).exists():
+            return WebhookOutcome.DUPLICATE
+        stored = repo.store_webhook_event(
+            psp_name=provider,
+            psp_event_id=event.event_id,
+            event_type=event.event_type,
+            psp_reference=event.psp_reference,
+            payload=event.raw,
+            signature_verified=True,
+            received_at=timezone.now(),
+        )
+
+    return apply_psp_state(event=event, stored_event_id=int(stored.pk))
+
+
+def apply_psp_state(*, event: WebhookEvent, stored_event_id: int | None = None) -> WebhookOutcome:
+    """Move a payment to what the PSP says it is, and do what that means.
+
+    Shared by the webhook and by §21.5's polling fallback, which is the point
+    of it being a function rather than a view: a lost webhook must cost latency
+    and not correctness, and two code paths that read a capture differently
+    would be two systems disagreeing about whether a trip is paid for.
+    """
+    payment = Payment.objects.filter(psp_reference=event.psp_reference).first()
+    if payment is None:
+        _record_outcome(stored_event_id, WebhookOutcome.UNMATCHED, note=event.psp_reference)
+        logger.warning(
+            "webhook_for_unknown_payment",
+            extra={"psp_reference": event.psp_reference, "event_type": event.event_type},
+        )
+        return WebhookOutcome.UNMATCHED
+
+    intent = get_payment_port().fetch_status(event.psp_reference)
+    target = _PORT_STATE[intent.status]
+
+    # PM4 makes the gateway's current state the answer — with one exception the
+    # gateway's own model forces. A declined card leaves a Stripe intent
+    # reusable, so `fetch_status` still reports it as waiting for a payment
+    # method, and taking that literally would leave a tourist staring at a
+    # spinner after their card was refused. When the event reports a failure
+    # the intent's state does not carry, the event is the more recent fact.
+    if event.status in (PaymentIntentStatus.FAILED, PaymentIntentStatus.EXPIRED):
+        target = _PORT_STATE[event.status]
+
+    with transaction.atomic():
+        repo.advisory_lock(int(payment.pk))
+        locked = repo.lock_payment(int(payment.pk))
+        assert locked is not None
+        source = PaymentState(locked.status)
+
+        if not advances(source, target):
+            # §21.5: "applies a state transition only if it is legal and
+            # advances the state, otherwise it records and ignores".
+            _record_outcome(
+                stored_event_id,
+                WebhookOutcome.IGNORED_NOT_ADVANCING,
+                note=f"{source} would not advance to {target}",
+                payment_id=int(locked.pk),
+            )
+            return WebhookOutcome.IGNORED_NOT_ADVANCING
+
+        failure_code = _failure_code(event) if target is PaymentState.FAILED else ""
+        context: dict[str, object] = {
+            "psp_reference": event.psp_reference,
+            "customer_authorised": target is PaymentState.AUTHORISED,
+            "psp_captured": target is PaymentState.CAPTURED,
+            "captured_amount": intent.amount.amount,
+            "expected_amount": locked.presentment_amount,
+            "failure_code": failure_code,
+            "window_elapsed": target is PaymentState.EXPIRED,
+        }
+
+        try:
+            apply_transition(source, target, context)
+        except GuardFailedError:
+            # The guard that refuses a real arrival: a capture for an amount
+            # this payment never asked for (§21.8's AMOUNT_MISMATCH, TC-073).
+            # Money has moved at the PSP, so this is an exception for a human
+            # rather than a state to invent — and §21.9's reconciliation will
+            # find it again tomorrow whatever happens here.
+            _record_outcome(
+                stored_event_id,
+                WebhookOutcome.IGNORED_NOT_ADVANCING,
+                note="captured amount does not match the trip total",
+                payment_id=int(locked.pk),
+            )
+            record_audit(
+                AuditAction.PAYMENT_AMOUNT_MISMATCH,
+                entity_type="payment",
+                entity_id=str(locked.public_id),
+                before={"captured": str(intent.amount.amount)},
+                after={"expected": str(locked.presentment_amount)},
+                reason="The gateway captured an amount this payment did not ask for.",
+            )
+            logger.error(
+                "capture_amount_mismatch",
+                extra={
+                    "payment": str(locked.public_id),
+                    "captured": str(intent.amount.amount),
+                    "expected": str(locked.presentment_amount),
+                },
+            )
+            return WebhookOutcome.IGNORED_NOT_ADVANCING
+        except IllegalTransitionError:
+            _record_outcome(
+                stored_event_id,
+                WebhookOutcome.IGNORED_NOT_ADVANCING,
+                note=f"{source} -> {target} is not a declared edge",
+                payment_id=int(locked.pk),
+            )
+            return WebhookOutcome.IGNORED_NOT_ADVANCING
+
+        now = timezone.now()
+        extra: dict[str, object] = {}
+        if target is PaymentState.CAPTURED:
+            extra = {
+                "captured_at": now,
+                # 8b's reconciliation replaces both from the settlement report,
+                # which is the only place the real figures exist (§21.9). Until
+                # then presentment and settlement are one currency, so the
+                # honest rate is one — BR-065 asks for a rate, not a guess.
+                "settlement_amount": intent.amount.amount,
+                "fx_rate": Decimal("1"),
+            }
+
+        repo.record_transition(
+            locked,
+            to_status=PaymentStatus(target.value),
+            occurred_at=now,
+            failure_code=failure_code,
+            amount=intent.amount.amount,
+            currency=intent.amount.currency,
+            psp_reference=event.psp_reference,
+            raw_event_id=stored_event_id,
+            reason=event.event_type,
+            extra_fields=extra,
+        )
+        _record_outcome(
+            stored_event_id,
+            WebhookOutcome.APPLIED,
+            note=f"{source} -> {target}",
+            payment_id=int(locked.pk),
+        )
+
+        # §9.4.8: "on CAPTURED, run the confirmation routine of Section 20.8".
+        # Inside this transaction on purpose: a captured payment beside an
+        # unconfirmed trip is what §20.4 calls the most important invariant in
+        # the system to hold, and two transactions could leave exactly that.
+        if target is PaymentState.CAPTURED:
+            booking_services.confirm_trip(locked.trip_id, payment_captured=True, now=now)
+        elif target in (PaymentState.FAILED, PaymentState.EXPIRED):
+            booking_services.fail_basket(
+                locked.trip_id, cause=booking_services.BasketFailure.PAYMENT_FAILED, now=now
+            )
+
+    return WebhookOutcome.APPLIED
+
+
+def _failure_code(event: WebhookEvent) -> str:
+    """§21.8's taxonomy, if the adapter put one on the event.
+
+    A decline we cannot classify is a card decline: the tourist's next step is
+    the same, and a code per issuer message would be a taxonomy nobody could
+    act on.
+    """
+    raw = event.raw if isinstance(event.raw, dict) else {}
+    code = raw.get("failure_code")
+    return str(code) if code else "CARD_DECLINED"
+
+
+def _record_outcome(
+    stored_event_id: int | None,
+    outcome: WebhookOutcome,
+    *,
+    note: str = "",
+    payment_id: int | None = None,
+) -> None:
+    """Write what was done about an event, on the event's own row.
+
+    The row's payload is immutable (migration 0002) and these four columns are
+    not: the PSP's words are the evidence, and this is the platform's note
+    about them. A `.update()` rather than a save, because the row was written
+    in a different transaction and re-reading it to set four fields would be a
+    lock taken for no reason.
+    """
+    if stored_event_id is None:
+        return
+    fields: dict[str, object] = {
+        "outcome": outcome.value,
+        "note": note[:500],
+        "processed_at": timezone.now(),
+    }
+    if payment_id is not None:
+        fields["payment_id"] = payment_id
+    PaymentWebhookEvent.objects.filter(pk=stored_event_id).update(**fields)
