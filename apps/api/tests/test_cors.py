@@ -82,9 +82,7 @@ def test_the_preflight_allows_the_headers_every_request_carries() -> None:
     a preflight that allows two of three is refused exactly like one that
     allows none, and the request never leaves the tab.
     """
-    response = _preflight(
-        Client(), headers="authorization,content-type,x-currency,idempotency-key"
-    )
+    response = _preflight(Client(), headers="authorization,content-type,x-currency,idempotency-key")
 
     assert response.status_code == 200
     assert {
