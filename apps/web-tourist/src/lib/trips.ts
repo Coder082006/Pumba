@@ -149,6 +149,21 @@ export function cancelTrip(publicId: string): Promise<Trip> {
 }
 
 /**
+ * `DELETE /trips/{id}` — §24.24's Drafts, emptied.
+ *
+ * Deleting and cancelling are different things and the API keeps them apart:
+ * this removes a plan that was never booked, and `cancelTrip` records that a
+ * trip which *was* booked is off. Past PRICED the server answers 409 naming
+ * the other one, so a screen that offers this against a reserved trip gets a
+ * refusal rather than a surprise.
+ *
+ * Resolves to nothing — 204, no body.
+ */
+export function deleteTrip(publicId: string): Promise<void> {
+  return authed<void>(`/trips/${publicId}`, { method: 'DELETE' });
+}
+
+/**
  * Findings that name a given item — §10.6, §24.14.
  *
  * §10.6 gives every finding `item_ids` *"so the client can render an inline

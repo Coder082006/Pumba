@@ -13,7 +13,7 @@ import {
   tripStatusLabel,
   type Segment,
 } from '@/lib/trip-segments';
-import { listTrips, type TripSummary } from '@/lib/trips';
+import { deleteTrip, listTrips, type TripSummary } from '@/lib/trips';
 
 /**
  * My Trips — SRS §24.20's entry point.
@@ -34,7 +34,19 @@ import { listTrips, type TripSummary } from '@/lib/trips';
  * `lib/trip-segments`, tested there; the page only draws it. It opens on the
  * first segment that has something in it, so a tourist with one draft does not
  * land on an empty "Upcoming".
+ *
+ * **A draft can be thrown away here, and only a draft.** DELETABLE is read off
+ * the trip's status rather than off the segment: Drafts also holds a
+ * PENDING_PAYMENT trip, which has bookings behind it and is the server's 409,
+ * so offering the button there would be offering a refusal.
+ *
+ * The confirmation is a second press of the same button rather than a
+ * `window.confirm`. Deleting is irreversible and one stray click should not do
+ * it, but a modal for a plan nobody has paid for is heavier than the act.
  */
+
+/** Trip statuses the server will actually delete — `DISCARDABLE_STATES`. */
+const DELETABLE = new Set(['DRAFT', 'PRICED']);
 
 type State =
   | { status: 'loading' }
@@ -45,6 +57,9 @@ type State =
 export default function MyTripsPage() {
   const [state, setState] = useState<State>({ status: 'loading' });
   const [chosen, setChosen] = useState<Segment | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
 
   const bySegment = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -82,6 +97,30 @@ export default function MyTripsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const remove = useCallback(async (trip: TripSummary) => {
+    setRemoving(trip.public_id);
+    setProblem(null);
+    try {
+      await deleteTrip(trip.public_id);
+      // Dropped from the list here rather than by re-reading it: the row is
+      // gone, and a refetch would blank the whole page to say so.
+      setState((current) =>
+        current.status === 'ready'
+          ? { status: 'ready', trips: current.trips.filter((row) => row.public_id !== trip.public_id) }
+          : current,
+      );
+      setConfirming(null);
+    } catch (error) {
+      setProblem(
+        error instanceof ApiRequestError && error.status === 409
+          ? 'That trip has bookings against it, so it is cancelled rather than deleted.'
+          : 'That trip could not be deleted just now.',
+      );
+    } finally {
+      setRemoving(null);
+    }
+  }, []);
 
   return (
     <div className="space-y-8">
@@ -170,6 +209,12 @@ export default function MyTripsPage() {
             ))}
           </div>
 
+          {problem ? (
+            <p role="alert" className="rounded-md border border-destructive/40 p-3 text-sm">
+              {problem}
+            </p>
+          ) : null}
+
           {bySegment[segment].length === 0 ? (
             <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
               {EMPTY_SEGMENT[segment]}{' '}
@@ -219,6 +264,40 @@ export default function MyTripsPage() {
                         support, and then it is the only thing that matters. */}
                     <p className="mt-1 font-mono text-xs text-muted-foreground">{trip.reference}</p>
                   </Link>
+                  {DELETABLE.has(trip.status) ? (
+                    <p className="mt-1 flex justify-end gap-3 text-xs">
+                      {confirming === trip.public_id ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setConfirming(null)}
+                            className="text-muted-foreground hover:underline"
+                          >
+                            Keep it
+                          </button>
+                          <button
+                            type="button"
+                            disabled={removing === trip.public_id}
+                            onClick={() => void remove(trip)}
+                            className="font-semibold text-destructive-ink hover:underline disabled:opacity-60"
+                          >
+                            {removing === trip.public_id ? 'Deleting…' : 'Delete for good'}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProblem(null);
+                            setConfirming(trip.public_id);
+                          }}
+                          className="text-muted-foreground hover:text-destructive-ink hover:underline"
+                        >
+                          Delete this plan
+                        </button>
+                      )}
+                    </p>
+                  ) : null}
                 </li>
               ))}
             </ul>
