@@ -7,10 +7,12 @@ answers `200`, the browser declines to send the real request, and the server log
 shows an `OPTIONS` with nothing after it. There is no error, no status code and
 no failing test — only a screen that says a thing could not be loaded.
 
-That has now happened twice. `CORS_ALLOW_CREDENTIALS` defaulted to `False` and
-broke registration, sign-in, password reset and refresh; then §9.1's
+That has now happened three times. `CORS_ALLOW_CREDENTIALS` defaulted to
+`False` and broke registration, sign-in, password reset and refresh; then §9.1's
 `X-Currency` was attached to every request by `apiFetch` and was not in the
-allow-list, so choosing a currency broke the entire application at once.
+allow-list, so choosing a currency broke the entire application at once; then
+§9.4.5's required `Idempotency-Key` was missing too, so checkout could quote
+nothing and said only that it could not be reached.
 
 So the tests below are written to fail for a *new* header nobody remembered,
 rather than to check the two we know about: `test_every_request_header_the_api_reads_is_allowed`
@@ -27,6 +29,7 @@ import pytest
 from django.conf import settings
 from django.test import Client
 
+from apps.common.idempotency import IDEMPOTENCY_HEADER
 from apps.common.middleware import REQUEST_ID_RESPONSE_HEADER
 
 ORIGIN = "http://localhost:3000"
@@ -35,6 +38,21 @@ ORIGIN = "http://localhost:3000"
 # spelling is Django's own and is what makes this derivable rather than a list
 # somebody has to remember to extend.
 _META_HEADER = re.compile(r"HTTP_(X_[A-Z0-9_]+)")
+
+# A view may also ask for a header by its real name, and such a header need not
+# start with `X-`. `Idempotency-Key` is one, §9.4.5 requires it on the quote,
+# and it was missing from the allow-list for exactly as long as the pattern
+# above was the only one here: checkout preflighted and the browser then
+# refused to send the POST.
+_NAMED_HEADER = re.compile(r"""request\.headers(?:\.get\(|\[)["']([A-Za-z][A-Za-z0-9-]*)["']""")
+
+# Constants the source reads through a name rather than a literal. Each is
+# resolved rather than guessed, so a rename cannot leave a stale spelling here.
+_HEADER_CONSTANTS = (IDEMPOTENCY_HEADER,)
+
+# Headers the browser sets itself and may never be asked to permit: a preflight
+# that named them would be refused by the browser, not by us.
+_SET_BY_THE_BROWSER = {"origin", "user-agent"}
 
 # `X-Forwarded-Proto` is set by the reverse proxy, never by a browser, so it
 # needs no CORS permission. It is named rather than pattern-matched away: a
@@ -64,10 +82,17 @@ def test_the_preflight_allows_the_headers_every_request_carries() -> None:
     a preflight that allows two of three is refused exactly like one that
     allows none, and the request never leaves the tab.
     """
-    response = _preflight(Client(), headers="authorization,content-type,x-currency")
+    response = _preflight(
+        Client(), headers="authorization,content-type,x-currency,idempotency-key"
+    )
 
     assert response.status_code == 200
-    assert {"authorization", "content-type", "x-currency"} <= _allowed(response)
+    assert {
+        "authorization",
+        "content-type",
+        "x-currency",
+        "idempotency-key",
+    } <= _allowed(response)
 
 
 @pytest.mark.django_db
@@ -82,11 +107,18 @@ def test_every_request_header_the_api_reads_is_allowed() -> None:
         for path in Path(settings.BASE_DIR, "apps").rglob("*.py")
         if "tests" not in path.parts
     )
-    consumed = {name for name in _META_HEADER.findall(source) if name not in _SET_BY_INFRASTRUCTURE}
+    consumed = {
+        name.replace("_", "-").lower()
+        for name in _META_HEADER.findall(source)
+        if name not in _SET_BY_INFRASTRUCTURE
+    }
+    consumed |= {name.lower() for name in _NAMED_HEADER.findall(source)}
+    consumed |= {name.lower() for name in _HEADER_CONSTANTS}
+    consumed -= _SET_BY_THE_BROWSER
     assert consumed, "The pattern matched nothing; it has stopped tracking what it claims to."
 
     allowed = _allowed(_preflight(Client(), headers=",".join(consumed)))
-    missing = {name for name in consumed if name.replace("_", "-").lower() not in allowed}
+    missing = {name for name in consumed if name not in allowed}
     assert not missing, (
         f"{sorted(missing)} reach the API but no browser may send them. "
         "Add them to CORS_ALLOW_HEADERS in config/settings/base.py."

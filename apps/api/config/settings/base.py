@@ -155,7 +155,17 @@ CORS_ALLOW_CREDENTIALS = True
 # client-supplied correlation id when one arrives — a feature no browser could
 # use, since it could not send the header. Safe: the value is length-capped and
 # sanitised there before it reaches a log line.
-CORS_ALLOW_HEADERS = (*cors_default_headers, "x-currency", "x-request-id")
+# `idempotency-key` joins them for the same reason and was the third time:
+# §9.4.5 *requires* the header on the quote, so checkout preflighted, the
+# browser refused to send the POST, and the page said only that checkout could
+# not be reached. It is not an `X-` name, which is why the derivation test
+# below it now reads the headers the API asks for by name as well.
+CORS_ALLOW_HEADERS = (
+    *cors_default_headers,
+    "x-currency",
+    "x-request-id",
+    "idempotency-key",
+)
 
 # `X-Request-Id` is on every response and was readable by nobody.
 #
