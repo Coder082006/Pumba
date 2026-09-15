@@ -378,7 +378,20 @@ PORT_ADAPTERS = {
     # no external call, and a tourist downloading a voucher in development
     # should get a PDF. Tests override it to the fake (config.settings.ci).
     "document": env("DOCUMENT_ADAPTER", default="apps.booking.adapters.pdf.ReportLabDocuments"),
+    # ADR 0027, Appendix D-1. No default and no fake: an unset `PAYMENT_ADAPTER`
+    # leaves the port unresolvable, and asking for it raises. A gateway is the
+    # one port where "it fell back to something" is worse than "it failed".
+    **({"payment": env("PAYMENT_ADAPTER")} if env("PAYMENT_ADAPTER", default="") else {}),
 }
+
+# §21, ADR 0027. The Stripe adapter reads these; nothing else may. Absent in
+# development, which is why `PAYMENT_ADAPTER` is absent there too — the two are
+# configured together or not at all.
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", default="")
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", default="")
+
+#: §21.5: "Reject events with a timestamp skew > 5 minutes."
+PSP_WEBHOOK_MAX_SKEW_SECONDS = 300
 
 # Django's SMTP transport, which `apps.notify.adapters.smtp` sends through.
 # Names are Django's own so the framework's connection handling applies

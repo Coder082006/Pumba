@@ -30,4 +30,11 @@ LOGGING["root"]["level"] = "WARNING"  # type: ignore[index]  # noqa: F405
 # ADR 0026. Tests render vouchers through the fake, which returns readable text:
 # an assertion about what a voucher says should read words, not parse a PDF.
 # The real renderer has its own test that asks for it by name.
-PORT_ADAPTERS = {**PORT_ADAPTERS, "document": "fake"}  # noqa: F405
+# ADR 0027. `payment` has no default anywhere, so the tests name the fake —
+# which is the whole of how a fake gateway may be reached. A production
+# settings module that did this would be the defect the rule exists to prevent.
+PORT_ADAPTERS = {
+    **PORT_ADAPTERS,  # noqa: F405
+    "document": "fake",
+    "payment": "ports.fakes.FakePaymentGateway",
+}

@@ -34,6 +34,7 @@ from ports.crypto import CryptoPort
 from ports.document import DocumentPort
 from ports.exchange_rate import ExchangeRatePort
 from ports.notification import EmailPort, PushPort, SmsPort
+from ports.payment import PaymentGatewayPort
 from ports.storage import StoragePort
 
 logger = logging.getLogger(__name__)
@@ -47,8 +48,34 @@ __all__ = [
     "get_storage_port",
     "get_exchange_rate_port",
     "get_document_port",
+    "get_payment_port",
     "reset_ports",
+    "AdapterNotConfiguredError",
 ]
+
+
+class AdapterNotConfiguredError(RuntimeError):
+    """A port with no default was asked for before it was configured.
+
+    Not `ImproperlyConfigured`: this is raised at first use rather than at
+    start-up, because the port is reached on one path and a deployment that
+    never takes a payment should not fail to boot over it.
+    """
+
+
+#: Ports with no default adapter. Naming one is the only way to reach it, so a
+#: deployment that forgets to configure a gateway raises at first use rather
+#: than quietly taking imaginary money (ADR 0027, §21; Appendix D-1).
+#:
+#: `routing` keeps the stronger rule — no accessor at all — because §13.2
+#: forbids persisting an unconfirmed geocode and `FakeRouting` answers with a
+#: sha256-derived coordinate (Appendix D-2).
+_NO_DEFAULT = {
+    "payment": "ADR 0027, Appendix D-1. A gateway that reports success without "
+    "one being configured is the most dangerous double in the system; §21 has "
+    "real money behind it. `ci.py` names the fake explicitly; no production "
+    "settings module does.",
+}
 
 #: The fake used when a port has no adapter configured.
 _FAKES = {
@@ -68,6 +95,10 @@ _FAKES = {
 @cache
 def _resolve(name: str) -> Any:
     configured = getattr(settings, "PORT_ADAPTERS", {}).get(name, "fake")
+    if name in _NO_DEFAULT and configured == "fake":
+        raise AdapterNotConfiguredError(
+            f"No adapter is configured for the {name!r} port. {_NO_DEFAULT[name]}"
+        )
     path = _FAKES[name] if configured == "fake" else configured
     if configured == "fake":
         logger.warning(
@@ -114,3 +145,14 @@ def get_exchange_rate_port() -> ExchangeRatePort:
 def get_document_port() -> DocumentPort:
     """Voucher rendering — ADR 0026."""
     return _resolve("document")  # type: ignore[no-any-return]
+
+
+def get_payment_port() -> PaymentGatewayPort:
+    """The PSP — §21, ADR 0027.
+
+    Unlike every other accessor here, this one has no fallback: an unconfigured
+    `payment` raises `AdapterNotConfiguredError` rather than resolving a fake.
+    The fake is reachable only by being named in `PORT_ADAPTERS`, which the CI
+    settings do and production settings must not.
+    """
+    return _resolve("payment")  # type: ignore[no-any-return]
