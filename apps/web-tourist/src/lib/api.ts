@@ -89,7 +89,9 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 
-  const payload: unknown = await response.json().catch(() => null);
+  // 204 has no body at all, and `response.json()` on one throws. A caller that
+  // asked for nothing back gets nothing back rather than a parse error.
+  const payload: unknown = response.status === 204 ? null : await response.json().catch(() => null);
 
   if (!response.ok) {
     const error = (payload as ApiError | null)?.error;
@@ -105,6 +107,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     );
   }
 
+  if (response.status === 204) return undefined as T;
   return (payload as ApiEnvelope<T>).data;
 }
 

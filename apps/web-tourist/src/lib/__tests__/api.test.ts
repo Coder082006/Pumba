@@ -92,3 +92,24 @@ describe('apiFetch', () => {
     expect((init?.headers as Record<string, string>)['Idempotency-Key']).toBe('key-1');
   });
 });
+
+describe('a 204', () => {
+  it('resolves rather than trying to parse a body that is not there', async () => {
+    // `DELETE /trips/{id}` answers 204 with nothing. Calling `json()` on that
+    // throws, and the caller would see a parse error for a request that
+    // succeeded.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 204,
+        headers: { get: () => null },
+        json: async () => {
+          throw new SyntaxError('Unexpected end of JSON input');
+        },
+      }) as unknown as Response),
+    );
+
+    await expect(apiFetch('/trips/abc')).resolves.toBeUndefined();
+  });
+});
