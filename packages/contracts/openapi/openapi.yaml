@@ -797,6 +797,79 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/admin/bookings/{public_id}/force-transition:
+    post:
+      operationId: admin_bookings_force_transition_create
+      description: BR-038. Guards are bypassed; SRS 20.2's edges are not — an undeclared
+        transition is 409 ILLEGAL_TRANSITION for a SUPER_ADMIN too. A reason is required
+        and the action is always audited.
+      summary: Force a booking along a declared transition
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForceTransitionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ForceTransitionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ForceTransitionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForceTransitionResult'
+          description: ''
+  /api/v1/admin/bookings/{public_id}/voucher:
+    post:
+      operationId: admin_bookings_voucher_create
+      description: 'BR-038 names the role, not a permission: "only with the SUPER_ADMIN
+        role".'
+      summary: Re-issue a booking's voucher
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReissueVoucherRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReissueVoucherRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReissueVoucherRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReissueVoucherResult'
+          description: ''
   /api/v1/admin/cancellation-policies:
     post:
       operationId: admin_cancellation_policies_create
@@ -5207,6 +5280,57 @@ components:
       - gateway
       - pax_count
       - scheduled_at
+    ForceTransitionRequest:
+      type: object
+      description: 'BR-038: a target on a declared edge, and a reason — never optional.'
+      properties:
+        status:
+          $ref: '#/components/schemas/ForceTransitionStatusEnum'
+        reason:
+          type: string
+          minLength: 10
+          maxLength: 500
+      required:
+      - reason
+      - status
+    ForceTransitionResult:
+      type: object
+      properties:
+        before:
+          type: string
+          readOnly: true
+        after:
+          type: string
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+      required:
+      - after
+      - before
+      - reference
+    ForceTransitionStatusEnum:
+      enum:
+      - PENDING
+      - AWAITING_PROVIDER
+      - CONFIRMED
+      - IN_PROGRESS
+      - COMPLETED
+      - CANCELLED
+      - REFUNDED
+      - NO_SHOW
+      - FAILED
+      type: string
+      description: |-
+        * `PENDING` - PENDING
+        * `AWAITING_PROVIDER` - AWAITING_PROVIDER
+        * `CONFIRMED` - CONFIRMED
+        * `IN_PROGRESS` - IN_PROGRESS
+        * `COMPLETED` - COMPLETED
+        * `CANCELLED` - CANCELLED
+        * `REFUNDED` - REFUNDED
+        * `NO_SHOW` - NO_SHOW
+        * `FAILED` - FAILED
     ForgotPasswordRequest:
       type: object
       description: |-
@@ -7076,6 +7200,39 @@ components:
       required:
       - email
       - verification_required
+    ReissueVoucherRequest:
+      type: object
+      description: |-
+        Rejects unknown fields — SRS §30.6.
+
+        DRF ignores them by default, which turns a client's typo into silence and
+        lets a renamed field keep "working" while doing nothing.
+
+        It is also half of the write path's mass-assignment defence. The other
+        half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+        deliberate: this one gives the administrator a 422 naming the field they
+        got wrong, and that one holds even for a caller that never passed through
+        a serializer — the seed loader, a management command, a console shell.
+      properties:
+        reason:
+          type: string
+          minLength: 10
+          maxLength: 500
+      required:
+      - reason
+    ReissueVoucherResult:
+      type: object
+      properties:
+        issue_number:
+          type: integer
+          readOnly: true
+        issued_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - issue_number
+      - issued_at
     ResendVerificationRequest:
       type: object
       description: |-

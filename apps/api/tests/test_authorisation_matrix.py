@@ -361,6 +361,20 @@ SCOPED_BY_A_BODY_IDENTIFIER = {
 #: narrower scope — which is exactly what Phase 11 does — the build fails here
 #: and names the route that has to grow a filter.
 GLOBAL_BY_ROLE: dict[str, tuple[Permission, Resource, str]] = {
+    # §27.9's exceptional controls, BR-038: SUPER_ADMIN only, and SUPER_ADMIN
+    # holds `Scope.GLOBAL` over BOOKING. `SYSTEM_CONFIGURE` is the permission
+    # only SUPER_ADMIN holds, which is what the guard below re-derives from.
+    "v1:administration:admin-booking-force-transition": (
+        Permission.SYSTEM_CONFIGURE,
+        Resource.BOOKING,
+        "BR-038. Gated on the SUPER_ADMIN role, which holds `Scope.GLOBAL` over "
+        "BOOKING; there is no narrower principal a filter could scope by.",
+    ),
+    "v1:administration:admin-booking-voucher-reissue": (
+        Permission.SYSTEM_CONFIGURE,
+        Resource.BOOKING,
+        "§27.9's voucher re-issue, the same SUPER_ADMIN-only control.",
+    ),
     # §27.7's provider console. §5.2 puts verification with COMPLIANCE_ADMIN,
     # and a provider cannot be scoped to itself here because the caller is
     # never the provider — the portal that would be is Phase 11.

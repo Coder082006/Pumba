@@ -50,6 +50,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.administration.models import AuditLog
+from apps.booking import services as booking
 from apps.catalogue import services as catalogue
 from apps.common.audit import AuditAction, AuditRecord, record_audit
 from apps.common.authz import Principal
@@ -72,6 +73,8 @@ __all__ = [
     "get_provider",
     "change_provider_status",
     "assign_activity_provider",
+    "force_booking_transition",
+    "reissue_booking_voucher",
 ]
 
 
@@ -540,3 +543,53 @@ def assign_activity_provider(
         ip=ip,
     )
     return {"activity": activity_public_id, "provider": _provider_payload(owner)}
+
+
+# -- §27.9 exceptional booking controls -----------------------------------------------
+
+
+@transaction.atomic
+def force_booking_transition(
+    public_id: UUID,
+    *,
+    target: str,
+    reason: str,
+    principal: Principal,
+    ip: str | None,
+) -> dict[str, Any]:
+    """BR-038: SUPER_ADMIN only, with a recorded reason, and always audited.
+
+    Audited inside the transaction that moved the booking, so the log and the
+    booking cannot disagree about whether it happened.
+    """
+    result = booking.force_transition(
+        public_id, target=target, actor_user_id=principal.user_id, reason=reason
+    )
+    _audit(
+        AuditAction.BOOKING_FORCED,
+        "booking",
+        public_id,
+        principal=principal,
+        ip=ip,
+        before={"status": result.before},
+        after={"status": result.after},
+        reason=reason,
+    )
+    return {"before": result.before, "after": result.after, "booking": result.booking}
+
+
+@transaction.atomic
+def reissue_booking_voucher(
+    public_id: UUID, *, reason: str, principal: Principal, ip: str | None
+) -> dict[str, Any]:
+    voucher = booking.reissue_voucher(public_id, actor_user_id=principal.user_id, reason=reason)
+    _audit(
+        AuditAction.VOUCHER_REISSUED,
+        "booking",
+        public_id,
+        principal=principal,
+        ip=ip,
+        after={"issue_number": str(voucher.issue_number)},
+        reason=reason,
+    )
+    return {"issue_number": voucher.issue_number, "issued_at": voucher.issued_at}

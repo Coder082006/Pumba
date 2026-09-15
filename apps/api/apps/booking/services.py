@@ -99,6 +99,9 @@ __all__ = [
     "BookingDetailDTO",
     "list_bookings",
     "booking_detail",
+    "ForcedTransitionDTO",
+    "force_transition",
+    "reissue_voucher",
 ]
 
 
@@ -1483,3 +1486,130 @@ def booking_detail(row: Booking) -> BookingDetailDTO:
         history=history,
         has_voucher=row.vouchers.exists(),
     )
+
+
+# -- §27.9 / BR-038: exceptional controls -----------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ForcedTransitionDTO:
+    before: str
+    after: str
+    booking: BookingDTO
+
+
+@transaction.atomic
+def force_transition(
+    public_id: UUID,
+    *,
+    target: str,
+    actor_user_id: int,
+    reason: str,
+    now: datetime | None = None,
+) -> ForcedTransitionDTO:
+    """`POST /admin/bookings/{id}/force-transition` — BR-038.
+
+    Guards are bypassed; §20.2's edges are not (`lifecycle.force`). What a
+    forced move *does* is the same as the ordinary move to that state, so a
+    forced booking is indistinguishable from a normal one except in its history:
+
+    - **to CONFIRMED or AWAITING_PROVIDER from PENDING** runs §20.8 for the whole
+      basket — capacity committed, vouchers issued — because confirming one
+      component of a paid basket and not the others is a state §20.8 never
+      produces;
+    - **to CANCELLED** cancels as the platform, so the tourist is refunded in
+      full (BR-045): an administrator overriding a booking is supply failing;
+    - **anything else** moves the status and stamps its timestamp.
+    """
+    now = now or timezone.now()
+    row = Booking.objects.select_for_update().filter(public_id=public_id).first()
+    if row is None:
+        raise NotFoundError()
+    before = BookingState(row.status)
+    wanted = BookingState(target)
+    force(before, wanted)
+
+    if before is BookingState.PENDING and wanted in (
+        BookingState.CONFIRMED,
+        BookingState.AWAITING_PROVIDER,
+    ):
+        confirm_trip(
+            row.trip_id, payment_captured=False, now=now, forced_by=actor_user_id, reason=reason
+        )
+    elif wanted is BookingState.CANCELLED:
+        _cancel_as_platform(row, actor_user_id=actor_user_id, reason=reason, now=now)
+    else:
+        fields: dict[str, object] = {}
+        if wanted is BookingState.COMPLETED:
+            fields["completed_at"] = now
+        if wanted is BookingState.CONFIRMED:
+            fields["confirmed_at"] = now
+        repo.set_status(row, wanted.value, **fields)
+        repo.record_transition(
+            row,
+            from_status=before.value,
+            to_status=wanted.value,
+            actor_role="SUPER_ADMIN",
+            actor_user_id=actor_user_id,
+            reason=reason,
+            occurred_at=now,
+        )
+        if wanted is BookingState.CONFIRMED:
+            issue_voucher(row, issued_by=actor_user_id, reason=reason, now=now)
+
+    row.refresh_from_db()
+    return ForcedTransitionDTO(before=before.value, after=row.status, booking=_booking_dto(row, ""))
+
+
+def _cancel_as_platform(row: Booking, *, actor_user_id: int, reason: str, now: datetime) -> None:
+    was = BookingState(row.status)
+    refund = _refund_for(row, party=Party.PLATFORM, now=now)
+    repo.set_status(
+        row,
+        BookingState.CANCELLED.value,
+        cancelled_at=now,
+        cancelled_by="PLATFORM",
+        cancellation_reason="ADMIN_ACTION",
+    )
+    repo.record_transition(
+        row,
+        from_status=was.value,
+        to_status=BookingState.CANCELLED.value,
+        actor_role="SUPER_ADMIN",
+        actor_user_id=actor_user_id,
+        reason=reason,
+        occurred_at=now,
+    )
+    activity = BookingActivity.objects.filter(booking=row).first()
+    if activity is not None:
+        if was is BookingState.PENDING:
+            inventory.release_departure(
+                trip_id=row.trip_id, departure_id=activity.activity_departure_id
+            )
+        elif was in (BookingState.CONFIRMED, BookingState.AWAITING_PROVIDER):
+            inventory.return_sold(
+                departure_id=activity.activity_departure_id, quantity=row.pax_count
+            )
+    publish(
+        BookingCancelled(
+            booking_public_id=str(row.public_id),
+            reference=row.reference,
+            trip_id=row.trip_id,
+            provider_id=row.provider_id,
+            cancelled_by="PLATFORM",
+            reason="ADMIN_ACTION",
+            refund_amount=str(refund.refund_amount),
+            currency=row.currency,
+        )
+    )
+    _end_trip_if_every_component_is_cancelled(row.trip_id)
+
+
+def reissue_voucher(public_id: UUID, *, actor_user_id: int, reason: str) -> BookingVoucher:
+    """§27.9: "re-issue a voucher", with a reason. Issue n + 1; earlier ones kept."""
+    row = Booking.objects.filter(public_id=public_id).first()
+    if row is None:
+        raise NotFoundError()
+    if not row.vouchers.exists():
+        raise ConflictError("Only a confirmed booking's voucher can be re-issued.")
+    return issue_voucher(row, issued_by=actor_user_id, reason=reason)

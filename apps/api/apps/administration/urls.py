@@ -22,6 +22,8 @@ from django.urls import path
 
 from apps.administration.views import (
     AdminActivityProviderView,
+    AdminBookingForceTransitionView,
+    AdminBookingVoucherReissueView,
     AdminCorridorCreateView,
     AdminCorridorDetailView,
     AdminProviderDetailView,
@@ -72,5 +74,16 @@ urlpatterns = [
         "admin/activities/<uuid:public_id>/provider",
         AdminActivityProviderView.as_view(),
         name="admin-activity-provider",
+    ),
+    # §9.3 / §27.9: exceptional booking controls. BR-038.
+    path(
+        "admin/bookings/<uuid:public_id>/force-transition",
+        AdminBookingForceTransitionView.as_view(),
+        name="admin-booking-force-transition",
+    ),
+    path(
+        "admin/bookings/<uuid:public_id>/voucher",
+        AdminBookingVoucherReissueView.as_view(),
+        name="admin-booking-voucher-reissue",
     ),
 ]

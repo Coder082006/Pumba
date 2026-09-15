@@ -482,6 +482,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/bookings/{public_id}/force-transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Force a booking along a declared transition
+         * @description BR-038. Guards are bypassed; SRS 20.2's edges are not — an undeclared transition is 409 ILLEGAL_TRANSITION for a SUPER_ADMIN too. A reason is required and the action is always audited.
+         */
+        post: operations["admin_bookings_force_transition_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/bookings/{public_id}/voucher": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-issue a booking's voucher
+         * @description BR-038 names the role, not a permission: "only with the SUPER_ADMIN role".
+         */
+        post: operations["admin_bookings_voucher_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/cancellation-policies": {
         parameters: {
             query?: never;
@@ -2859,6 +2899,29 @@ export interface components {
             /** @default 0 */
             luggage_count: number;
         };
+        /** @description BR-038: a target on a declared edge, and a reason — never optional. */
+        ForceTransitionRequest: {
+            status: components["schemas"]["ForceTransitionStatusEnum"];
+            reason: string;
+        };
+        ForceTransitionResult: {
+            readonly before: string;
+            readonly after: string;
+            readonly reference: string;
+        };
+        /**
+         * @description * `PENDING` - PENDING
+         *     * `AWAITING_PROVIDER` - AWAITING_PROVIDER
+         *     * `CONFIRMED` - CONFIRMED
+         *     * `IN_PROGRESS` - IN_PROGRESS
+         *     * `COMPLETED` - COMPLETED
+         *     * `CANCELLED` - CANCELLED
+         *     * `REFUNDED` - REFUNDED
+         *     * `NO_SHOW` - NO_SHOW
+         *     * `FAILED` - FAILED
+         * @enum {string}
+         */
+        ForceTransitionStatusEnum: "PENDING" | "AWAITING_PROVIDER" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "REFUNDED" | "NO_SHOW" | "FAILED";
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
@@ -3664,6 +3727,24 @@ export interface components {
             /** Format: email */
             readonly email: string;
             readonly verification_required: boolean;
+        };
+        /** @description Rejects unknown fields — SRS §30.6.
+         *
+         *     DRF ignores them by default, which turns a client's typo into silence and
+         *     lets a renamed field keep "working" while doing nothing.
+         *
+         *     It is also half of the write path's mass-assignment defence. The other
+         *     half is `apps.catalogue.repositories._WRITABLE`, and the duplication is
+         *     deliberate: this one gives the administrator a 422 naming the field they
+         *     got wrong, and that one holds even for a caller that never passed through
+         *     a serializer — the seed loader, a management command, a console shell. */
+        ReissueVoucherRequest: {
+            reason: string;
+        };
+        ReissueVoucherResult: {
+            readonly issue_number: number;
+            /** Format: date-time */
+            readonly issued_at: string;
         };
         /** @description Rejects unknown fields — SRS §30.6.
          *
@@ -4647,6 +4728,60 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    admin_bookings_force_transition_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForceTransitionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ForceTransitionRequest"];
+                "multipart/form-data": components["schemas"]["ForceTransitionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForceTransitionResult"];
+                };
+            };
+        };
+    };
+    admin_bookings_voucher_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReissueVoucherRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReissueVoucherRequest"];
+                "multipart/form-data": components["schemas"]["ReissueVoucherRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReissueVoucherResult"];
+                };
             };
         };
     };

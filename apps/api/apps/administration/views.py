@@ -32,9 +32,17 @@ from rest_framework.views import APIView
 from apps.administration import serializers as ser
 from apps.administration import services
 from apps.common.authentication import principal_from_request
+from apps.common.authz import Role
 from apps.common.envelope import success_envelope
 from apps.common.errors import ValidationError
-from apps.common.permissions import CATALOGUE_ADMIN_PERMISSIONS, PROVIDER_ADMIN_PERMISSIONS
+from apps.common.permissions import (
+    CATALOGUE_ADMIN_PERMISSIONS,
+    PROVIDER_ADMIN_PERMISSIONS,
+    EmailVerified,
+    HasRole,
+    IsAuthenticatedPrincipal,
+    MfaSatisfied,
+)
 
 __all__ = [
     "AdminCorridorCreateView",
@@ -46,6 +54,8 @@ __all__ = [
     "AdminProviderDetailView",
     "AdminProviderStatusView",
     "AdminActivityProviderView",
+    "AdminBookingForceTransitionView",
+    "AdminBookingVoucherReissueView",
 ]
 
 _TAGS = ["Administration"]
@@ -317,3 +327,63 @@ class AdminActivityProviderView(_AdminView):
         )
         provider = dict(ser.ProviderReadSerializer(result["provider"]).data)
         return Response(success_envelope(provider))
+
+
+# -- §27.9 exceptional booking controls -------------------------------------------------------
+
+
+class _SuperAdminView(_AdminView):
+    """BR-038 names the role, not a permission: "only with the SUPER_ADMIN role"."""
+
+    permission_classes = [
+        IsAuthenticatedPrincipal,
+        HasRole.for_(Role.SUPER_ADMIN),
+        EmailVerified,
+        MfaSatisfied,
+    ]
+
+
+class AdminBookingForceTransitionView(_SuperAdminView):
+    @extend_schema(
+        request=ser.ForceTransitionSerializer,
+        responses={200: ser.ForceTransitionResultSerializer},
+        summary="Force a booking along a declared transition",
+        description=(
+            "BR-038. Guards are bypassed; SRS 20.2's edges are not — an undeclared "
+            "transition is 409 ILLEGAL_TRANSITION for a SUPER_ADMIN too. A reason "
+            "is required and the action is always audited."
+        ),
+        tags=_TAGS,
+    )
+    def post(self, request: Request, public_id: UUID) -> Response:
+        body = self._validated(request, ser.ForceTransitionSerializer, partial=False)
+        principal = principal_from_request(request)
+        assert principal is not None
+        result = services.force_booking_transition(
+            public_id,
+            target=body["status"],
+            reason=body["reason"],
+            principal=principal,
+            ip=self._ip(request),
+        )
+        return Response(success_envelope(dict(ser.ForceTransitionResultSerializer(result).data)))
+
+
+class AdminBookingVoucherReissueView(_SuperAdminView):
+    @extend_schema(
+        request=ser.ReissueVoucherSerializer,
+        responses={201: ser.ReissueVoucherResultSerializer},
+        summary="Re-issue a booking's voucher",
+        tags=_TAGS,
+    )
+    def post(self, request: Request, public_id: UUID) -> Response:
+        body = self._validated(request, ser.ReissueVoucherSerializer, partial=False)
+        principal = principal_from_request(request)
+        assert principal is not None
+        result = services.reissue_booking_voucher(
+            public_id, reason=body["reason"], principal=principal, ip=self._ip(request)
+        )
+        return Response(
+            success_envelope(dict(ser.ReissueVoucherResultSerializer(result).data)),
+            status=status.HTTP_201_CREATED,
+        )

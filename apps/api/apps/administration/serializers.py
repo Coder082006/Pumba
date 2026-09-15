@@ -35,6 +35,10 @@ __all__ = [
     "ProviderStatusSerializer",
     "ProviderStatusResultSerializer",
     "ActivityProviderSerializer",
+    "ForceTransitionSerializer",
+    "ForceTransitionResultSerializer",
+    "ReissueVoucherSerializer",
+    "ReissueVoucherResultSerializer",
 ]
 
 
@@ -245,3 +249,40 @@ class ActivityProviderSerializer(StrictSerializer):
     """The provider that sells an activity, by its public id."""
 
     provider = serializers.UUIDField()
+
+
+# -- §27.9 exceptional booking controls ---------------------------------------------------
+
+
+class ForceTransitionSerializer(StrictSerializer):
+    """BR-038: a target on a declared edge, and a reason — never optional."""
+
+    status = serializers.ChoiceField(
+        choices=[
+            "PENDING",
+            "AWAITING_PROVIDER",
+            "CONFIRMED",
+            "IN_PROGRESS",
+            "COMPLETED",
+            "CANCELLED",
+            "REFUNDED",
+            "NO_SHOW",
+            "FAILED",
+        ]
+    )
+    reason = serializers.CharField(min_length=10, max_length=500)
+
+
+class ForceTransitionResultSerializer(serializers.Serializer[Any]):
+    before = serializers.CharField(read_only=True)
+    after = serializers.CharField(read_only=True)
+    reference = serializers.CharField(source="booking.reference", read_only=True)
+
+
+class ReissueVoucherSerializer(StrictSerializer):
+    reason = serializers.CharField(min_length=10, max_length=500)
+
+
+class ReissueVoucherResultSerializer(serializers.Serializer[Any]):
+    issue_number = serializers.IntegerField(read_only=True)
+    issued_at = serializers.DateTimeField(read_only=True)

@@ -98,6 +98,10 @@ class AuditAction(StrEnum):
     PROVIDER_UPDATED = "provider.updated"
     PROVIDER_STATUS_CHANGED = "provider.status_changed"
 
+    # Phase 7 — §27.9's exceptional controls. BR-038: "always audited".
+    BOOKING_FORCED = "booking.force_transition"
+    VOUCHER_REISSUED = "booking.voucher_reissued"
+
 
 @dataclass(frozen=True, slots=True)
 class AuditRecord:
