@@ -2955,6 +2955,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/Trip'
           description: ''
+    delete:
+      operationId: trips_destroy
+      description: |-
+        §24.24's Drafts: a plan thrown away, not a booking cancelled.
+
+        204 rather than the trip, because unlike every other mutation here
+        there is nothing left to render. A trip with bookings behind it is a
+        409 naming `cancel` instead, raised by the service.
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - trips
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/trips/{public_id}/cancel:
     post:
       operationId: trips_cancel_create

@@ -1904,7 +1904,12 @@ export interface paths {
         get: operations["trips_retrieve"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** @description §24.24's Drafts: a plan thrown away, not a booking cancelled.
+         *
+         *     204 rather than the trip, because unlike every other mutation here
+         *     there is nothing left to render. A trip with bookings behind it is a
+         *     409 naming `cancel` instead, raised by the service. */
+        delete: operations["trips_destroy"];
         options?: never;
         head?: never;
         /** @description Authenticated, and a tourist. Ownership is the service's, not ours. */
@@ -6465,6 +6470,26 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Trip"];
                 };
+            };
+        };
+    };
+    trips_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -376,3 +376,54 @@ class TestCancel:
         trip = create_trip(tourist, destination.slug)
         tourist.post(f"/api/v1/trips/{trip['public_id']}/cancel")
         assert tourist.post(f"/api/v1/trips/{trip['public_id']}/cancel").status_code == 409
+
+
+class TestDelete:
+    """§24.24's Drafts. A plan thrown away, which a cancellation is not."""
+
+    def test_a_draft_is_deleted_and_stops_being_listed(
+        self, tourist: APIClient, destination: Any
+    ) -> None:
+        trip = create_trip(tourist, destination.slug)
+
+        response = tourist.delete(f"/api/v1/trips/{trip['public_id']}")
+
+        assert response.status_code == 204
+        assert response.content == b""
+        listed = [row["public_id"] for row in body(tourist.get("/api/v1/trips"))]
+        assert trip["public_id"] not in listed
+
+    def test_deleting_it_twice_is_404_like_anything_else_that_is_gone(
+        self, tourist: APIClient, destination: Any
+    ) -> None:
+        trip = create_trip(tourist, destination.slug)
+        tourist.delete(f"/api/v1/trips/{trip['public_id']}")
+
+        assert tourist.delete(f"/api/v1/trips/{trip['public_id']}").status_code == 404
+
+    def test_a_stranger_cannot_delete_it_and_cannot_tell_it_exists(
+        self, tourist: APIClient, destination: Any
+    ) -> None:
+        """§30.3: the same status and the same body as a trip that never was."""
+        trip = create_trip(tourist, destination.slug)
+        stranger = signed_in_as()
+
+        refused = stranger.delete(f"/api/v1/trips/{trip['public_id']}")
+        absent = stranger.delete(f"/api/v1/trips/{UNKNOWN}")
+
+        assert refused.status_code == absent.status_code == 404
+        assert refused.json()["error"]["code"] == absent.json()["error"]["code"]
+        assert tourist.get(f"/api/v1/trips/{trip['public_id']}").status_code == 200
+
+    def test_a_cancelled_trip_is_a_record_and_is_refused(
+        self, tourist: APIClient, destination: Any
+    ) -> None:
+        """Deletion is for plans. Past PRICED a trip has bookings behind it,
+        and the message says to cancel rather than naming a status."""
+        trip = create_trip(tourist, destination.slug)
+        tourist.post(f"/api/v1/trips/{trip['public_id']}/cancel")
+
+        response = tourist.delete(f"/api/v1/trips/{trip['public_id']}")
+
+        assert response.status_code == 409
+        assert "cancel" in response.json()["error"]["message"]

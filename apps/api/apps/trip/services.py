@@ -90,6 +90,7 @@ from apps.trip.travel import build_travel_time, place_key
 __all__ = [
     "TripCreated",
     "TripCancelled",
+    "TripDeleted",
     "ADDABLE_ITEM_TYPES",
     "LockedItemError",
     "create_trip",
@@ -97,6 +98,7 @@ __all__ = [
     "add_item",
     "update_item",
     "remove_item",
+    "delete_trip",
     "set_flights",
     "cancel_trip",
     "generate_itinerary",
@@ -140,6 +142,23 @@ class TripCancelled(DomainEvent):
     name = "trip.cancelled"
     trip_public_id: str = ""
     tourist_id: int = 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TripDeleted(DomainEvent):
+    """A plan the tourist threw away, row and all — `delete_trip`.
+
+    Carries `trip_id`, the storage id, which no other event here does. The one
+    consumer is the hold release, and `inventory` keys holds by that id (R42);
+    by the time a handler runs the row is gone, so a public id could no longer
+    be resolved into it. §6.4 forbids `trip -> inventory`, so this event is the
+    seam — the same shape §8.9 uses everywhere else, not a new mechanism.
+    """
+
+    name = "trip.deleted"
+    trip_public_id: str = ""
+    tourist_id: int = 0
+    trip_id: int = 0
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -568,6 +587,56 @@ def cancel_trip(public_id: UUID, *, tourist_id: int) -> TripDTO:
         lambda: publish(TripCancelled(trip_public_id=str(trip.public_id), tourist_id=tourist_id))
     )
     return _dto(trip)
+
+
+#: The states in which a trip is still only a plan, and may therefore be thrown
+#: away rather than cancelled. Everything past PRICED has bookings behind it,
+#: and §7.2 excludes booking records from deletion of any kind — those end in
+#: CANCELLED, which is a state with a timestamp, not a row that stops existing.
+DISCARDABLE_STATES = frozenset({TripState.DRAFT, TripState.PRICED})
+
+
+def delete_trip(public_id: UUID, *, tourist_id: int) -> None:
+    """`DELETE /trips/{id}` — a draft the tourist no longer wants, removed.
+
+    **Why this deletes rather than soft-deletes.** §7.2 reserves soft deletion
+    for catalogue and user-facing entities and excludes financial and booking
+    records; the reason a trip is not a `SoftDeleteModel` is that an abandoned
+    *booked* trip is CANCELLED. A DRAFT or PRICED trip has no booking and no
+    money against it — it is a plan — so there is no record here to preserve,
+    and hiding the row behind a flag would leave My Trips reading a column that
+    means "the tourist does not want to see this" and nothing else.
+
+    Refused past PRICED, where bookings exist: `cancel_trip` is that path, and
+    the message says so rather than failing on a status the tourist never sees.
+    A locked item refuses it too — §10.8's padlock means a confirmed booking
+    covers that row, and a trip in an editable state carrying one is a state
+    only a partial confirmation produces.
+
+    The held seats are `inventory`'s, which §6.4 puts out of reach here, so
+    `TripDeleted` carries the storage id for `booking` to release after commit.
+    Nothing is lost if that handler never runs: §17.5's sweeper releases the
+    same holds when they expire, and it already tolerates a trip that is gone.
+    """
+    trip = _owned(public_id, tourist_id)
+    if TripState(trip.status) not in DISCARDABLE_STATES:
+        raise ConflictError(
+            f"a trip in {trip.status} has bookings behind it and cannot be deleted; "
+            "cancel it instead"
+        )
+    locked = ItineraryItem.objects.filter(itinerary__trip_id=trip.pk, is_locked=True).exists()
+    if locked:
+        raise ConflictError(
+            "part of this trip is covered by a confirmed booking and cannot be deleted; "
+            "cancel it instead"
+        )
+
+    event = TripDeleted(trip_public_id=str(trip.public_id), tourist_id=tourist_id, trip_id=trip.pk)
+    trip.delete()
+    # `publish` defers to commit itself, so this is not wrapped in a second
+    # `on_commit`: the event is built before the delete because it carries the
+    # storage id, and after the delete there is no row left to read it from.
+    publish(event)
 
 
 # ---------------------------------------------------------------------------

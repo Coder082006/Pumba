@@ -98,6 +98,17 @@ class TripDetailView(_TouristView):
         )
         return _trip_response(trip)
 
+    @extend_schema(request=None, responses={204: None})
+    def delete(self, request: Request, public_id: UUID) -> Response:
+        """§24.24's Drafts: a plan thrown away, not a booking cancelled.
+
+        204 rather than the trip, because unlike every other mutation here
+        there is nothing left to render. A trip with bookings behind it is a
+        409 naming `cancel` instead, raised by the service.
+        """
+        services.delete_trip(public_id, tourist_id=tourist_id_of(request))
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class TripItemsView(_TouristView):
     @extend_schema(request=ser.AddItemSerializer, responses={201: ser.TripSerializer})
