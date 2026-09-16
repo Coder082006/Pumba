@@ -1342,6 +1342,35 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/admin/payments:
+    get:
+      operationId: admin_payments_list
+      description: |-
+        Finance reads money; §5.2 gives FINANCE_OFFICER `FINANCE_READ` globally.
+
+        SUPER_ADMIN holds every permission, so the console is reachable by both
+        without naming roles here — a role list would drift from §5.2's table the
+        first time somebody added a role.
+      summary: Search payments
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: §21.4 status to filter by
+      tags:
+      - Administration
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminPayment'
+          description: ''
   /api/v1/admin/providers:
     get:
       operationId: admin_providers_list
@@ -2833,6 +2862,59 @@ paths:
                 items:
                   $ref: '#/components/schemas/PaymentMethod'
           description: ''
+  /api/v1/refunds:
+    get:
+      operationId: refunds_list
+      description: §27.10's refund queue, and §9.3.7's `POST /refunds`.
+      summary: Refund queue
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: REQUESTED, SETTLED or FAILED
+      tags:
+      - Administration
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RefundRead'
+          description: ''
+    post:
+      operationId: refunds_create
+      description: '§21.6. A refund following a cancellation policy is written automatically
+        and never passes through here. BR-047: above `refund.auto_approve_limit` the
+        caller must hold REFUND_APPROVE.'
+      summary: Issue a discretionary refund
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RefundRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RefundRequestRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRead'
+          description: ''
   /api/v1/search:
     get:
       operationId: search_list
@@ -3989,6 +4071,64 @@ components:
       - item_type
       - sequence_no
       - starts_at
+    AdminPayment:
+      type: object
+      description: §27.10's payment search. Enough to find one and see what happened
+        to it.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        trip_id:
+          type: string
+          format: uuid
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        method:
+          type: string
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        psp_reference:
+          type:
+          - string
+          - 'null'
+          readOnly: true
+        failure_code:
+          type: string
+          readOnly: true
+        captured_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        created_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+      required:
+      - amount
+      - captured_at
+      - created_at
+      - currency
+      - failure_code
+      - id
+      - method
+      - psp_reference
+      - status
+      - trip_id
     Attraction:
       type: object
       properties:
@@ -7378,6 +7518,93 @@ components:
       properties:
         refresh_token:
           type: string
+    RefundRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        payment_id:
+          type: string
+          format: uuid
+          readOnly: true
+        booking_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        reason_code:
+          type: string
+          readOnly: true
+        requested_at:
+          type: string
+          format: date-time
+          readOnly: true
+        settled_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        failure_code:
+          type: string
+          readOnly: true
+      required:
+      - amount
+      - booking_id
+      - currency
+      - failure_code
+      - id
+      - payment_id
+      - reason_code
+      - requested_at
+      - settled_at
+      - status
+    RefundRequestRequest:
+      type: object
+      description: |-
+        `POST /refunds` — §9.3.7, an administrator's discretionary refund.
+
+        The amount is required and is not derived from a policy: this is the path
+        §21.6 calls "discretionary or goodwill". A refund that *does* follow a
+        cancellation policy is written by `payment.handlers` from the event
+        `booking` publishes, and never passes through here — BR-043 means it must
+        equal the preview, and a human retyping it is how those two diverge.
+      properties:
+        payment:
+          type: string
+          format: uuid
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        reason_code:
+          type: string
+          minLength: 1
+          maxLength: 40
+        reason:
+          type: string
+          maxLength: 500
+        approve:
+          type: boolean
+          default: false
+      required:
+      - amount
+      - payment
+      - reason_code
     Region:
       type: object
       properties:

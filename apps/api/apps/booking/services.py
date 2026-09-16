@@ -45,7 +45,8 @@ from django.utils import timezone
 
 from apps.booking import repositories as repo
 from apps.booking.domain.allocation import allocate
-from apps.booking.domain.cancellation import Party, Refund, evaluate
+from apps.booking.domain.cancellation import Party, Refund, RefundExceedsCapturedError, evaluate
+from apps.booking.domain.cancellation import assert_refundable as domain_assert_refundable
 from apps.booking.domain.lifecycle import ACTORS, Actor, BookingState, apply, force
 from apps.booking.domain.voucher import money_text, party_text, policy_summary, when_text
 from apps.booking.dto import BasketDTO, BookingDTO, VoucherDTO
@@ -101,6 +102,11 @@ __all__ = [
     "owned_trip_id",
     "booking_detail",
     "ForcedTransitionDTO",
+    "assert_refundable",
+    "RefundExceedsCapturedError",
+    "booking_id_for",
+    "public_id_of_booking",
+    "settle_refund",
     "force_transition",
     "reissue_voucher",
 ]
@@ -1505,6 +1511,88 @@ class ForcedTransitionDTO:
 
 
 @transaction.atomic
+def assert_refundable(requested: Decimal, *, paid: Decimal, already_refunded: Decimal) -> None:
+    """BR-044, through this module's door — §6.5 rule 1.
+
+    The rule itself is `domain.cancellation.assert_refundable`, where it is
+    pure and tested. This is how `payment` reaches it: `private-booking` closes
+    this module's domain to everyone else, and the alternative — widening that
+    contract — would open the whole of §20.9's internals to reach one function.
+    """
+    domain_assert_refundable(requested, paid=paid, already_refunded=already_refunded)
+
+
+def booking_id_for(public_id: str | UUID) -> int | None:
+    """The storage id behind a public one, or `None`.
+
+    For `payment`, which holds a booking's public id on an event and stores the
+    storage id on a refund (ADR 0012). `private-booking` closes this module's
+    models to every other module, and a lookup is the whole of what is needed —
+    so it is a function here rather than a reason to widen the contract.
+    """
+    try:
+        value = UUID(str(public_id))
+    except ValueError:
+        return None
+    row = Booking.objects.filter(public_id=value).values_list("id", flat=True).first()
+    return None if row is None else int(row)
+
+
+def public_id_of_booking(booking_id: int) -> UUID:
+    """The other direction. Raises, because a refund naming a booking that is
+    gone is a broken invariant rather than a missing value."""
+    value = Booking.objects.filter(pk=booking_id).values_list("public_id", flat=True).first()
+    if value is None:
+        raise NotFoundError(f"no booking {booking_id}")
+    return UUID(str(value))
+
+
+def settle_refund(
+    public_id: UUID,
+    *,
+    now: datetime | None = None,
+    reason: str = "",
+) -> bool:
+    """§20.2's last edge: CANCELLED → REFUNDED, "refund settled at PSP".
+
+    Called by `payment` once money is actually back with the tourist, and by
+    nothing else — the guard's context flag is `refund_settled`, and the only
+    module that can know it is the one holding the PSP's answer.
+
+    Returns whether anything moved. A booking that is already REFUNDED is a
+    no-op rather than an error: a retried settlement task must be able to run
+    twice, and §8.8 requires every job to be idempotent.
+
+    Actor SYSTEM, which is what `ACTORS` gives this edge — a refund settling is
+    nobody's decision, it is a fact arriving.
+    """
+    now = now or timezone.now()
+    with transaction.atomic():
+        row = Booking.objects.select_for_update().filter(public_id=public_id).first()
+        if row is None:
+            raise NotFoundError(f"no booking {public_id}")
+        if row.status == BookingState.REFUNDED.value:
+            return False
+
+        apply(
+            BookingState(row.status),
+            BookingState.REFUNDED,
+            actor=Actor.SYSTEM,
+            context={"refund_settled": True},
+        )
+        repo.set_status(row, BookingState.REFUNDED.value)
+        repo.record_transition(
+            row,
+            from_status=BookingState.CANCELLED.value,
+            to_status=BookingState.REFUNDED.value,
+            actor_role="SYSTEM",
+            actor_user_id=None,
+            reason=reason or "Refund settled at the payment provider.",
+            occurred_at=now,
+        )
+    return True
+
+
 def force_transition(
     public_id: UUID,
     *,

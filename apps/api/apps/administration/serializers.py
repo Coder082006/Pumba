@@ -16,6 +16,7 @@ the integers inside the database, and the service turns one into the other.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from rest_framework import serializers
@@ -286,3 +287,54 @@ class ReissueVoucherSerializer(StrictSerializer):
 class ReissueVoucherResultSerializer(serializers.Serializer[Any]):
     issue_number = serializers.IntegerField(read_only=True)
     issued_at = serializers.DateTimeField(read_only=True)
+
+
+# -- §21.6 refunds, §27.10's console ------------------------------------------
+
+
+class RefundRequestSerializer(StrictSerializer):
+    """`POST /refunds` — §9.3.7, an administrator's discretionary refund.
+
+    The amount is required and is not derived from a policy: this is the path
+    §21.6 calls "discretionary or goodwill". A refund that *does* follow a
+    cancellation policy is written by `payment.handlers` from the event
+    `booking` publishes, and never passes through here — BR-043 means it must
+    equal the preview, and a human retyping it is how those two diverge.
+    """
+
+    payment = serializers.UUIDField()
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
+    reason_code = serializers.CharField(max_length=40)
+    reason = serializers.CharField(max_length=500, allow_blank=True, required=False)
+    #: BR-047: above `refund.auto_approve_limit` a finance officer must have
+    #: approved it. `true` from a principal holding REFUND_APPROVE records them
+    #: as the approver; the service refuses the refund without one.
+    approve = serializers.BooleanField(required=False, default=False)
+
+
+class RefundReadSerializer(serializers.Serializer[Any]):
+    id = serializers.UUIDField(source="public_id", read_only=True)
+    payment_id = serializers.UUIDField(source="payment_public_id", read_only=True)
+    booking_id = serializers.UUIDField(source="booking_public_id", read_only=True, allow_null=True)
+    status = serializers.CharField(read_only=True)
+    currency = serializers.CharField(read_only=True)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    reason_code = serializers.CharField(read_only=True)
+    requested_at = serializers.DateTimeField(read_only=True)
+    settled_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    failure_code = serializers.CharField(read_only=True)
+
+
+class AdminPaymentSerializer(serializers.Serializer[Any]):
+    """§27.10's payment search. Enough to find one and see what happened to it."""
+
+    id = serializers.UUIDField(source="public_id", read_only=True)
+    trip_id = serializers.UUIDField(source="trip_public_id", read_only=True)
+    status = serializers.CharField(read_only=True)
+    method = serializers.CharField(read_only=True)
+    currency = serializers.CharField(read_only=True)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    psp_reference = serializers.CharField(read_only=True, allow_null=True)
+    failure_code = serializers.CharField(read_only=True)
+    captured_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    created_at = serializers.DateTimeField(read_only=True, allow_null=True)

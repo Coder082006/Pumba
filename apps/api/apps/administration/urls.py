@@ -26,10 +26,12 @@ from apps.administration.views import (
     AdminBookingVoucherReissueView,
     AdminCorridorCreateView,
     AdminCorridorDetailView,
+    AdminPaymentListView,
     AdminProviderDetailView,
     AdminProviderListView,
     AdminProviderStatusView,
     AdminQuotePreviewView,
+    AdminRefundListCreateView,
     AdminTariffCreateView,
     AdminTariffDetailView,
 )
@@ -81,6 +83,12 @@ urlpatterns = [
         AdminBookingForceTransitionView.as_view(),
         name="admin-booking-force-transition",
     ),
+    # §27.10's payment and refund console, and §9.3.7's `POST /refunds`.
+    # Here rather than in `payment` because the console reads across modules
+    # and `administration` is the one that may — the same argument that puts
+    # the tariff and provider consoles here.
+    path("admin/payments", AdminPaymentListView.as_view(), name="admin-payment-list"),
+    path("refunds", AdminRefundListCreateView.as_view(), name="refund-list-create"),
     path(
         "admin/bookings/<uuid:public_id>/voucher",
         AdminBookingVoucherReissueView.as_view(),

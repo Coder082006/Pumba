@@ -24,7 +24,7 @@ from apps.payment import services
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["verify_payment_status", "PROBE_SCHEDULE"]
+__all__ = ["verify_payment_status", "settle_refunds", "PROBE_SCHEDULE"]
 
 #: §21.5, verbatim: "polls the PSP at 30 s, 2 min, 5 min, 10 min, 20 min and
 #: 30 min after intent". Held as offsets from the intent rather than as gaps,
@@ -60,3 +60,27 @@ def verify_payment_status(payment_id: int, attempt: int = 0) -> str:
     gap = PROBE_SCHEDULE[following] - PROBE_SCHEDULE[attempt]
     verify_payment_status.apply_async(args=[payment_id, following], countdown=gap, queue="payments")
     return "RESCHEDULED"
+
+
+@shared_task(name="payment.settle_refunds", queue="payments")
+def settle_refunds(limit: int = 50) -> dict[str, int]:
+    """Pay out what `handlers` recorded as owed — ADR 0027 decision 3.
+
+    The handler wrote a row and called nothing; this calls the PSP. Separating
+    them is what makes a refund survive a gateway outage, a bad deploy and a
+    worker killed mid-call: the obligation is durable before any of that can
+    happen, and this job is free to fail and run again.
+
+    Returns counts because §8.8 gives this job no other output, and "the
+    settler ran" is not the same statement as "the settler found nothing".
+    """
+    settled = failed = 0
+    for refund_id in services.refunds_awaiting_settlement(limit=limit):
+        if services.settle_refund(refund_id):
+            settled += 1
+        else:
+            failed += 1
+
+    if settled or failed:
+        logger.info("refunds_settled", extra={"settled": settled, "failed": failed})
+    return {"settled": settled, "failed": failed}

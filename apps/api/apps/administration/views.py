@@ -32,13 +32,14 @@ from rest_framework.views import APIView
 from apps.administration import serializers as ser
 from apps.administration import services
 from apps.common.authentication import principal_from_request
-from apps.common.authz import Role
+from apps.common.authz import Permission, Role
 from apps.common.envelope import success_envelope
 from apps.common.errors import ValidationError
 from apps.common.permissions import (
     CATALOGUE_ADMIN_PERMISSIONS,
     PROVIDER_ADMIN_PERMISSIONS,
     EmailVerified,
+    HasPermission,
     HasRole,
     IsAuthenticatedPrincipal,
     MfaSatisfied,
@@ -385,5 +386,80 @@ class AdminBookingVoucherReissueView(_SuperAdminView):
         )
         return Response(
             success_envelope(dict(ser.ReissueVoucherResultSerializer(result).data)),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+# -- §21.6, §27.10: refunds and the payment console -----------------------------------------
+
+
+class _FinanceView(_AdminView):
+    """Finance reads money; §5.2 gives FINANCE_OFFICER `FINANCE_READ` globally.
+
+    SUPER_ADMIN holds every permission, so the console is reachable by both
+    without naming roles here — a role list would drift from §5.2's table the
+    first time somebody added a role.
+    """
+
+    permission_classes = [
+        IsAuthenticatedPrincipal,
+        HasPermission.for_(Permission.FINANCE_READ),
+        EmailVerified,
+        MfaSatisfied,
+    ]
+
+
+class AdminPaymentListView(_FinanceView):
+    @extend_schema(
+        responses={200: ser.AdminPaymentSerializer(many=True)},
+        summary="Search payments",
+        parameters=[
+            OpenApiParameter("status", str, description="§21.4 status to filter by"),
+        ],
+        tags=_TAGS,
+    )
+    def get(self, request: Request) -> Response:
+        rows = services.list_payments(status=request.query_params.get("status") or None)
+        return Response(success_envelope(ser.AdminPaymentSerializer(rows, many=True).data))
+
+
+class AdminRefundListCreateView(_FinanceView):
+    """§27.10's refund queue, and §9.3.7's `POST /refunds`."""
+
+    @extend_schema(
+        responses={200: ser.RefundReadSerializer(many=True)},
+        summary="Refund queue",
+        parameters=[
+            OpenApiParameter("status", str, description="REQUESTED, SETTLED or FAILED"),
+        ],
+        tags=_TAGS,
+    )
+    def get(self, request: Request) -> Response:
+        rows = services.list_refunds(status=request.query_params.get("status") or None)
+        return Response(success_envelope(ser.RefundReadSerializer(rows, many=True).data))
+
+    @extend_schema(
+        request=ser.RefundRequestSerializer,
+        responses={201: ser.RefundReadSerializer},
+        summary="Issue a discretionary refund",
+        description=(
+            "§21.6. A refund following a cancellation policy is written "
+            "automatically and never passes through here. BR-047: above "
+            "`refund.auto_approve_limit` the caller must hold REFUND_APPROVE."
+        ),
+        tags=_TAGS,
+    )
+    def post(self, request: Request) -> Response:
+        body = self._validated(request, ser.RefundRequestSerializer, partial=False)
+        refund = services.issue_refund(
+            payment_public_id=body["payment"],
+            amount=body["amount"],
+            reason_code=body["reason_code"],
+            reason=body.get("reason", ""),
+            principal=principal_from_request(request),
+            ip=self._ip(request),
+        )
+        return Response(
+            success_envelope(ser.RefundReadSerializer(refund).data),
             status=status.HTTP_201_CREATED,
         )

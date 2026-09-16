@@ -42,6 +42,7 @@ right while a tourist is charged something else.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -53,8 +54,9 @@ from apps.administration.models import AuditLog
 from apps.booking import services as booking
 from apps.catalogue import services as catalogue
 from apps.common.audit import AuditAction, AuditRecord, record_audit
-from apps.common.authz import Principal
+from apps.common.authz import Permission, Principal
 from apps.common.errors import NotFoundError, ValidationError
+from apps.payment import services as payment_services
 from apps.provider import services as provider
 from apps.provider.dto import ProviderDTO
 from apps.transport import services as transport
@@ -593,3 +595,62 @@ def reissue_booking_voucher(
         reason=reason,
     )
     return {"issue_number": voucher.issue_number, "issued_at": voucher.issued_at}
+
+
+# ---------------------------------------------------------------------------
+# §21.6, §27.10 — refunds and the payment console
+# ---------------------------------------------------------------------------
+
+
+def issue_refund(
+    *,
+    payment_public_id: UUID,
+    amount: Decimal,
+    reason_code: str,
+    reason: str,
+    principal: Principal | None,
+    ip: str | None = None,
+) -> Any:
+    """`POST /refunds` — §21.6's discretionary refund, audited.
+
+    The approval is not a field the caller sets: it is whether *this*
+    principal holds REFUND_APPROVE. A console that let an operator tick
+    "approved" on their own request would make BR-047 a formality.
+    """
+    approver = None
+    if principal is not None and Permission.REFUND_APPROVE in principal.permissions:
+        approver = principal.user_id
+
+    refund = payment_services.request_refund(
+        payment_public_id=payment_public_id,
+        amount=amount,
+        reason_code=reason_code,
+        reason=reason,
+        requested_by_user_id=None if principal is None else principal.user_id,
+        approved_by_user_id=approver,
+    )
+    _audit(
+        AuditAction.REFUND_REQUESTED,
+        "refund",
+        refund.public_id,
+        before=None,
+        after={
+            "amount": str(refund.amount),
+            "currency": refund.currency,
+            "reason_code": refund.reason_code,
+            "approved": approver is not None,
+        },
+        principal=principal,
+        ip=ip,
+    )
+    return refund
+
+
+def list_refunds(*, status: str | None = None, limit: int = 100) -> list[Any]:
+    """§27.10's refund queue — what is owed, and what has been paid."""
+    return payment_services.list_refunds(status=status, limit=limit)
+
+
+def list_payments(*, status: str | None = None, limit: int = 100) -> list[Any]:
+    """§27.10's payment search."""
+    return payment_services.list_payments(status=status, limit=limit)

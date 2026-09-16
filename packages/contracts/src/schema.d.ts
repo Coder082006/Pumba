@@ -842,6 +842,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search payments
+         * @description Finance reads money; §5.2 gives FINANCE_OFFICER `FINANCE_READ` globally.
+         *
+         *     SUPER_ADMIN holds every permission, so the console is reachable by both
+         *     without naming roles here — a role list would drift from §5.2's table the
+         *     first time somebody added a role.
+         */
+        get: operations["admin_payments_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/providers": {
         parameters: {
             query?: never;
@@ -1868,6 +1892,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/refunds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Refund queue
+         * @description §27.10's refund queue, and §9.3.7's `POST /refunds`.
+         */
+        get: operations["refunds_list"];
+        put?: never;
+        /**
+         * Issue a discretionary refund
+         * @description §21.6. A refund following a cancellation policy is written automatically and never passes through here. BR-047: above `refund.auto_approve_limit` the caller must hold REFUND_APPROVE.
+         */
+        post: operations["refunds_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search": {
         parameters: {
             query?: never;
@@ -2446,6 +2494,24 @@ export interface components {
             accommodation?: string | null;
             activity?: string | null;
             attraction?: string | null;
+        };
+        /** @description §27.10's payment search. Enough to find one and see what happened to it. */
+        AdminPayment: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly trip_id: string;
+            readonly status: string;
+            readonly method: string;
+            readonly currency: string;
+            /** Format: decimal */
+            readonly amount: string;
+            readonly psp_reference: string | null;
+            readonly failure_code: string;
+            /** Format: date-time */
+            readonly captured_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string | null;
         };
         Attraction: {
             /** Format: uuid */
@@ -3847,6 +3913,41 @@ export interface components {
          *     a serializer — the seed loader, a management command, a console shell. */
         RefreshRequest: {
             refresh_token?: string;
+        };
+        RefundRead: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly payment_id: string;
+            /** Format: uuid */
+            readonly booking_id: string | null;
+            readonly status: string;
+            readonly currency: string;
+            /** Format: decimal */
+            readonly amount: string;
+            readonly reason_code: string;
+            /** Format: date-time */
+            readonly requested_at: string;
+            /** Format: date-time */
+            readonly settled_at: string | null;
+            readonly failure_code: string;
+        };
+        /** @description `POST /refunds` — §9.3.7, an administrator's discretionary refund.
+         *
+         *     The amount is required and is not derived from a policy: this is the path
+         *     §21.6 calls "discretionary or goodwill". A refund that *does* follow a
+         *     cancellation policy is written by `payment.handlers` from the event
+         *     `booking` publishes, and never passes through here — BR-043 means it must
+         *     equal the preview, and a human retyping it is how those two diverge. */
+        RefundRequestRequest: {
+            /** Format: uuid */
+            payment: string;
+            /** Format: decimal */
+            amount: string;
+            reason_code: string;
+            reason?: string;
+            /** @default false */
+            approve: boolean;
         };
         Region: {
             /** Format: uuid */
@@ -5326,6 +5427,28 @@ export interface operations {
             };
         };
     };
+    admin_payments_list: {
+        parameters: {
+            query?: {
+                /** @description §21.4 status to filter by */
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPayment"][];
+                };
+            };
+        };
+    };
     admin_providers_list: {
         parameters: {
             query?: {
@@ -6552,6 +6675,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaymentMethod"][];
+                };
+            };
+        };
+    };
+    refunds_list: {
+        parameters: {
+            query?: {
+                /** @description REQUESTED, SETTLED or FAILED */
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefundRead"][];
+                };
+            };
+        };
+    };
+    refunds_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefundRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RefundRequestRequest"];
+                "multipart/form-data": components["schemas"]["RefundRequestRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefundRead"];
                 };
             };
         };

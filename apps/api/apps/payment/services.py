@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -35,9 +36,11 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.booking import services as booking_services
+from apps.booking.services import RefundExceedsCapturedError, assert_refundable
 from apps.common.audit import AuditAction, record_audit
 from apps.common.config import get_setting
 from apps.common.errors import ConflictError, NotFoundError, ValidationError
+from apps.common.events import DomainEvent, publish
 from apps.common.money import Money
 from apps.common.ports_registry import get_payment_port
 from apps.common.state_machine import GuardFailedError, IllegalTransitionError
@@ -45,12 +48,14 @@ from apps.inventory import services as inventory
 from apps.payment import repositories as repo
 from apps.payment.domain.lifecycle import PaymentState, advances, is_terminal
 from apps.payment.domain.lifecycle import apply as apply_transition
-from apps.payment.dto import PaymentActionDTO, PaymentDTO
+from apps.payment.dto import PaymentActionDTO, PaymentDTO, RefundDTO
 from apps.payment.models import (
     Payment,
     PaymentMethod,
     PaymentStatus,
     PaymentWebhookEvent,
+    Refund,
+    RefundStatus,
     WebhookOutcome,
 )
 from apps.trip import services as trip_services
@@ -61,15 +66,45 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "initiate",
+    "RefundSettled",
+    "RefundApprovalRequiredError",
     "ingest_webhook",
     "apply_psp_state",
     "poll_payment",
     "verify",
+    "refunds_awaiting_settlement",
+    "settle_refund",
+    "request_refund",
+    "list_refunds",
+    "list_payments",
     "payment_for_trip",
     "payment_detail",
     "TripNotPayableError",
     "QuoteExpiredError",
 ]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RefundSettled(DomainEvent):
+    """§8.9's `RefundSettled`. 8b's ledger reverses the accrual from it.
+
+    Primitives only, like every other event here: a handler runs after commit,
+    often in another module, and a Decimal that crossed as a float would lose a
+    cent on the way.
+    """
+
+    name = "payment.refund_settled"
+    refund_public_id: str = ""
+    payment_public_id: str = ""
+    trip_id: int = 0
+    amount: str = "0"
+    currency: str = ""
+
+
+class RefundApprovalRequiredError(ConflictError):
+    """BR-047: above the auto-approval limit, a finance officer decides."""
+
+    code = "REFUND_APPROVAL_REQUIRED"
 
 
 class TripNotPayableError(ConflictError):
@@ -616,3 +651,249 @@ def verify(public_id: UUID, *, tourist_id: int | None) -> PaymentDTO:
         raise NotFoundError(f"no payment {public_id}")
     poll_payment(int(row.pk))
     return payment_detail(public_id, tourist_id=tourist_id)
+
+
+# ---------------------------------------------------------------------------
+# §21.6 — refunds
+# ---------------------------------------------------------------------------
+
+
+def refunds_awaiting_settlement(*, limit: int = 50) -> list[int]:
+    """The obligations `handlers` recorded and nobody has paid yet.
+
+    Oldest first: a tourist who has been waiting longest is the one to pay
+    next, and a queue ordered any other way starves somebody quietly.
+    """
+    return list(
+        Refund.objects.filter(status=RefundStatus.REQUESTED)
+        .order_by("requested_at", "id")
+        .values_list("id", flat=True)[:limit]
+    )
+
+
+def settle_refund(refund_id: int) -> bool:
+    """Give one refund back at the PSP, and record what that means.
+
+    In order:
+
+    1. **BR-044 before the gateway.** `assert_refundable` compares what is
+       asked against what was captured and not already refunded. TC-103 —
+       refunding 200 of a 110 booking — is refused here, before any money can
+       move, because a PSP that accepted it would leave the platform out of
+       pocket with nothing to reverse.
+    2. **The PSP**, outside every transaction (§20.7).
+    3. **The payment's own state**: PARTIALLY_REFUNDED while some of it stands,
+       REFUNDED when all of it is back — the difference the §21.4 guards work
+       out from the totals rather than from a flag somebody sets.
+    4. **The booking**: `booking.settle_refund` moves CANCELLED → REFUNDED,
+       which is §20.2's last edge and the one nothing could reach until now.
+
+    Returns whether the money moved. A refund that fails at the gateway is
+    marked FAILED with its reason rather than retried forever: three declines
+    of the same refund is an operations problem, not a scheduling one.
+    """
+    refund = Refund.objects.filter(pk=refund_id).select_related("payment").first()
+    if refund is None or refund.status != RefundStatus.REQUESTED:
+        return False
+
+    payment = refund.payment
+    already = sum(
+        (row.amount for row in payment.refunds.filter(status=RefundStatus.SETTLED)),
+        Decimal("0"),
+    )
+    captured = payment.settlement_amount or payment.presentment_amount
+    try:
+        assert_refundable(refund.amount, paid=captured, already_refunded=already)
+    except RefundExceedsCapturedError as exc:
+        _fail_refund(refund, code="REFUND_EXCEEDS_CAPTURED", reason=str(exc))
+        logger.error(
+            "refund_exceeds_captured",
+            extra={"refund": str(refund.public_id), "amount": str(refund.amount)},
+        )
+        return False
+
+    try:
+        result = get_payment_port().refund(
+            payment.psp_reference or "",
+            amount=Money(refund.amount, refund.currency),
+            idempotency_key=refund.idempotency_key,
+            reason=refund.reason_code,
+        )
+    except ValidationError as exc:
+        _fail_refund(refund, code=getattr(exc, "code", "") or "REFUND_FAILED", reason=str(exc))
+        return False
+    except Exception as exc:
+        logger.warning(
+            "refund_not_settled",
+            extra={"refund": str(refund.public_id), "error": str(exc)},
+        )
+        return False
+
+    if not result.settled:
+        # Accepted and not yet final at the PSP. The row stays REQUESTED so the
+        # next run asks again, rather than telling a tourist their money is
+        # back while it is still in flight.
+        return False
+
+    now = timezone.now()
+    with transaction.atomic():
+        repo.advisory_lock(int(payment.pk))
+        locked_payment = repo.lock_payment(int(payment.pk))
+        assert locked_payment is not None
+        row = Refund.objects.select_for_update().get(pk=refund.pk)
+        if row.status != RefundStatus.REQUESTED:
+            return False
+        row.status = RefundStatus.SETTLED.value
+        row.psp_refund_reference = result.psp_refund_reference
+        row.settled_at = now
+        row.save(update_fields=["status", "psp_refund_reference", "settled_at", "updated_at"])
+
+        refunded_total = already + row.amount
+        target = (
+            PaymentState.REFUNDED
+            if refunded_total
+            >= (locked_payment.settlement_amount or locked_payment.presentment_amount)
+            else PaymentState.PARTIALLY_REFUNDED
+        )
+        source = PaymentState(locked_payment.status)
+        if source is not target:
+            apply_transition(
+                source,
+                target,
+                {
+                    "refunded_total": refunded_total,
+                    "captured_amount": locked_payment.settlement_amount
+                    or locked_payment.presentment_amount,
+                },
+            )
+            repo.record_transition(
+                locked_payment,
+                to_status=PaymentStatus(target.value),
+                occurred_at=now,
+                amount=row.amount,
+                currency=row.currency,
+                reason=f"Refund {row.public_id} settled.",
+            )
+
+    if row.booking_id is not None:
+        # Outside the payment transaction: the booking is another module's row,
+        # and §20.7's rule about long transactions applies to a call that
+        # confirms an entire trip in the other direction too.
+        booking_services.settle_refund(
+            _booking_public_id(row.booking_id),
+            now=now,
+            reason=f"Refund {row.public_id} settled at the provider.",
+        )
+
+    publish(
+        RefundSettled(
+            refund_public_id=str(row.public_id),
+            payment_public_id=str(payment.public_id),
+            trip_id=payment.trip_id,
+            amount=str(row.amount),
+            currency=row.currency,
+        )
+    )
+    return True
+
+
+def request_refund(
+    *,
+    payment_public_id: UUID,
+    amount: Decimal,
+    reason_code: str,
+    reason: str,
+    requested_by_user_id: int | None,
+    approved_by_user_id: int | None = None,
+    booking_id: int | None = None,
+) -> RefundDTO:
+    """`POST /refunds` — §21.6's discretionary refund, an administrator's.
+
+    BR-047: above `refund.auto_approve_limit` a FINANCE_OFFICER must have
+    approved it, and the caller proves that by naming who did. The check is
+    here rather than in the view because it is a rule about money, and §8.2
+    puts rules about money in the service layer.
+    """
+    payment = Payment.objects.filter(public_id=payment_public_id).first()
+    if payment is None:
+        raise NotFoundError(f"no payment {payment_public_id}")
+    if payment.status not in (PaymentStatus.CAPTURED, PaymentStatus.PARTIALLY_REFUNDED):
+        raise ConflictError(
+            f"a payment in {payment.status} has nothing to refund",
+        )
+
+    limit = Decimal(str(get_setting("refund.auto_approve_limit")))
+    if amount > limit and approved_by_user_id is None:
+        raise RefundApprovalRequiredError(
+            f"a refund above {limit} requires a finance officer's approval",
+        )
+
+    row = Refund.objects.create(
+        payment=payment,
+        booking_id=booking_id,
+        amount=amount,
+        currency=payment.presentment_currency,
+        reason_code=reason_code,
+        reason=reason[:500],
+        requested_by_user_id=requested_by_user_id,
+        approved_by_user_id=approved_by_user_id,
+        idempotency_key=uuid.uuid4().hex,
+        requested_at=timezone.now(),
+    )
+    return _refund_dto(row)
+
+
+def _booking_public_id(booking_id: int) -> UUID:
+    """Through `booking.services`, never its models: `private-booking` closes
+    those to this module and the boundary is the point of the contract."""
+    return booking_services.public_id_of_booking(booking_id)
+
+
+def _fail_refund(refund: Refund, *, code: str, reason: str) -> None:
+    refund.status = RefundStatus.FAILED.value
+    refund.failure_code = code
+    refund.reason = (refund.reason or reason)[:500]
+    refund.save(update_fields=["status", "failure_code", "reason", "updated_at"])
+
+
+def _refund_dto(row: Refund) -> RefundDTO:
+    booking_public_id = None
+    if row.booking_id is not None:
+        booking_public_id = _booking_public_id(row.booking_id)
+    return RefundDTO(
+        public_id=row.public_id,
+        payment_public_id=row.payment.public_id,
+        booking_public_id=booking_public_id,
+        status=row.status,
+        currency=row.currency,
+        amount=row.amount,
+        reason_code=row.reason_code,
+        requested_at=row.requested_at,
+        settled_at=row.settled_at,
+        failure_code=row.failure_code,
+    )
+
+
+def list_refunds(*, status: str | None = None, limit: int = 100) -> list[RefundDTO]:
+    """§27.10's refund queue, newest first.
+
+    Administrative: no `tourist_id` filter, because the caller is the console
+    and the point of it is to see everyone's. The permission check is the
+    view's — §30.3's "absent, not forbidden" is about a tourist reaching
+    somebody else's row, not about an operator doing their job.
+    """
+    rows = Refund.objects.select_related("payment").order_by("-requested_at", "-id")
+    if status:
+        rows = rows.filter(status=status)
+    return [_refund_dto(row) for row in rows[:limit]]
+
+
+def list_payments(*, status: str | None = None, limit: int = 100) -> list[PaymentDTO]:
+    """§27.10's payment search."""
+    rows = Payment.objects.order_by("-created_at", "-id")
+    if status:
+        rows = rows.filter(status=status)
+    return [
+        _dto(row, trip_public_id=trip_services.public_id_of_trip(row.trip_id))
+        for row in rows[:limit]
+    ]

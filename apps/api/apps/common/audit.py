@@ -107,6 +107,7 @@ class AuditAction(StrEnum):
     # because the difference between a stale page and a tampering attempt is
     # visible only over time.
     PAYMENT_AMOUNT_MISMATCH = "payment.amount_mismatch"
+    REFUND_REQUESTED = "payment.refund_requested"
 
 
 @dataclass(frozen=True, slots=True)
