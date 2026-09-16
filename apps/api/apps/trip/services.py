@@ -71,6 +71,8 @@ from apps.trip.domain.validation import ItemFacts, Limits, PartyFacts, TripFacts
 from apps.trip.dto import (
     BasketBasisDTO,
     BasketLineDTO,
+    ItineraryDayFactsDTO,
+    ItineraryFactsDTO,
     QuoteBasisDTO,
     QuoteLineDTO,
     TripDTO,
@@ -115,6 +117,9 @@ __all__ = [
     "PriceChangedError",
     "mark_priced",
     "expire_quote",
+    "trip_id_of",
+    "tourist_id_of",
+    "itinerary_facts",
     "public_id_of_trip",
     "TripPriced",
     "ItineraryGenerated",
@@ -1842,6 +1847,76 @@ def abandon_payment(trip_id: int, *, quote_still_stands: bool) -> bool:
 
 
 @transaction.atomic
+def trip_id_of(public_id: str | UUID) -> int | None:
+    """The storage id behind a public one, for a caller holding an event."""
+    try:
+        value = UUID(str(public_id))
+    except ValueError:
+        return None
+    row = Trip.objects.filter(public_id=value).values_list("id", flat=True).first()
+    return None if row is None else int(row)
+
+
+def tourist_id_of(trip_id: int) -> int | None:
+    """Whose trip it is. `None` for a trip that is gone, because the caller is
+    deciding whether to send an email rather than whether to fail."""
+    row = Trip.objects.filter(pk=trip_id).values_list("tourist_id", flat=True).first()
+    return None if row is None else int(row)
+
+
+def itinerary_facts(trip_id: int) -> ItineraryFactsDTO | None:
+    """§41.10's plan, as the emailed document needs it.
+
+    Every item the tourist would see on the timeline, grouped by day and
+    rendered in the destination's timezone — including the ones nobody booked,
+    because a day that reads "10:00 snorkelling, then nothing until the
+    transfer at 16:00" is the plan, and a document listing only the bookings
+    would be a list of receipts.
+    """
+    trip = Trip.objects.filter(pk=trip_id).first()
+    if trip is None:
+        return None
+    itinerary = Itinerary.objects.filter(trip=trip).order_by("-version").first()
+    # `resolve_refs` rather than `resolve_planning_ref`: this is a document for
+    # a trip that is already confirmed, and a destination that has since closed
+    # to new planning must still render on the itinerary of somebody travelling
+    # there next week.
+    ref = catalogue.resolve_refs("destination", [trip.destination_id]).get(trip.destination_id)
+    zone = ZoneInfo(ref.timezone if ref and ref.timezone else "UTC")
+    destination_name = ref.name if ref else ""
+
+    days: dict[int, list[str]] = {}
+    headings: dict[int, str] = {}
+    if itinerary is not None:
+        for item in itinerary.items.order_by("day_number", "sequence_no", "id"):
+            local = timezone.localtime(item.starts_at, zone)
+            headings.setdefault(item.day_number, f"{local:%A %d %B %Y}")
+            days.setdefault(item.day_number, []).append(
+                f"{local:%H:%M} — {item.title}"
+                if item.item_type != ItemType.FREE_TIME
+                else f"{local:%H:%M} — {item.title} (free time)"
+            )
+
+    party = f"{trip.adults} adult" + ("s" if trip.adults != 1 else "")
+    if trip.children:
+        party += f", {trip.children} child" + ("ren" if trip.children != 1 else "")
+    if trip.infants:
+        party += f", {trip.infants} infant" + ("s" if trip.infants != 1 else "")
+
+    return ItineraryFactsDTO(
+        trip_reference=trip.reference,
+        title=trip.title or destination_name or trip.reference,
+        destination=destination_name,
+        dates=f"{trip.start_date:%d %b %Y} to {trip.end_date:%d %b %Y}",
+        party=party,
+        total_paid=f"{trip.total_amount} {trip.currency}",
+        days=tuple(
+            ItineraryDayFactsDTO(heading=headings[number], lines=tuple(lines))
+            for number, lines in sorted(days.items())
+        ),
+    )
+
+
 def public_id_of_trip(trip_id: int) -> UUID:
     """The public id behind a storage id, for a module that only has the latter.
 

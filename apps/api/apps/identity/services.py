@@ -49,7 +49,7 @@ from apps.identity.domain.mfa import provisioning_uri, secret_to_base32, verify_
 from apps.identity.domain.passwords import validate_password
 from apps.identity.domain.tokens import FamilyAction, RefusalReason, TokenView, evaluate_refresh
 from apps.identity.dto import LoginResult, TokenPair, UserDTO
-from apps.identity.models import TokenPurpose, User, UserStatus
+from apps.identity.models import TokenPurpose, TouristProfile, User, UserStatus
 from apps.identity.selectors import to_device_dto, to_user_dto
 from ports.breach import BreachLookupError, password_prefix, password_suffix
 
@@ -74,6 +74,8 @@ __all__ = [
     "confirm_mfa_enrolment",
     "register_device",
     "remove_device",
+    "contact_for_tourist",
+    "ContactDTO",
     "get_principal",
 ]
 
@@ -992,6 +994,36 @@ def remove_device(*, principal: Principal, public_id: uuid.UUID, ip: str | None 
         ip=ip,
     )
     return True
+
+
+@dataclass(frozen=True, slots=True)
+class ContactDTO:
+    """Where to send something, and what to call the person receiving it."""
+
+    email: str
+    first_name: str
+
+
+def contact_for_tourist(tourist_id: int) -> ContactDTO | None:
+    """The address behind a `tourist_profile.id`, for a module that may write.
+
+    §6.4 forbids almost every module from importing this one, so a caller here
+    is by construction `administration` — the only module that may read across
+    the platform, and therefore the only one that can turn "trip confirmed"
+    into "email this person".
+
+    `None` rather than an exception for a profile that is gone: a notification
+    is not worth failing a confirmation over, and the caller logs it.
+    """
+    profile = (
+        TouristProfile.objects.filter(pk=tourist_id)
+        .select_related("user")
+        .only("first_name", "user__email")
+        .first()
+    )
+    if profile is None:
+        return None
+    return ContactDTO(email=profile.user.email, first_name=profile.first_name or "")
 
 
 def get_principal(*, user_id: int, mfa_satisfied: bool = False) -> Principal | None:

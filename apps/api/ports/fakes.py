@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import math
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from itertools import count
@@ -26,9 +27,9 @@ from apps.common.errors import ValidationError
 from apps.common.money import Money
 from ports.breach import BreachLookupError
 from ports.crypto import Ciphertext, DecryptionError
-from ports.document import VoucherContent
+from ports.document import ItineraryContent, VoucherContent
 from ports.exchange_rate import IndicativeRate
-from ports.notification import DeliveryResult, DeliveryStatus
+from ports.notification import Attachment, DeliveryResult, DeliveryStatus
 from ports.payment import (
     PaymentAction,
     PaymentIntent,
@@ -255,6 +256,7 @@ class FakeEmail(_RecordingSender):
         text_body: str | None = None,
         template_id: str | None = None,
         context: dict[str, str] | None = None,
+        attachments: Sequence[Attachment] | None = None,
     ) -> DeliveryResult:
         # `context` is recorded, not dropped. The port declares it and a
         # provider adapter renders from it, so a fake that discarded it could
@@ -268,6 +270,18 @@ class FakeEmail(_RecordingSender):
             text_body=text_body,
             template_id=template_id,
             context=dict(context or {}),
+            # Recorded by name and size rather than by bytes: a test asserting
+            # that the itinerary PDF travelled with the confirmation should say
+            # so in one line, and keeping every rendered document alive in a
+            # fake is how a long suite runs out of memory.
+            attachments=[
+                {
+                    "filename": item.filename,
+                    "media_type": item.media_type,
+                    "bytes": len(item.content),
+                }
+                for item in (attachments or [])
+            ],
         )
 
 
@@ -489,8 +503,34 @@ class FakeDocuments:
 
     def __init__(self) -> None:
         self.rendered: list[VoucherContent] = []
+        self.itineraries: list[ItineraryContent] = []
 
     def render_voucher(self, content: VoucherContent) -> bytes:
         self.rendered.append(content)
         lines = [f"{field}: {getattr(content, field)}" for field in content.__dataclass_fields__]
         return ("FAKE-VOUCHER\n" + "\n".join(lines)).encode("utf-8")
+
+    def render_itinerary(self, content: ItineraryContent) -> bytes:
+        """§41.10's trip document, as text for the same reason.
+
+        Every voucher is rendered into it, because what the document promises
+        is that a tourist with no signal has everything — and a test that only
+        counted days would not notice the vouchers going missing.
+        """
+        self.itineraries.append(content)
+        lines = [
+            "FAKE-ITINERARY",
+            f"trip_reference: {content.trip_reference}",
+            f"title: {content.title}",
+            f"destination: {content.destination}",
+            f"dates: {content.dates}",
+            f"party: {content.party}",
+            f"total_paid: {content.total_paid}",
+            f"support_contact: {content.support_contact}",
+        ]
+        for day in content.days:
+            lines.append(day.heading)
+            lines.extend(f"  {entry}" for entry in day.lines)
+        for voucher in content.vouchers:
+            lines.append(self.render_voucher(voucher).decode("utf-8"))
+        return "\n".join(lines).encode("utf-8")

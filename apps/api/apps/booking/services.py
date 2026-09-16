@@ -96,6 +96,7 @@ __all__ = [
     "cancel_trip",
     "VoucherIntegrityError",
     "issue_voucher",
+    "vouchers_of_trip",
     "voucher_document",
     "BookingDetailDTO",
     "list_bookings",
@@ -1394,6 +1395,30 @@ def issue_voucher(
         issued_at=voucher.issued_at,
         sha256=voucher.sha256,
     )
+
+
+def vouchers_of_trip(trip_id: int) -> tuple[VoucherContent, ...]:
+    """Every confirmed booking's latest voucher content, for §41.10's email.
+
+    Content rather than files: the itinerary renders each voucher as a page of
+    one document, and handing back bytes would mean rendering every voucher
+    twice — once as its own PDF and once inside the trip's.
+
+    Ordered by booking id, which is the order they were created in, which is
+    the order the trip was planned in.
+    """
+    rows = Booking.objects.filter(
+        trip_id=trip_id, status__in=[BookingState.CONFIRMED.value, BookingState.IN_PROGRESS.value]
+    ).order_by("id")
+    contents: list[VoucherContent] = []
+    for row in rows:
+        voucher = BookingVoucher.objects.filter(booking=row).order_by("-issue_number").first()
+        if voucher is None:
+            continue
+        fields = dict(voucher.content)
+        fields["issued_at"] = datetime.fromisoformat(str(fields["issued_at"]))
+        contents.append(VoucherContent(**fields))
+    return tuple(contents)
 
 
 def voucher_document(row: Booking) -> tuple[str, bytes]:

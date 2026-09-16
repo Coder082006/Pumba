@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-__all__ = ["VoucherContent", "DocumentPort"]
+__all__ = ["VoucherContent", "ItineraryDay", "ItineraryContent", "DocumentPort"]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -49,6 +49,42 @@ class VoucherContent:
     support_contact: str
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ItineraryDay:
+    """One day of the plan, already ordered and already formatted."""
+
+    #: e.g. "Tuesday 14 September 2027".
+    heading: str
+    #: e.g. "16:45 — Mnemba Atoll Snorkelling (Africa/Dar_es_Salaam)".
+    lines: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ItineraryContent:
+    """§41.10's emailed itinerary — "the full day-by-day plan".
+
+    The web client makes no offline guarantee (ADR 0002), so this document *is*
+    the guarantee: it has to be readable with no signal, which is why every
+    voucher travels inside it rather than as a link back to the platform.
+
+    Like `VoucherContent`, everything here is resolved and formatted before it
+    arrives. The renderer reads no database, no clock and no timezone.
+    """
+
+    trip_reference: str
+    title: str
+    destination: str
+    dates: str
+    party: str
+    days: tuple[ItineraryDay, ...]
+    vouchers: tuple[VoucherContent, ...]
+    total_paid: str
+    support_contact: str
+    issued_at: datetime
+
+
 @runtime_checkable
 class DocumentPort(Protocol):
     def render_voucher(self, content: VoucherContent) -> bytes: ...
+
+    def render_itinerary(self, content: ItineraryContent) -> bytes: ...

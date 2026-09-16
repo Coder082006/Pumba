@@ -11,11 +11,13 @@ exception would lose the outcome of the other recipients in a batch.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
 __all__ = [
+    "Attachment",
     "DeliveryStatus",
     "DeliveryResult",
     "PushPort",
@@ -53,6 +55,24 @@ class PushPort(Protocol):
     ) -> DeliveryResult: ...
 
 
+@dataclass(frozen=True, slots=True)
+class Attachment:
+    """A file travelling with an email.
+
+    §41.10 as amended makes the emailed itinerary PDF the web client's entire
+    answer to the offline requirement, so an email that could not carry a file
+    would leave that requirement unmet by construction.
+
+    `content` is bytes rather than a path or a URL: the renderer produced them,
+    nothing has stored them yet, and a link would fail exactly when the tourist
+    needs it — on a phone, offline, at an airport.
+    """
+
+    filename: str
+    content: bytes
+    media_type: str = "application/pdf"
+
+
 @runtime_checkable
 class EmailPort(Protocol):
     def send(
@@ -64,6 +84,7 @@ class EmailPort(Protocol):
         text_body: str | None = None,
         template_id: str | None = None,
         context: dict[str, str] | None = None,
+        attachments: Sequence[Attachment] | None = None,
     ) -> DeliveryResult: ...
 
 

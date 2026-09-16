@@ -8,13 +8,17 @@ class AdministrationConfig(AppConfig):
     verbose_name = "Administration"
 
     def ready(self) -> None:
-        """Install the database-backed audit sink.
+        """Install the audit sink, and subscribe §19.1's payment emails.
 
-        Registered here rather than at import time because it needs the model
-        registry to be populated. Until this runs, `record_audit` still writes
-        to the application log — the port degrades, it does not fail.
+        Both are registered here rather than at import time because they need
+        the model registry to be populated. Until the sink runs, `record_audit`
+        still writes to the application log — the port degrades, it does not
+        fail — and until the handlers register, a confirmed trip simply sends
+        no mail.
         """
+        from apps.administration import handlers
         from apps.administration.services import write_audit_record
         from apps.common.audit import register_sink
 
         register_sink(write_audit_record)
+        handlers.register()

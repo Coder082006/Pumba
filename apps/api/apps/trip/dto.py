@@ -370,3 +370,30 @@ class VoucherFactsDTO:
     item_type: str
     timezone: str
     meeting_point: str
+
+
+@dataclass(frozen=True, slots=True)
+class ItineraryDayFactsDTO:
+    """One day of §41.10's emailed plan, already ordered and already worded."""
+
+    heading: str
+    lines: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ItineraryFactsDTO:
+    """What §41.10's trip document needs from `trip`.
+
+    Formatted here rather than in the renderer: every time is the
+    destination's, and the rule that says so lives in this module. A document
+    adapter that converted timezones would be a second place it lived, and the
+    first place it would go wrong.
+    """
+
+    trip_reference: str
+    title: str
+    destination: str
+    dates: str
+    party: str
+    total_paid: str
+    days: tuple[ItineraryDayFactsDTO, ...]

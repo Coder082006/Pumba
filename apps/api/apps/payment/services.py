@@ -66,6 +66,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "initiate",
+    "PaymentCaptured",
     "RefundSettled",
     "RefundApprovalRequiredError",
     "ingest_webhook",
@@ -82,6 +83,23 @@ __all__ = [
     "TripNotPayableError",
     "QuoteExpiredError",
 ]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PaymentCaptured(DomainEvent):
+    """§8.9's `PaymentCaptured`. The money is taken; the trip is another fact.
+
+    Published beside the confirmation rather than instead of it, because §19.2
+    makes PAYMENT_* undisableable: a tourist whose payment succeeded and whose
+    every component then failed is still owed the statement that they paid.
+    """
+
+    name = "payment.captured"
+    payment_public_id: str = ""
+    trip_id: int = 0
+    tourist_id: int = 0
+    amount: str = "0"
+    currency: str = ""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -556,6 +574,15 @@ def apply_psp_state(*, event: WebhookEvent, stored_event_id: int | None = None) 
         # the system to hold, and two transactions could leave exactly that.
         if target is PaymentState.CAPTURED:
             booking_services.confirm_trip(locked.trip_id, payment_captured=True, now=now)
+            publish(
+                PaymentCaptured(
+                    payment_public_id=str(locked.public_id),
+                    trip_id=locked.trip_id,
+                    tourist_id=locked.tourist_id,
+                    amount=str(intent.amount.amount),
+                    currency=intent.amount.currency,
+                )
+            )
         elif target in (PaymentState.FAILED, PaymentState.EXPIRED):
             booking_services.fail_basket(
                 locked.trip_id, cause=booking_services.BasketFailure.PAYMENT_FAILED, now=now
