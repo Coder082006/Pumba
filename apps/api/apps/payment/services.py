@@ -43,7 +43,7 @@ from apps.common.ports_registry import get_payment_port
 from apps.common.state_machine import GuardFailedError, IllegalTransitionError
 from apps.inventory import services as inventory
 from apps.payment import repositories as repo
-from apps.payment.domain.lifecycle import PaymentState, advances
+from apps.payment.domain.lifecycle import PaymentState, advances, is_terminal
 from apps.payment.domain.lifecycle import apply as apply_transition
 from apps.payment.dto import PaymentActionDTO, PaymentDTO
 from apps.payment.models import (
@@ -63,6 +63,8 @@ __all__ = [
     "initiate",
     "ingest_webhook",
     "apply_psp_state",
+    "poll_payment",
+    "verify",
     "payment_for_trip",
     "payment_detail",
     "TripNotPayableError",
@@ -270,6 +272,18 @@ def initiate(
             until=row.expires_at or timezone.now(),
             now=timezone.now(),
         )
+
+    # §9.4.7's last step: "schedule verify_payment_status as a webhook-failure
+    # fallback". After commit, because a task that ran against a rolled-back
+    # payment would poll for a row that does not exist. Imported here rather
+    # than at module scope: `tasks` imports this module.
+    from apps.payment.tasks import PROBE_SCHEDULE, verify_payment_status
+
+    transaction.on_commit(
+        lambda: verify_payment_status.apply_async(
+            args=[int(row.pk), 0], countdown=PROBE_SCHEDULE[0], queue="payments"
+        )
+    )
 
     return _dto(row, trip_public_id=trip_public_id, action=_action(intent))
 
@@ -552,3 +566,53 @@ def _record_outcome(
     if payment_id is not None:
         fields["payment_id"] = payment_id
     PaymentWebhookEvent.objects.filter(pk=stored_event_id).update(**fields)
+
+
+def poll_payment(payment_id: int) -> str:
+    """§21.5's fallback: ask the PSP, because nothing told us.
+
+    Returns `TERMINAL` for a payment that has finished, `APPLIED` when the
+    answer moved it, and `PENDING` when the tourist simply has not paid yet —
+    which is the ordinary case for the first two rungs of the ladder and is not
+    a problem to report.
+
+    Deliberately not authenticated and deliberately not a service a tourist can
+    call for somebody else's payment: the caller is a Celery task holding a
+    storage id, exactly as §17.5's sweeper is.
+    """
+    payment = Payment.objects.filter(pk=payment_id).first()
+    if payment is None:
+        return "TERMINAL"
+    if is_terminal(PaymentState(payment.status)):
+        return "TERMINAL"
+    if not payment.psp_reference:
+        # The intent never reached the gateway — `initiate` failed the row if
+        # it could, and if it could not, there is nothing to ask about.
+        return "PENDING"
+
+    intent = get_payment_port().fetch_status(payment.psp_reference)
+    outcome = apply_psp_state(
+        event=WebhookEvent(
+            event_id=f"poll-{uuid.uuid4().hex}",
+            event_type="payment.polled",
+            psp_reference=payment.psp_reference,
+            status=intent.status,
+            raw={"source": "poll"},
+        )
+    )
+    return "APPLIED" if outcome is WebhookOutcome.APPLIED else "PENDING"
+
+
+def verify(public_id: UUID, *, tourist_id: int | None) -> PaymentDTO:
+    """`POST /payments/{id}/verify` — §9.3.7's client-initiated refresh.
+
+    The same question the poller asks, asked by the tourist's own screen while
+    it waits for a 3-D Secure challenge or a mobile-money prompt to come back.
+    It writes only what the PSP says, so a tourist pressing it repeatedly
+    cannot move their own payment anywhere the gateway has not.
+    """
+    row = Payment.objects.filter(public_id=public_id).first()
+    if row is None or (tourist_id is not None and row.tourist_id != tourist_id):
+        raise NotFoundError(f"no payment {public_id}")
+    poll_payment(int(row.pk))
+    return payment_detail(public_id, tourist_id=tourist_id)

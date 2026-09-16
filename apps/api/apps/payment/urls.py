@@ -14,6 +14,7 @@ from apps.payment.views import (
     PaymentDetailView,
     PaymentIntentView,
     PaymentMethodsView,
+    PaymentVerifyView,
     PspWebhookView,
 )
 
@@ -23,6 +24,11 @@ urlpatterns = [
     path("payments/intents", PaymentIntentView.as_view(), name="payment-intent"),
     path("payments/methods", PaymentMethodsView.as_view(), name="payment-methods"),
     path("payments/<uuid:public_id>", PaymentDetailView.as_view(), name="payment-detail"),
+    path(
+        "payments/<uuid:public_id>/verify",
+        PaymentVerifyView.as_view(),
+        name="payment-verify",
+    ),
     # §9.4.8. Unauthenticated by session and authenticated by signature;
     # the provider in the path selects the adapter that verifies it.
     path("webhooks/psp/<str:provider>", PspWebhookView.as_view(), name="psp-webhook"),

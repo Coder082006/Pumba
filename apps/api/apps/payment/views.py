@@ -40,6 +40,7 @@ __all__ = [
     "PaymentIntentView",
     "PaymentDetailView",
     "PaymentMethodsView",
+    "PaymentVerifyView",
     "PspWebhookView",
 ]
 
@@ -98,6 +99,31 @@ class PaymentDetailView(APIView):
     )
     def get(self, request: Request, public_id: UUID) -> Response:
         payment = services.payment_detail(public_id, tourist_id=tourist_id_of(request))
+        return Response(success_envelope(ser.PaymentSerializer(payment).data))
+
+
+class PaymentVerifyView(APIView):
+    """`POST /payments/{id}/verify` — §9.3.7.
+
+    What the waiting screen calls. A tourist completing a 3-D Secure challenge
+    watches a page that has no way of knowing the webhook arrived, and polling
+    the gateway on their behalf is better than either a spinner that never
+    stops or a page that claims success it has not been told about.
+
+    No `Idempotency-Key`: this creates nothing. Asking twice asks the gateway
+    twice and writes whatever it says, which is the same answer.
+    """
+
+    permission_classes = [IsTourist]
+
+    @extend_schema(
+        request=None,
+        responses={200: ser.PaymentSerializer},
+        summary="Refresh a payment's status from the provider",
+        tags=_TAGS,
+    )
+    def post(self, request: Request, public_id: UUID) -> Response:
+        payment = services.verify(public_id, tourist_id=tourist_id_of(request))
         return Response(success_envelope(ser.PaymentSerializer(payment).data))
 
 

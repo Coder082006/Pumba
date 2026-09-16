@@ -1794,6 +1794,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/payments/{public_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh a payment's status from the provider
+         * @description `POST /payments/{id}/verify` — §9.3.7.
+         *
+         *     What the waiting screen calls. A tourist completing a 3-D Secure challenge
+         *     watches a page that has no way of knowing the webhook arrived, and polling
+         *     the gateway on their behalf is better than either a spinner that never
+         *     stops or a page that claims success it has not been told about.
+         *
+         *     No `Idempotency-Key`: this creates nothing. Asking twice asks the gateway
+         *     twice and writes whatever it says, which is the same answer.
+         */
+        post: operations["payments_verify_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/payments/intents": {
         parameters: {
             query?: never;
@@ -6443,6 +6471,27 @@ export interface operations {
         };
     };
     payments_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payment"];
+                };
+            };
+        };
+    };
+    payments_verify_create: {
         parameters: {
             query?: never;
             header?: never;
