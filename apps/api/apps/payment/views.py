@@ -28,13 +28,14 @@ from rest_framework.views import APIView
 
 from apps.common.config import get_setting
 from apps.common.envelope import success_envelope
-from apps.common.errors import ValidationError
+from apps.common.errors import NotFoundError, ValidationError
 from apps.common.idempotency import idempotent
 from apps.common.permissions import IsTourist, tourist_id_of
 from apps.common.throttling import PaymentIntentThrottle
 from apps.payment import serializers as ser
 from apps.payment import services
 from apps.payment.models import PaymentMethod
+from apps.trip import services as trip_services
 
 __all__ = [
     "PaymentIntentView",
@@ -70,6 +71,15 @@ class PaymentIntentView(APIView):
         payload = ser.PaymentIntentSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         body = payload.validated_data
+
+        # Ownership, before a gateway is touched. §30.3: a stranger must not be
+        # able to learn that a trip exists by trying to pay for it, so this is
+        # a 404 and never a 403 — the same check `TransportQuoteView` makes for
+        # the same reason, and the service makes it again for callers that are
+        # not this view.
+        if trip_services.get_trip(body["trip_id"], tourist_id=tourist_id_of(request)) is None:
+            raise NotFoundError()
+
         payment = services.initiate(
             body["trip_id"],
             tourist_id=tourist_id_of(request),

@@ -76,6 +76,15 @@ pytestmark = pytest.mark.django_db
 #: Adding a name here is a deliberate act and shows up in review.
 PUBLIC_BY_DESIGN = {
     "v1:common:health": "Liveness probe; discloses no data (SRS §35.6).",
+    # §9.4.8: "Unauthenticated by session; authenticated by signature." The PSP
+    # holds no account here and can present no token; what proves the request
+    # is an HMAC over the body, checked with §21.5's five-minute freshness
+    # window before anything reaches the payment machine. A permission class
+    # would refuse every real callback and none of the forged ones.
+    "v1:payment:psp-webhook": (
+        "Authenticated by HMAC signature rather than by session (§9.4.8); an "
+        "unverified payload never reaches the state machine."
+    ),
     # §24.1 makes this the first call every client makes — the splash resolves
     # configuration *before showing anything else*, and blocks on a forced
     # upgrade. A version floor only reachable after signing in could not retire
@@ -220,6 +229,13 @@ NO_ROWS_EXPOSED = {
     # API-05's list. It exposes rows, but only through
     # `booking.selectors.visible_to(principal)`, and it takes no identifier.
     "v1:booking:booking-list": "Lists by principal through `scoped`; there is no id to supply.",
+    # A static description of the rails available. No rows at all.
+    "v1:payment:payment-methods": "Describes the available methods; reads nothing.",
+    # §27.10's console. Both list money across the platform for FINANCE_READ,
+    # which §5.2 gives only to FINANCE_OFFICER and SUPER_ADMIN — and neither
+    # route takes an identifier, so there is nothing for a caller to aim at.
+    "v1:administration:admin-payment-list": "Searches payments; there is no id to supply.",
+    "v1:administration:refund-list-create": "Lists and creates; there is no id to supply.",
 }
 
 #: Views that *do* resolve a caller-supplied identifier, but filter by
@@ -275,6 +291,23 @@ SCOPED_BY_A_SELECTOR = {
     "v1:booking:booking-detail": (
         "Resolves the booking through `booking.selectors.one_visible_to`, which "
         "applies `scoped(..., Resource.BOOKING)` before the row is fetched."
+    ),
+    "v1:payment:payment-detail": (
+        "The `payment.services.payment_detail` selector takes `tourist_id` and "
+        "refuses a row that is not theirs with the same 404 a payment that "
+        "never existed gets (§30.3)."
+    ),
+    "v1:payment:payment-verify": (
+        "Same selector as the detail view: the `payment_detail` selector "
+        "filters by `tourist_id`, so a stranger's payment cannot be refreshed "
+        "or even proven to exist."
+    ),
+    "v1:payment:psp-webhook": (
+        "The path parameter names the *gateway*, not a row. The payment is "
+        "resolved by the PSP's own `psp_reference` through the "
+        "`Payment.objects.filter(psp_reference=...)` selector in "
+        "`payment.services.apply_psp_state` — a value no caller chooses and no "
+        "principal owns, which is why the signature is the authentication."
     ),
     "v1:booking:booking-cancellation-preview": (
         "Resolves the booking through `booking.selectors.one_visible_to`."
@@ -335,6 +368,14 @@ SCOPED_BY_A_SELECTOR = {
 #: nonexistent trip are indistinguishable lives in
 #: `apps/trip/tests/test_transport_quote_api.py`.
 SCOPED_BY_A_BODY_IDENTIFIER = {
+    # API-07. §9.4.7 puts the trip in the request body, and
+    # `payment.services.initiate` resolves it through
+    # `trip.services.get_trip(..., tourist_id=...)` — the owner is in the WHERE
+    # clause, so a stranger's trip is a 404 rather than somebody else's charge.
+    "v1:payment:payment-intent": (
+        "The trip arrives in the body and is resolved with the caller's "
+        "`tourist_id` in the filter."
+    ),
     "v1:trip:transport-quote": (
         "§9.4.4 carries `trip_id` in the body. The handler loads it through the "
         "`trip.selectors.trips_of` selector via `services.get_trip(..., "
@@ -361,9 +402,6 @@ SCOPED_BY_A_BODY_IDENTIFIER = {
 #: narrower scope — which is exactly what Phase 11 does — the build fails here
 #: and names the route that has to grow a filter.
 GLOBAL_BY_ROLE: dict[str, tuple[Permission, Resource, str]] = {
-    # §27.9's exceptional controls, BR-038: SUPER_ADMIN only, and SUPER_ADMIN
-    # holds `Scope.GLOBAL` over BOOKING. `SYSTEM_CONFIGURE` is the permission
-    # only SUPER_ADMIN holds, which is what the guard below re-derives from.
     "v1:administration:admin-booking-force-transition": (
         Permission.SYSTEM_CONFIGURE,
         Resource.BOOKING,
