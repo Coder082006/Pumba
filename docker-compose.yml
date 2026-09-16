@@ -83,6 +83,12 @@ services:
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
       EMAIL_USE_TLS: ${EMAIL_USE_TLS:-true}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Pumba <no-reply@localhost>}
+      # Payments (§21, ADR 0027). `payment` is the one port with no default, so
+      # an unset adapter is not "the fake" — it is an error at the first
+      # attempt to pay, which is the safe direction when money is involved.
+      PAYMENT_ADAPTER: ${PAYMENT_ADAPTER:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
     volumes:
       - ./apps/api:/app
       # The bind mount above would otherwise hide the image's virtualenv, and
@@ -167,6 +173,10 @@ services:
     environment:
       # The browser's view: the host's published port.
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+      # Stripe's publishable key, from `.env`. Public by design — it identifies
+      # the account and authorises nothing — and absent by default, which the
+      # checkout reports honestly rather than rendering a form that cannot work.
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
       # The server's view, from inside the container, where `localhost` is this
       # container and not the API. Not `NEXT_PUBLIC_`, so it never reaches the
       # browser bundle where it would be meaningless.

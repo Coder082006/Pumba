@@ -15,6 +15,8 @@
   "dependencies": {
     "@pumba/contracts": "workspace:*",
     "@pumba/ui": "workspace:*",
+    "@stripe/react-stripe-js": "3",
+    "@stripe/stripe-js": "5",
     "@tanstack/react-query": "5.62.11",
     "next": "15.5.23",
     "react": "19.0.0",

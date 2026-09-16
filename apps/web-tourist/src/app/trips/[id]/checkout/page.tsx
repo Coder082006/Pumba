@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import { use, useCallback, useEffect, useRef, useState } from 'react';
 import { LocalTime, Money } from '@pumba/ui';
 
+import { CardPayment } from '@/components/payment/card-payment';
 import { ApiRequestError } from '@/lib/api';
 import { confirmBasket } from '@/lib/booking';
+import { createIntent, failureMessage, type Payment } from '@/lib/payments';
 import { getTrip, quoteTrip, type Quote, type Trip } from '@/lib/trips';
 
 /**
@@ -19,14 +21,19 @@ import { getTrip, quoteTrip, type Quote, type Trip } from '@/lib/trips';
  * the basket with that token: one booking per component, the seats held for
  * the payment window.
  *
- * **No money moves, and the page says so in the button's own words.** Payment
- * capture is Phase 8. A tourist who reads "Reserve" and then "nothing has been
- * charged yet" knows exactly where they stand; one who read "Pay" would not.
+ * **Three calls now, in the order §9.4.5 to §9.4.7 gives them.** Reserving
+ * creates the bookings; the intent that follows it asks the gateway for a
+ * client secret; the card is then typed into Stripe's own field and never into
+ * this page (PM1, SAQ A).
  *
- * Every refusal the basket can return is shown as what it means to the
- * tourist, not as a code: an expired offer invites a new price, an operator
- * that cannot sell right now names the item, a moved fare says the price
- * changed.
+ * **The tourist is told what each step did.** Reserving holds seats and
+ * charges nothing, and the page says so; paying charges the trip's own total,
+ * and the button says that figure. A screen that blurred the two would leave a
+ * tourist unsure whether their card had been taken.
+ *
+ * Every refusal is shown as what it means rather than as a code: an expired
+ * offer invites a new price, an operator that cannot sell right now names the
+ * item, a declined card names the bank's reason (§21.8).
  */
 export default function CheckoutPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -36,6 +43,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
   const [problem, setProblem] = useState<string | null>(null);
   const [details, setDetails] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [payment, setPayment] = useState<Payment | null>(null);
   // One idempotency key per attempt at this quote, so a retry after a timeout
   // gets the basket it already made rather than a conflict.
   const attempt = useRef<string>(crypto.randomUUID());
@@ -65,14 +73,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
     setDetails([]);
     try {
       await confirmBasket(id, quote.quote_token, attempt.current);
-      router.push(`/trips/${id}/confirmation`);
+      // §9.4.7 immediately: the seats are held for the payment window, and a
+      // tourist who has to press a second button to start paying is a tourist
+      // watching that window run down.
+      setPayment(await createIntent(id, 'CARD', attempt.current));
     } catch (error) {
       setProblem(explain(error));
       setDetails(detailLines(error));
     } finally {
       setBusy(false);
     }
-  }, [id, quote, router]);
+  }, [id, quote]);
 
   const zone = trip?.destination.timezone;
 
@@ -143,23 +154,82 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
                 </li>
               ))}
           </ul>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void reserve()}
-            className="w-full rounded-md bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors duration-fast ease-out hover:bg-primary/90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {busy ? 'Reserving…' : 'Reserve these bookings'}
-          </button>
-          <p className="text-xs text-muted-foreground">
-            Reserving creates your bookings and holds your places while you pay. Payment arrives in
-            the next release, so nothing has been charged yet. Each booking keeps the cancellation
-            policy it is sold under today.
-          </p>
+          {payment ? (
+            <PaymentStep payment={payment} tripId={id} onPaid={() => router.push(`/trips/${id}/confirmation`)} />
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void reserve()}
+                className="w-full rounded-md bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-colors duration-fast ease-out hover:bg-primary/90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {busy ? 'Reserving…' : 'Reserve and pay'}
+              </button>
+              <p className="text-xs text-muted-foreground">
+                Reserving holds your places and charges nothing. You pay on the next step, and each
+                booking keeps the cancellation policy it is sold under today.
+              </p>
+            </>
+          )}
         </section>
       ) : null}
     </div>
   );
+}
+
+/**
+ * The paying half of the page — §24.22.
+ *
+ * Split out rather than inlined because it has its own failure to report: a
+ * card that is declined is not a checkout that failed, it is a payment to try
+ * again, and the reserved bookings are still there either way.
+ */
+function PaymentStep({
+  payment,
+  tripId,
+  onPaid,
+}: {
+  payment: Payment;
+  tripId: string;
+  onPaid: () => void;
+}) {
+  const secret = payment.action?.payload?.client_secret;
+
+  if (payment.status === 'FAILED') {
+    return (
+      <div className="space-y-3">
+        <p role="alert" className="rounded-md border border-destructive/40 p-3 text-sm">
+          {failureMessage(payment.failure_code)}
+        </p>
+        <Link
+          href={`/trips/${tripId}/checkout`}
+          className="inline-block text-sm font-medium text-primary hover:underline"
+        >
+          Try again
+        </Link>
+      </div>
+    );
+  }
+
+  if (!secret) {
+    // An intent with no action is one the gateway is still thinking about, or
+    // one already captured. Either way the answer arrives by webhook, and the
+    // confirmation page is where it shows up.
+    return (
+      <div className="space-y-3 text-sm">
+        <p>Your payment is being processed.</p>
+        <Link
+          href={`/trips/${tripId}/confirmation`}
+          className="inline-block font-medium text-primary hover:underline"
+        >
+          See your bookings
+        </Link>
+      </div>
+    );
+  }
+
+  return <CardPayment payment={payment} clientSecret={secret} onPaid={onPaid} />;
 }
 
 function explain(error: unknown): string {
