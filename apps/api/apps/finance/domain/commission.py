@@ -191,9 +191,15 @@ def compute(
 def _band(rule: Rule, monthly_volume: Decimal) -> Decimal:
     """The percentage for a provider's volume — §22.2's TIERED bands.
 
-    The highest band whose floor the volume reaches. An empty ladder charges
-    nothing, which is visible in a statement immediately; guessing a default
-    would not be.
+    The band with the **highest floor** the volume reaches — not the highest
+    percentage among those that apply. A volume ladder exists to charge a busy
+    operator less, so taking the largest rate would invert the whole point of
+    it and cost the busiest providers the most.
+
+    An empty ladder charges nothing, which shows up in a statement immediately;
+    guessing a default would not.
     """
-    applicable = [percent for floor, percent in rule.tiers if monthly_volume >= floor]
-    return max(applicable) if applicable else Decimal("0")
+    applicable = [(floor, percent) for floor, percent in rule.tiers if monthly_volume >= floor]
+    if not applicable:
+        return Decimal("0")
+    return max(applicable, key=lambda band: band[0])[1]

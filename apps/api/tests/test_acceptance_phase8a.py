@@ -313,23 +313,25 @@ class TestEachCriterionIsStillAsserted:
         assert callable(getattr(holder, test, None)), f"{criterion}: {cls}.{test} is gone"
 
 
-#: What §37.8 and §41.9 ask for and 8a does not deliver, with the reason.
+#: What §37.8 and §41.9 asked for that 8a did not deliver.
 #:
-#: Written down rather than left implicit: a phase that quietly drops two
-#: acceptance clauses is a phase somebody later believes was finished.
+#: Three of the five are now done — 8b built the ledger, the accruals and their
+#: reversals — and the entries are kept rather than deleted, because "this was
+#: missing and is no longer" is the useful record. `test_acceptance_phase8b.py`
+#: holds what remains outstanding today.
 NOT_IN_8A: dict[str, str] = {
-    "writes the ledger entries": "The ledger is 8b. §22.3's thirteen entry types, "
-    "`ledger_entry` and BR-064's nightly invariant arrive with it.",
-    "reverse the correct accruals": "There are no accruals to reverse until 8b "
-    "accrues commission at completion (BR-071).",
-    "pay by mobile money": "§21.2's second rail is a second adapter behind the "
-    "same port. `GET /payments/methods` reports it unavailable rather than "
-    "offering a rail that would fail at the gateway.",
-    "TC-110, TC-111": "Commission snapshot immutability and the ledger balance "
-    "invariant; both are 8b's.",
-    "chargebacks": "§22.6 defers allocation to the provider agreement, which is "
-    "Appendix D-5 and Phase 11. DISPUTED and CHARGEBACK_LOST are declared in the "
-    "machine and unreachable.",
+    "writes the ledger entries": "Delivered by 8b: §22.3's thirteen entry "
+    "types, the journal that groups them and BR-064's nightly invariant.",
+    "reverse the correct accruals": "Delivered by 8b: §22.6's three cases, "
+    "driven from the settled refund rather than the cancellation.",
+    "accrual at completion (BR-071)": "Delivered by 8b, which also had to "
+    "build the sweeper that notices a service has happened — nothing did.",
+    "pay by mobile money": "Still outstanding. §21.2's second rail is a second "
+    "adapter behind the same port; `GET /payments/methods` reports it "
+    "unavailable rather than offering a rail that would fail at the gateway.",
+    "chargebacks": "Still outstanding. §22.6 defers allocation to the provider "
+    "agreement, which is Appendix D-5 and Phase 11. DISPUTED and "
+    "CHARGEBACK_LOST are declared in the machine and unreachable.",
 }
 
 
@@ -338,15 +340,16 @@ class TestTheGapsAreStated:
         for clause, reason in NOT_IN_8A.items():
             assert len(reason) > 40, f"{clause} is listed as a gap with no reason"
 
-    def test_the_ledger_is_genuinely_absent(self) -> None:
-        """The gap list is only worth having while it is true. A `ledger_entry`
-        table appearing without this list changing would mean 8b landed and
-        nobody updated the record of what 8a left undone."""
+    def test_the_ledger_arrived_with_8b(self) -> None:
+        """The counterpart of the check this replaced.
+
+        It used to assert that `finance` had no tables, and failed the day 8b
+        gave it some — which is exactly what a gap list is for. Now it asserts
+        the other direction: the entries above claim the ledger was built, and
+        a `finance` module that lost its models would make this file a lie.
+        """
         from django.apps import apps
 
-        # The module file exists and is a docstring; what would mean 8b had
-        # landed is a *model* in it.
-        assert not list(apps.get_app_config("finance").get_models()), (
-            "finance has tables now, so the ledger is no longer absent — "
-            "NOT_IN_8A needs revisiting."
-        )
+        assert list(
+            apps.get_app_config("finance").get_models()
+        ), "NOT_IN_8A says 8b delivered the ledger, and finance has no tables."
