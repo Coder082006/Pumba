@@ -27,7 +27,12 @@ from apps.trip import services as trip_services
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["release_expired_holds", "reconcile_inventory", "expire_provider_responses"]
+__all__ = [
+    "release_expired_holds",
+    "reconcile_inventory",
+    "expire_provider_responses",
+    "advance_due_bookings",
+]
 
 
 @shared_task(name="booking.release_expired_holds", queue="default")
@@ -128,3 +133,20 @@ def expire_provider_responses() -> dict[str, int]:
     if cancelled:
         logger.info("expire_provider_responses: %s on-request bookings cancelled", cancelled)
     return {"cancelled": cancelled}
+
+
+@shared_task(name="booking.advance_due_bookings", queue="default")
+def advance_due_bookings() -> dict[str, int]:
+    """§20.2's two time-driven edges — ADR 0028, BR-071.
+
+    A dive centre does not open an admin console to say the boat came back, and
+    until Phase 9 no driver reports a transfer either. So a service starts and
+    ends on its own schedule, and **this is the job that makes an operator's
+    money earned**: BR-071 accrues at completion, so before this existed the
+    ledger had nothing to record.
+
+    Every fifteen minutes rather than every minute: the precision that matters
+    is "the same day", the accrual that follows has a two-day settlement hold
+    behind it anyway, and a job that scans two indexes is still a job.
+    """
+    return booking_services.complete_due()

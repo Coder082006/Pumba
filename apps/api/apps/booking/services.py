@@ -33,7 +33,8 @@ capacity for an itinerary that cannot be sold.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -60,6 +61,7 @@ from apps.common.errors import (
 )
 from apps.common.events import DomainEvent, publish
 from apps.common.ports_registry import get_document_port, get_storage_port
+from apps.common.state_machine import GuardFailedError, IllegalTransitionError
 from apps.inventory import services as inventory
 from apps.inventory.dto import HoldDTO, HoldRequest
 from apps.provider import services as provider
@@ -67,6 +69,8 @@ from apps.provider.dto import ProviderDTO
 from apps.trip import services as trip_services
 from apps.trip.dto import BasketLineDTO, TripDTO
 from ports.document import VoucherContent
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "QuoteResult",
@@ -107,6 +111,8 @@ __all__ = [
     "RefundExceedsCapturedError",
     "booking_id_for",
     "public_id_of_booking",
+    "BookingCompleted",
+    "complete_due",
     "settle_refund",
     "force_transition",
     "reissue_voucher",
@@ -1570,6 +1576,125 @@ def public_id_of_booking(booking_id: int) -> UUID:
     if value is None:
         raise NotFoundError(f"no booking {booking_id}")
     return UUID(str(value))
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BookingCompleted(DomainEvent):
+    """§8.9's `BookingCompleted`. 8b's ledger accrues from it (BR-071).
+
+    Carries the figures frozen at confirmation rather than a booking id alone,
+    because the consumer must accrue what was agreed and not what a rule says
+    today (TC-110) — and because §8.9 events carry primitives, a Decimal that
+    crossed as a float would lose a cent on the way to a ledger.
+    """
+
+    name = "booking.completed"
+    booking_public_id: str = ""
+    reference: str = ""
+    trip_id: int = 0
+    provider_id: int = 0
+    booking_type: str = ""
+    gross_amount: str = "0"
+    commission_amount: str = "0"
+    net_amount: str = "0"
+    currency: str = ""
+
+
+def complete_due(*, now: datetime | None = None, limit: int = 200) -> dict[str, int]:
+    """§20.2's two time-driven edges, for services nobody else reports on.
+
+    A transfer will have a driver who marks arrival (Phase 9) and an activity
+    never will: nobody at a dive centre opens an admin console to say the boat
+    came back. So a booking starts when its `starts_at` passes and completes
+    when its `ends_at` does, through the guards §20.2 already declares —
+    `service_start_reached` and `service_end_reached` — which is why this
+    function supplies facts and decides nothing.
+
+    **Completion is what earns an operator their money** (BR-071: accrual at
+    completion, not at payment), so until this ran, nothing in the platform was
+    ever earned. That is the whole reason it exists.
+
+    Idempotent and bounded: a booking already IN_PROGRESS is not restarted, a
+    cancelled one is refused by the machine rather than skipped by a condition
+    here, and a backlog is worked `limit` rows at a time so one long-delayed run
+    cannot hold a transaction open across thousands of rows.
+    """
+    now = now or timezone.now()
+    started = completed = 0
+
+    for row in Booking.objects.filter(
+        status=BookingState.CONFIRMED.value, starts_at__lte=now
+    ).order_by("id")[:limit]:
+        context = {"service_start_reached": True}
+        if _advance(row, BookingState.IN_PROGRESS, now=now, context=context):
+            started += 1
+
+    for row in Booking.objects.filter(
+        status=BookingState.IN_PROGRESS.value, ends_at__lte=now
+    ).order_by("id")[:limit]:
+        if _advance(row, BookingState.COMPLETED, now=now, context={"service_end_reached": True}):
+            completed += 1
+
+    if started or completed:
+        logger.info("bookings_advanced", extra={"started": started, "completed": completed})
+    return {"started": started, "completed": completed}
+
+
+@transaction.atomic
+def _advance(
+    row: Booking,
+    target: BookingState,
+    *,
+    now: datetime,
+    context: Mapping[str, object],
+) -> bool:
+    """One booking, one transaction, re-read under lock.
+
+    Re-read because the row was selected outside the lock and a tourist may
+    have cancelled it in between — which the machine then refuses, and this
+    reports as "nothing moved" rather than as an error, because a race the
+    tourist won is not a fault.
+    """
+    locked = Booking.objects.select_for_update().filter(pk=row.pk).first()
+    if locked is None or locked.status != row.status:
+        return False
+
+    try:
+        apply(BookingState(locked.status), target, actor=Actor.SYSTEM, context=context)
+    except (IllegalTransitionError, GuardFailedError):
+        return False
+
+    fields: dict[str, object] = {"completed_at": now} if target is BookingState.COMPLETED else {}
+    repo.set_status(locked, target.value, **fields)
+    repo.record_transition(
+        locked,
+        from_status=row.status,
+        to_status=target.value,
+        actor_role="SYSTEM",
+        actor_user_id=None,
+        reason=(
+            "The service's end time passed."
+            if target is BookingState.COMPLETED
+            else "The service's start time passed."
+        ),
+        occurred_at=now,
+    )
+
+    if target is BookingState.COMPLETED:
+        publish(
+            BookingCompleted(
+                booking_public_id=str(locked.public_id),
+                reference=locked.reference,
+                trip_id=locked.trip_id,
+                provider_id=locked.provider_id,
+                booking_type=locked.booking_type,
+                gross_amount=str(locked.gross_amount),
+                commission_amount=str(locked.commission_amount or "0"),
+                net_amount=str(locked.net_amount or "0"),
+                currency=locked.currency,
+            )
+        )
+    return True
 
 
 def settle_refund(
