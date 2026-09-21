@@ -56,6 +56,7 @@ from apps.catalogue import services as catalogue
 from apps.common.audit import AuditAction, AuditRecord, record_audit
 from apps.common.authz import Permission, Principal
 from apps.common.errors import NotFoundError, ValidationError
+from apps.finance import services as finance
 from apps.payment import services as payment_services
 from apps.provider import services as provider
 from apps.provider.dto import ProviderDTO
@@ -654,3 +655,119 @@ def list_refunds(*, status: str | None = None, limit: int = 100) -> list[Any]:
 def list_payments(*, status: str | None = None, limit: int = 100) -> list[Any]:
     """§27.10's payment search."""
     return payment_services.list_payments(status=status, limit=limit)
+
+
+# ---------------------------------------------------------------------------
+# §22.2, §22.5, §26.7 — the finance console
+# ---------------------------------------------------------------------------
+
+
+def create_commission_rule(
+    *, principal: Principal | None, ip: str | None = None, **fields: Any
+) -> Any:
+    """§27.11's commercial rules. Audited, because a rate change moves money.
+
+    The provider arrives as a public id and is stored as an internal one
+    (ADR 0012), which is the one place this console has to translate: §22.2
+    matches on the storage id and an API never exposes one.
+    """
+    provider_public_id = fields.pop("provider", None)
+    if provider_public_id is not None:
+        seller = provider.get_provider(provider_public_id)
+        if seller is None:
+            raise NotFoundError(f"no provider {provider_public_id}")
+        fields["provider_id"] = seller.id
+
+    rule = finance.create_rule(**fields)
+    _audit(
+        AuditAction.COMMISSION_RULE_CHANGED,
+        "commission_rule",
+        rule.public_id,
+        before=None,
+        after=_plain(
+            {
+                "scope": rule.scope,
+                "method": rule.method,
+                "percent": rule.percent,
+                "priority": rule.priority,
+            }
+        ),
+        principal=principal,
+        ip=ip,
+    )
+    return rule
+
+
+def update_commission_rule(
+    public_id: UUID, *, principal: Principal | None, ip: str | None = None, **fields: Any
+) -> Any:
+    """A rate change never reaches a booking already sold (BR-070, TC-110)."""
+    before, rule = finance.update_rule(public_id, **fields)
+    _audit(
+        AuditAction.COMMISSION_RULE_CHANGED,
+        "commission_rule",
+        rule.public_id,
+        before=_plain(before),
+        after=_plain({"percent": rule.percent, "is_active": rule.is_active}),
+        principal=principal,
+        ip=ip,
+    )
+    return rule
+
+
+def list_commission_rules() -> list[Any]:
+    return finance.list_rules()
+
+
+def list_payouts(*, status: str | None = None) -> list[Any]:
+    return finance.list_payouts(status=status)
+
+
+def approve_payout(public_id: UUID, *, principal: Principal | None, ip: str | None = None) -> Any:
+    """BR-075. The approver is the principal, never a field in the request."""
+    if principal is None:
+        raise ValidationError("A payout is approved by somebody, not by a request.")
+    payout = finance.approve_payout(public_id, approved_by_user_id=principal.user_id)
+    _audit(
+        AuditAction.PAYOUT_APPROVED,
+        "payout",
+        payout.public_id,
+        before={"status": "DRAFT"},
+        after={"status": payout.status, "amount": str(payout.amount)},
+        principal=principal,
+        ip=ip,
+    )
+    return payout
+
+
+def release_payout(
+    public_id: UUID, *, rail_reference: str, principal: Principal | None, ip: str | None = None
+) -> Any:
+    """§22.5's release. No money moves here — ADR 0028 decision 6."""
+    payout = finance.release_payout(public_id, rail_reference=rail_reference)
+    _audit(
+        AuditAction.PAYOUT_RELEASED,
+        "payout",
+        payout.public_id,
+        before={"status": "APPROVED"},
+        after={"status": payout.status, "reference": payout.rail_reference},
+        principal=principal,
+        ip=ip,
+    )
+    return payout
+
+
+def provider_earnings(public_id: UUID) -> dict[str, Any]:
+    """§26.7, for an administrator: the portal and its principal are Phase 11."""
+    seller = provider.get_provider(public_id)
+    if seller is None:
+        raise NotFoundError(f"no provider {public_id}")
+    return finance.provider_statement(seller.id)
+
+
+def finance_report(*, currency: str | None = None) -> dict[str, Any]:
+    """§22.7: "generated from the ledger, never from the booking table"."""
+    return {
+        "accounts": finance.account_totals(currency=currency),
+        "exceptions": finance.ledger_exceptions(),
+    }

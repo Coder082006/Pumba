@@ -463,3 +463,175 @@ class AdminRefundListCreateView(_FinanceView):
             success_envelope(ser.RefundReadSerializer(refund).data),
             status=status.HTTP_201_CREATED,
         )
+
+
+# -- §22.2, §22.5, §26.7: the finance console ------------------------------------------------
+
+
+class AdminCommissionRuleListCreateView(_AdminView):
+    """§27.11's commercial rules. `/admin/commission-rules`, §9.3.10.
+
+    CATALOGUE_MANAGE rather than FINANCE_READ: a commission rule is a
+    commercial term somebody negotiates, and §5.2 gives that to the same
+    administrators who manage listings and tariffs. Finance approves what is
+    *paid*; the console that sets rates is the one that sets prices.
+    """
+
+    permission_classes = CATALOGUE_ADMIN_PERMISSIONS
+
+    @extend_schema(
+        responses={200: ser.CommissionRuleReadSerializer(many=True)},
+        summary="Commission rules",
+        tags=_TAGS,
+    )
+    def get(self, request: Request) -> Response:
+        rules = services.list_commission_rules()
+        return Response(success_envelope(ser.CommissionRuleReadSerializer(rules, many=True).data))
+
+    @extend_schema(
+        request=ser.CommissionRuleWriteSerializer,
+        responses={201: ser.CommissionRuleReadSerializer},
+        summary="Add a commission rule",
+        description=(
+            "§22.2. A rule cannot reach a booking already sold: BR-070 freezes "
+            "the rate on the booking at confirmation (TC-110)."
+        ),
+        tags=_TAGS,
+    )
+    def post(self, request: Request) -> Response:
+        body = self._validated(request, ser.CommissionRuleWriteSerializer, partial=False)
+        rule = services.create_commission_rule(
+            principal=principal_from_request(request),
+            ip=self._ip(request),
+            **body,
+        )
+        return Response(
+            success_envelope(ser.CommissionRuleReadSerializer(rule).data),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AdminCommissionRuleDetailView(_AdminView):
+    permission_classes = CATALOGUE_ADMIN_PERMISSIONS
+
+    @extend_schema(
+        request=ser.CommissionRuleWriteSerializer,
+        responses={200: ser.CommissionRuleReadSerializer},
+        summary="Change a commission rule",
+        tags=_TAGS,
+    )
+    def patch(self, request: Request, public_id: UUID) -> Response:
+        body = self._validated(request, ser.CommissionRuleWriteSerializer, partial=True)
+        body.pop("provider", None)
+        rule = services.update_commission_rule(
+            public_id,
+            principal=principal_from_request(request),
+            ip=self._ip(request),
+            **body,
+        )
+        return Response(success_envelope(ser.CommissionRuleReadSerializer(rule).data))
+
+
+class AdminPayoutListView(_FinanceView):
+    """§9.3.10's `GET /admin/payouts`."""
+
+    @extend_schema(
+        responses={200: ser.PayoutSerializer(many=True)},
+        summary="Payout batches",
+        parameters=[OpenApiParameter("status", str, description="DRAFT, APPROVED, PAID or FAILED")],
+        tags=_TAGS,
+    )
+    def get(self, request: Request) -> Response:
+        payouts = services.list_payouts(status=request.query_params.get("status") or None)
+        return Response(success_envelope(ser.PayoutSerializer(payouts, many=True).data))
+
+
+class AdminPayoutApproveView(_FinanceView):
+    """§9.3.10's `POST /admin/payouts/{id}/approve` — BR-075.
+
+    Gated on REFUND_APPROVE's sibling, PAYOUT_APPROVE, which §5.2 gives to
+    FINANCE_OFFICER and SUPER_ADMIN alone.
+    """
+
+    permission_classes = [
+        IsAuthenticatedPrincipal,
+        HasPermission.for_(Permission.PAYOUT_APPROVE),
+        EmailVerified,
+        MfaSatisfied,
+    ]
+
+    @extend_schema(
+        request=None,
+        responses={200: ser.PayoutSerializer},
+        summary="Approve a payout",
+        tags=_TAGS,
+    )
+    def post(self, request: Request, public_id: UUID) -> Response:
+        payout = services.approve_payout(
+            public_id, principal=principal_from_request(request), ip=self._ip(request)
+        )
+        return Response(success_envelope(ser.PayoutSerializer(payout).data))
+
+
+class AdminPayoutReleaseView(AdminPayoutApproveView):
+    """`POST /admin/payouts/{id}/release`.
+
+    §9.3.10 names approval and not release, and §22.5 describes both — so the
+    route exists under the same permission. **No money moves** (ADR 0028
+    decision 6): the reference recorded is a transfer somebody made at their
+    bank, and the ledger entry is what says the obligation has left.
+    """
+
+    @extend_schema(
+        request=ser.PayoutReleaseSerializer,
+        responses={200: ser.PayoutSerializer},
+        summary="Record a payout as paid",
+        description=(
+            "No transfer is made: the payout rail is Phase 11's, behind a port "
+            "with no adapter. `rail_reference` is how the transfer that was "
+            "made by hand can be found again."
+        ),
+        tags=_TAGS,
+    )
+    def post(self, request: Request, public_id: UUID) -> Response:
+        body = self._validated(request, ser.PayoutReleaseSerializer, partial=False)
+        payout = services.release_payout(
+            public_id,
+            rail_reference=body["rail_reference"],
+            principal=principal_from_request(request),
+            ip=self._ip(request),
+        )
+        return Response(success_envelope(ser.PayoutSerializer(payout).data))
+
+
+class AdminProviderEarningsView(_FinanceView):
+    """§26.7's figures, for an administrator.
+
+    The provider portal is Phase 11 and there is no provider principal yet, so
+    an operator asking "what am I owed" is answered by somebody at Pumba
+    reading this — which is the honest version of the screen until they can
+    read it themselves.
+    """
+
+    @extend_schema(
+        responses={200: ser.ProviderEarningsSerializer},
+        summary="What a provider has earned and been paid",
+        tags=_TAGS,
+    )
+    def get(self, request: Request, public_id: UUID) -> Response:
+        earnings = services.provider_earnings(public_id)
+        return Response(success_envelope(ser.ProviderEarningsSerializer(earnings).data))
+
+
+class AdminFinanceReportView(_FinanceView):
+    """§22.7's daily figures — from the ledger, never from the booking table."""
+
+    @extend_schema(
+        responses={200: None},
+        summary="Financial position, by account",
+        parameters=[OpenApiParameter("currency", str, description="Narrow to one currency")],
+        tags=_TAGS,
+    )
+    def get(self, request: Request) -> Response:
+        report = services.finance_report(currency=request.query_params.get("currency") or None)
+        return Response(success_envelope(report))

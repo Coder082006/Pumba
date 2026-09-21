@@ -98,6 +98,9 @@ class Resource(StrEnum):
     # Phase 7 - a component booking (§7.5.12). API-05: "List, scoped by role".
     BOOKING = "BOOKING"
 
+    # Phase 8b - §22's money records: commission rules, payouts, the ledger.
+    FINANCE_RECORD = "FINANCE_RECORD"
+
 
 class Scope(StrEnum):
     OWNED = "OWNED"
@@ -195,6 +198,30 @@ def _provider_record() -> dict[tuple[Role, Resource], OwnershipRule]:
     rules[Role.PROVIDER_OWNER] = _own("provider_id", "id")
     rules[Role.PROVIDER_STAFF] = _own("provider_id", "id")
     return {(role, Resource.PROVIDER): rule for role, rule in rules.items()}
+
+
+def _finance_record() -> dict[tuple[Role, Resource], OwnershipRule]:
+    """§22's records: commission rules, payouts and the ledger behind them.
+
+    **Global writes, and not by oversight.** §5.2 gives FINANCE_OFFICER
+    "approve refunds; approve and release payout batches" — a write — and
+    CATALOGUE_ADMIN sets the commercial rules alongside the tariffs and
+    listings. Neither owns the rows in the sense a provider owns their own:
+    there is no narrower principal a payout batch could be scoped to, which is
+    what makes these routes safe without a filter and is re-derived by the
+    authorisation matrix on every run.
+
+    PROVIDER_OWNER reads their own, which is what Phase 11's earnings screen
+    will need; PROVIDER_STAFF does not, because §5.2 gives them "no payout or
+    banking access".
+    """
+    rules: dict[Role, OwnershipRule] = {role: _NONE for role in Role}
+    rules[Role.PROVIDER_OWNER] = _own("provider_id", "provider_id")
+    rules[Role.SUPPORT_AGENT] = _GLOBAL_READ
+    rules[Role.CATALOGUE_ADMIN] = _GLOBAL
+    rules[Role.FINANCE_OFFICER] = _GLOBAL
+    rules[Role.SUPER_ADMIN] = _GLOBAL
+    return {(role, Resource.FINANCE_RECORD): rule for role, rule in rules.items()}
 
 
 def _booking_record() -> dict[tuple[Role, Resource], OwnershipRule]:
@@ -339,6 +366,7 @@ OWNERSHIP: Mapping[tuple[Role, Resource], OwnershipRule] = MappingProxyType(
         # driver's rule is by assignment and arrives with dispatch (Phase 9),
         # so it is NONE, stated rather than left out.
         **_booking_record(),
+        **_finance_record(),
     }
 )
 

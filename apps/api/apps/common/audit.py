@@ -109,6 +109,13 @@ class AuditAction(StrEnum):
     PAYMENT_AMOUNT_MISMATCH = "payment.amount_mismatch"
     REFUND_REQUESTED = "payment.refund_requested"
 
+    # Phase 8b — §22.2 and §22.5. A rate change and a payout both move money
+    # that is somebody else's, which is what makes them audit entries rather
+    # than log lines.
+    COMMISSION_RULE_CHANGED = "finance.commission_rule_changed"
+    PAYOUT_APPROVED = "finance.payout_approved"
+    PAYOUT_RELEASED = "finance.payout_released"
+
 
 @dataclass(frozen=True, slots=True)
 class AuditRecord:

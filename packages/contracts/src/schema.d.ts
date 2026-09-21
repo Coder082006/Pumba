@@ -602,6 +602,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/commission-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Commission rules
+         * @description §27.11's commercial rules. `/admin/commission-rules`, §9.3.10.
+         *
+         *     CATALOGUE_MANAGE rather than FINANCE_READ: a commission rule is a
+         *     commercial term somebody negotiates, and §5.2 gives that to the same
+         *     administrators who manage listings and tariffs. Finance approves what is
+         *     *paid*; the console that sets rates is the one that sets prices.
+         */
+        get: operations["admin_commission_rules_list"];
+        put?: never;
+        /**
+         * Add a commission rule
+         * @description §22.2. A rule cannot reach a booking already sold: BR-070 freezes the rate on the booking at confirmation (TC-110).
+         */
+        post: operations["admin_commission_rules_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/commission-rules/{public_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change a commission rule
+         * @description §5.2: `CATALOGUE_ADMIN` manages "countries, regions, destinations,
+         *     attractions, activities, **tariffs**, policies", globally.
+         */
+        patch: operations["admin_commission_rules_partial_update"];
+        trace?: never;
+    };
     "/api/v1/admin/countries": {
         parameters: {
             query?: never;
@@ -762,6 +812,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/finance/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Financial position, by account
+         * @description §22.7's daily figures — from the ledger, never from the booking table.
+         */
+        get: operations["admin_finance_report_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/markets": {
         parameters: {
             query?: never;
@@ -866,6 +936,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/payouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Payout batches
+         * @description §9.3.10's `GET /admin/payouts`.
+         */
+        get: operations["admin_payouts_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/payouts/{public_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a payout
+         * @description §9.3.10's `POST /admin/payouts/{id}/approve` — BR-075.
+         *
+         *     Gated on REFUND_APPROVE's sibling, PAYOUT_APPROVE, which §5.2 gives to
+         *     FINANCE_OFFICER and SUPER_ADMIN alone.
+         */
+        post: operations["admin_payouts_approve_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/payouts/{public_id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a payout as paid
+         * @description No transfer is made: the payout rail is Phase 11's, behind a port with no adapter. `rail_reference` is how the transfer that was made by hand can be found again.
+         */
+        post: operations["admin_payouts_release_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/providers": {
         parameters: {
             query?: never;
@@ -924,6 +1057,31 @@ export interface paths {
          *     filter would match every row while reporting a control.
          */
         patch: operations["admin_providers_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/providers/{public_id}/earnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a provider has earned and been paid
+         * @description §26.7's figures, for an administrator.
+         *
+         *     The provider portal is Phase 11 and there is no provider principal yet, so
+         *     an operator asking "what am I owed" is answered by somebody at Pumba
+         *     reading this — which is the honest version of the screen until they can
+         *     read it themselves.
+         */
+        get: operations["admin_providers_earnings_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/admin/providers/{public_id}/status": {
@@ -2660,6 +2818,13 @@ export interface components {
             readonly history: components["schemas"]["History"][];
             readonly has_voucher: boolean;
         };
+        /**
+         * @description * `ACTIVITY` - ACTIVITY
+         *     * `TRANSFER` - TRANSFER
+         *     * `ACCOMMODATION` - ACCOMMODATION
+         * @enum {string}
+         */
+        BookingTypeEnum: "ACTIVITY" | "TRANSFER" | "ACCOMMODATION";
         /** @description Rejects unknown fields — SRS §30.6.
          *
          *     DRF ignores them by default, which turns a client's typo into silence and
@@ -2743,6 +2908,78 @@ export interface components {
             tiers: components["schemas"]["CancellationPolicyTierRequest"][];
             is_active?: boolean;
         };
+        CommissionRuleRead: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly scope: string;
+            readonly method: string;
+            readonly priority: number;
+            readonly booking_type: string;
+            /** Format: decimal */
+            readonly percent: string | null;
+            /** Format: decimal */
+            readonly flat_amount: string | null;
+            readonly tiers: unknown[];
+            /** Format: decimal */
+            readonly min_fee: string | null;
+            /** Format: decimal */
+            readonly max_fee: string | null;
+            /** Format: date */
+            readonly valid_from: string | null;
+            /** Format: date */
+            readonly valid_to: string | null;
+            readonly is_active: boolean;
+        };
+        /**
+         * @description * `PERCENT` - PERCENT
+         *     * `FLAT` - FLAT
+         *     * `TIERED` - TIERED
+         * @enum {string}
+         */
+        CommissionRuleWriteMethodEnum: "PERCENT" | "FLAT" | "TIERED";
+        /** @description §22.2's writable columns.
+         *
+         *     `scope` decides which identifier is read: a LISTING rule needs a listing, a
+         *     PROVIDER rule a provider, a TYPE rule a booking type. Validated together
+         *     rather than field by field, because a rule with a scope and no target
+         *     matches nothing and looks like a rule that matches everything. */
+        CommissionRuleWriteRequest: {
+            scope: components["schemas"]["CommissionRuleWriteScopeEnum"];
+            /** @default PERCENT */
+            method: components["schemas"]["CommissionRuleWriteMethodEnum"];
+            listing?: number | null;
+            /** Format: uuid */
+            provider?: string | null;
+            booking_type?: components["schemas"]["BookingTypeEnum"];
+            /** @default 0 */
+            priority: number;
+            /** Format: decimal */
+            percent?: string | null;
+            /** Format: decimal */
+            flat_amount?: string | null;
+            tiers?: {
+                [key: string]: unknown;
+            }[];
+            /** Format: decimal */
+            min_fee?: string | null;
+            /** Format: decimal */
+            max_fee?: string | null;
+            currency?: string;
+            /** Format: date */
+            valid_from?: string | null;
+            /** Format: date */
+            valid_to?: string | null;
+            /** @default true */
+            is_active: boolean;
+        };
+        /**
+         * @description * `LISTING` - LISTING
+         *     * `PROVIDER` - PROVIDER
+         *     * `TYPE` - TYPE
+         *     * `GLOBAL` - GLOBAL
+         * @enum {string}
+         */
+        CommissionRuleWriteScopeEnum: "LISTING" | "PROVIDER" | "TYPE" | "GLOBAL";
         ConfigResponse: {
             min_supported_version: string;
             enabled_currencies: string[];
@@ -3466,6 +3703,41 @@ export interface components {
             tiers?: components["schemas"]["CancellationPolicyTierRequest"][];
             is_active?: boolean;
         };
+        /** @description §22.2's writable columns.
+         *
+         *     `scope` decides which identifier is read: a LISTING rule needs a listing, a
+         *     PROVIDER rule a provider, a TYPE rule a booking type. Validated together
+         *     rather than field by field, because a rule with a scope and no target
+         *     matches nothing and looks like a rule that matches everything. */
+        PatchedCommissionRuleWriteRequest: {
+            scope?: components["schemas"]["CommissionRuleWriteScopeEnum"];
+            /** @default PERCENT */
+            method: components["schemas"]["CommissionRuleWriteMethodEnum"];
+            listing?: number | null;
+            /** Format: uuid */
+            provider?: string | null;
+            booking_type?: components["schemas"]["BookingTypeEnum"];
+            /** @default 0 */
+            priority: number;
+            /** Format: decimal */
+            percent?: string | null;
+            /** Format: decimal */
+            flat_amount?: string | null;
+            tiers?: {
+                [key: string]: unknown;
+            }[];
+            /** Format: decimal */
+            min_fee?: string | null;
+            /** Format: decimal */
+            max_fee?: string | null;
+            currency?: string;
+            /** Format: date */
+            valid_from?: string | null;
+            /** Format: date */
+            valid_to?: string | null;
+            /** @default true */
+            is_active: boolean;
+        };
         /** @description §12.4's fixed-price route, as §27.11's form submits it. */
         PatchedCorridorWriteRequest: {
             origin_destination?: string;
@@ -3604,7 +3876,7 @@ export interface components {
          *     §12.4 applies it "after free waiting allowance" and defines no such
          *     allowance. `apps/transport/tests/test_tariff_model.py` asserts the silence. */
         PatchedTariffWriteRequest: {
-            scope?: components["schemas"]["ScopeEnum"];
+            scope?: components["schemas"]["TariffWriteScopeEnum"];
             region?: string | null;
             country?: string | null;
             vehicle_class?: string;
@@ -3720,6 +3992,39 @@ export interface components {
          * @enum {string}
          */
         PaymentMethodEnum: "CARD" | "MOBILE_MONEY";
+        Payout: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly provider_id: number;
+            readonly currency: string;
+            /** Format: decimal */
+            readonly amount: string;
+            readonly status: string;
+            /** Format: date */
+            readonly period_start: string;
+            /** Format: date */
+            readonly period_end: string;
+            /** Format: date-time */
+            readonly approved_at: string | null;
+            readonly rail_reference: string;
+            /** Format: date-time */
+            readonly paid_at: string | null;
+            readonly items: components["schemas"]["PayoutItem"][];
+        };
+        PayoutItem: {
+            readonly booking_id: number;
+            /** Format: decimal */
+            readonly amount: string;
+            readonly memo: string;
+        };
+        /** @description §22.5's release — ADR 0028 decision 6.
+         *
+         *     The reference is required because no rail moves the money in 8b: somebody
+         *     made a transfer at their bank, and this is how it is found again. A release
+         *     with no reference would be a "paid" flag nobody could audit. */
+        PayoutReleaseRequest: {
+            rail_reference: string;
+        };
         /**
          * @description * `IOS` - IOS
          *     * `ANDROID` - ANDROID
@@ -3792,6 +4097,20 @@ export interface components {
             readonly remaining: number;
             /** Format: decimal */
             readonly price_override: string | null;
+        };
+        /** @description §26.7's figures, served to an administrator until Phase 11's portal. */
+        ProviderEarnings: {
+            readonly balances: unknown[];
+            /** Format: decimal */
+            readonly accrued: string;
+            /** Format: decimal */
+            readonly reversed: string;
+            /** Format: decimal */
+            readonly compensation: string;
+            /** Format: decimal */
+            readonly commission: string;
+            /** Format: decimal */
+            readonly paid_out: string;
         };
         ProviderRead: {
             /** Format: uuid */
@@ -4046,12 +4365,6 @@ export interface components {
             token: string;
             new_password: string;
         };
-        /**
-         * @description * `REGION` - REGION
-         *     * `COUNTRY` - COUNTRY
-         * @enum {string}
-         */
-        ScopeEnum: "REGION" | "COUNTRY";
         /** @description One result row. Thin on purpose — §24.7 renders a kind, a name and a
          *     link, and a hit carrying the whole entity would fan out four
          *     `select_related` trees to draw a line of text. */
@@ -4154,7 +4467,7 @@ export interface components {
          *     §12.4 applies it "after free waiting allowance" and defines no such
          *     allowance. `apps/transport/tests/test_tariff_model.py` asserts the silence. */
         TariffWriteRequest: {
-            scope?: components["schemas"]["ScopeEnum"];
+            scope?: components["schemas"]["TariffWriteScopeEnum"];
             region?: string | null;
             country?: string | null;
             vehicle_class?: string;
@@ -4183,6 +4496,12 @@ export interface components {
             valid_to?: string | null;
             is_active?: boolean;
         };
+        /**
+         * @description * `REGION` - REGION
+         *     * `COUNTRY` - COUNTRY
+         * @enum {string}
+         */
+        TariffWriteScopeEnum: "REGION" | "COUNTRY";
         TouristProfile: {
             /** Format: uuid */
             readonly public_id: string;
@@ -5151,6 +5470,77 @@ export interface operations {
             };
         };
     };
+    admin_commission_rules_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommissionRuleRead"][];
+                };
+            };
+        };
+    };
+    admin_commission_rules_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommissionRuleWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CommissionRuleWriteRequest"];
+                "multipart/form-data": components["schemas"]["CommissionRuleWriteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommissionRuleRead"];
+                };
+            };
+        };
+    };
+    admin_commission_rules_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedCommissionRuleWriteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedCommissionRuleWriteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedCommissionRuleWriteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommissionRuleRead"];
+                };
+            };
+        };
+    };
     admin_countries_create: {
         parameters: {
             query?: never;
@@ -5335,6 +5725,27 @@ export interface operations {
             };
         };
     };
+    admin_finance_report_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Narrow to one currency */
+                currency?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     admin_markets_create: {
         parameters: {
             query?: never;
@@ -5449,6 +5860,76 @@ export interface operations {
             };
         };
     };
+    admin_payouts_list: {
+        parameters: {
+            query?: {
+                /** @description DRAFT, APPROVED, PAID or FAILED */
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payout"][];
+                };
+            };
+        };
+    };
+    admin_payouts_approve_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payout"];
+                };
+            };
+        };
+    };
+    admin_payouts_release_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayoutReleaseRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PayoutReleaseRequest"];
+                "multipart/form-data": components["schemas"]["PayoutReleaseRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payout"];
+                };
+            };
+        };
+    };
     admin_providers_list: {
         parameters: {
             query?: {
@@ -5540,6 +6021,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderRead"];
+                };
+            };
+        };
+    };
+    admin_providers_earnings_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                public_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderEarnings"];
                 };
             };
         };

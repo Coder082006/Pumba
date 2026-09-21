@@ -24,10 +24,17 @@ from apps.administration.views import (
     AdminActivityProviderView,
     AdminBookingForceTransitionView,
     AdminBookingVoucherReissueView,
+    AdminCommissionRuleDetailView,
+    AdminCommissionRuleListCreateView,
     AdminCorridorCreateView,
     AdminCorridorDetailView,
+    AdminFinanceReportView,
     AdminPaymentListView,
+    AdminPayoutApproveView,
+    AdminPayoutListView,
+    AdminPayoutReleaseView,
     AdminProviderDetailView,
+    AdminProviderEarningsView,
     AdminProviderListView,
     AdminProviderStatusView,
     AdminQuotePreviewView,
@@ -88,6 +95,36 @@ urlpatterns = [
     # and `administration` is the one that may — the same argument that puts
     # the tariff and provider consoles here.
     path("admin/payments", AdminPaymentListView.as_view(), name="admin-payment-list"),
+    # §22.2's commercial rules and §22.5's payouts. Here rather than in
+    # `finance` for the reason the other consoles are: a rule names a provider
+    # and a listing, and `administration` is the module that may resolve both.
+    path(
+        "admin/commission-rules",
+        AdminCommissionRuleListCreateView.as_view(),
+        name="admin-commission-rule-list",
+    ),
+    path(
+        "admin/commission-rules/<uuid:public_id>",
+        AdminCommissionRuleDetailView.as_view(),
+        name="admin-commission-rule-detail",
+    ),
+    path("admin/payouts", AdminPayoutListView.as_view(), name="admin-payout-list"),
+    path(
+        "admin/payouts/<uuid:public_id>/approve",
+        AdminPayoutApproveView.as_view(),
+        name="admin-payout-approve",
+    ),
+    path(
+        "admin/payouts/<uuid:public_id>/release",
+        AdminPayoutReleaseView.as_view(),
+        name="admin-payout-release",
+    ),
+    path(
+        "admin/providers/<uuid:public_id>/earnings",
+        AdminProviderEarningsView.as_view(),
+        name="admin-provider-earnings",
+    ),
+    path("admin/finance/report", AdminFinanceReportView.as_view(), name="admin-finance-report"),
     path("refunds", AdminRefundListCreateView.as_view(), name="refund-list-create"),
     path(
         "admin/bookings/<uuid:public_id>/voucher",

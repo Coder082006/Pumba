@@ -179,6 +179,16 @@ PUBLIC_BY_DESIGN = {
 #: exempted here whatever reason is written beside it — see
 #: `SCOPED_BY_A_SELECTOR` below.
 NO_ROWS_EXPOSED = {
+    # §22.2's rules and §22.5's batches. Both list and create across the
+    # platform for administrators whose scope §5.2 makes global, and neither
+    # takes an identifier: there is nothing for a caller to aim at.
+    "v1:administration:admin-commission-rule-list": (
+        "Lists and creates commission rules; there is no id to supply."
+    ),
+    "v1:administration:admin-payout-list": "Lists payout batches; there is no id to supply.",
+    "v1:administration:admin-finance-report": (
+        "§22.7's figures, aggregated from the ledger; no row is identified."
+    ),
     "v1:identity:me": "Selects the caller's own row by principal, not by a supplied id.",
     "v1:identity:mfa-enrol": "Acts on the caller's own account only.",
     "v1:identity:mfa-verify": "Acts on the caller's own account only.",
@@ -402,6 +412,35 @@ SCOPED_BY_A_BODY_IDENTIFIER = {
 #: narrower scope — which is exactly what Phase 11 does — the build fails here
 #: and names the route that has to grow a filter.
 GLOBAL_BY_ROLE: dict[str, tuple[Permission, Resource, str]] = {
+    # §22.2 and §22.5's detail routes. Each resolves an identifier and applies
+    # no ownership filter, because every role that may reach it is global over
+    # the resource: CATALOGUE_MANAGE for a commercial rule, PAYOUT_APPROVE for
+    # money leaving the platform. The day a narrower role gains either, these
+    # entries fail and name the route that needs a filter.
+    "v1:administration:admin-commission-rule-detail": (
+        Permission.CATALOGUE_MANAGE,
+        Resource.FINANCE_RECORD,
+        "§27.11's commercial rules. CATALOGUE_MANAGE is held only by roles "
+        "with global scope over the catalogue and the providers it names.",
+    ),
+    "v1:administration:admin-payout-approve": (
+        Permission.PAYOUT_APPROVE,
+        Resource.FINANCE_RECORD,
+        "BR-075. PAYOUT_APPROVE belongs to FINANCE_OFFICER and SUPER_ADMIN, "
+        "both global; a payout is not owned by the person approving it.",
+    ),
+    "v1:administration:admin-payout-release": (
+        Permission.PAYOUT_APPROVE,
+        Resource.FINANCE_RECORD,
+        "§22.5's release, gated on the same permission and the same two " "globally scoped roles.",
+    ),
+    "v1:administration:admin-provider-earnings": (
+        Permission.FINANCE_READ,
+        Resource.FINANCE_RECORD,
+        "§26.7's figures until Phase 11's portal. FINANCE_READ is global; an "
+        "operator reading their own earnings arrives with Phase 11's "
+        "provider principal, and that route will be scoped.",
+    ),
     "v1:administration:admin-booking-force-transition": (
         Permission.SYSTEM_CONFIGURE,
         Resource.BOOKING,

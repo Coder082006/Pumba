@@ -338,3 +338,122 @@ class AdminPaymentSerializer(serializers.Serializer[Any]):
     failure_code = serializers.CharField(read_only=True)
     captured_at = serializers.DateTimeField(read_only=True, allow_null=True)
     created_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+
+# -- §22.2, §22.5, §26.7: commission, payouts and earnings ---------------------
+
+
+class CommissionRuleWriteSerializer(StrictSerializer):
+    """§22.2's writable columns.
+
+    `scope` decides which identifier is read: a LISTING rule needs a listing, a
+    PROVIDER rule a provider, a TYPE rule a booking type. Validated together
+    rather than field by field, because a rule with a scope and no target
+    matches nothing and looks like a rule that matches everything.
+    """
+
+    scope = serializers.ChoiceField(choices=["LISTING", "PROVIDER", "TYPE", "GLOBAL"])
+    method = serializers.ChoiceField(choices=["PERCENT", "FLAT", "TIERED"], default="PERCENT")
+    listing = serializers.IntegerField(required=False, allow_null=True)
+    provider = serializers.UUIDField(required=False, allow_null=True)
+    booking_type = serializers.ChoiceField(
+        choices=["ACTIVITY", "TRANSFER", "ACCOMMODATION"], required=False
+    )
+    priority = serializers.IntegerField(required=False, default=0)
+    percent = serializers.DecimalField(
+        max_digits=5, decimal_places=2, required=False, allow_null=True
+    )
+    flat_amount = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True
+    )
+    tiers = serializers.ListField(child=serializers.DictField(), required=False)
+    min_fee = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True
+    )
+    max_fee = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True
+    )
+    currency = serializers.CharField(max_length=3, required=False, allow_blank=True)
+    valid_from = serializers.DateField(required=False, allow_null=True)
+    valid_to = serializers.DateField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(required=False, default=True)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        scope = attrs.get("scope")
+        if scope == "LISTING" and not attrs.get("listing"):
+            raise serializers.ValidationError({"listing": "A listing rule names a listing."})
+        if scope == "PROVIDER" and not attrs.get("provider"):
+            raise serializers.ValidationError({"provider": "A provider rule names a provider."})
+        if scope == "TYPE" and not attrs.get("booking_type"):
+            raise serializers.ValidationError({"booking_type": "A type rule names a type."})
+        if attrs.get("method") == "PERCENT" and attrs.get("percent") is None:
+            raise serializers.ValidationError({"percent": "A percentage rule needs one."})
+        if attrs.get("method") == "FLAT" and attrs.get("flat_amount") is None:
+            raise serializers.ValidationError({"flat_amount": "A flat rule needs an amount."})
+        return attrs
+
+
+class CommissionRuleReadSerializer(serializers.Serializer[Any]):
+    id = serializers.UUIDField(source="public_id", read_only=True)
+    scope = serializers.CharField(read_only=True)
+    method = serializers.CharField(read_only=True)
+    priority = serializers.IntegerField(read_only=True)
+    booking_type = serializers.CharField(read_only=True)
+    percent = serializers.DecimalField(
+        max_digits=5, decimal_places=2, read_only=True, allow_null=True
+    )
+    flat_amount = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True, allow_null=True
+    )
+    tiers = serializers.ListField(read_only=True)
+    min_fee = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True, allow_null=True
+    )
+    max_fee = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True, allow_null=True
+    )
+    valid_from = serializers.DateField(read_only=True, allow_null=True)
+    valid_to = serializers.DateField(read_only=True, allow_null=True)
+    is_active = serializers.BooleanField(read_only=True)
+
+
+class PayoutItemSerializer(serializers.Serializer[Any]):
+    booking_id = serializers.IntegerField(read_only=True)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    memo = serializers.CharField(read_only=True)
+
+
+class PayoutSerializer(serializers.Serializer[Any]):
+    id = serializers.UUIDField(source="public_id", read_only=True)
+    provider_id = serializers.IntegerField(read_only=True)
+    currency = serializers.CharField(read_only=True)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    status = serializers.CharField(read_only=True)
+    period_start = serializers.DateField(read_only=True)
+    period_end = serializers.DateField(read_only=True)
+    approved_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    rail_reference = serializers.CharField(read_only=True)
+    paid_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    items = PayoutItemSerializer(many=True, read_only=True)
+
+
+class PayoutReleaseSerializer(StrictSerializer):
+    """§22.5's release — ADR 0028 decision 6.
+
+    The reference is required because no rail moves the money in 8b: somebody
+    made a transfer at their bank, and this is how it is found again. A release
+    with no reference would be a "paid" flag nobody could audit.
+    """
+
+    rail_reference = serializers.CharField(max_length=120)
+
+
+class ProviderEarningsSerializer(serializers.Serializer[Any]):
+    """§26.7's figures, served to an administrator until Phase 11's portal."""
+
+    balances = serializers.ListField(read_only=True)
+    accrued = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    reversed = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    compensation = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    commission = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    paid_out = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)

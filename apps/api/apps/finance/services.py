@@ -34,6 +34,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from django.db import transaction
 from django.db.models import Q
@@ -78,6 +79,10 @@ __all__ = [
     "ledger_exceptions",
     "account_totals",
     "active_rules",
+    "create_rule",
+    "update_rule",
+    "list_rules",
+    "list_payouts",
     "resolve_commission",
     "monthly_volume",
     "PayoutNotReleasableError",
@@ -808,3 +813,44 @@ def _as_domain_rule(row: CommissionRule) -> domain_commission.Rule:
         valid_to=row.valid_to,
         is_active=row.is_active,
     )
+
+
+def create_rule(**fields: object) -> CommissionRule:
+    """§27.11's console, writing one §22.2 rule."""
+    return CommissionRule.objects.create(**fields)
+
+
+def update_rule(public_id: uuid.UUID, **fields: object) -> tuple[dict[str, Any], CommissionRule]:
+    """Change a rule, and report what it was.
+
+    The before-image is what an audit entry records: a rate that moved from 15
+    to 20 is a different story from one that was always 20, and only the first
+    explains a provider's invoice.
+    """
+    rule = CommissionRule.objects.filter(public_id=public_id).first()
+    if rule is None:
+        raise NotFoundError(f"no commission rule {public_id}")
+
+    before: dict[str, Any] = {
+        "percent": rule.percent,
+        "flat_amount": rule.flat_amount,
+        "priority": rule.priority,
+        "is_active": rule.is_active,
+    }
+    for name, value in fields.items():
+        setattr(rule, name, value)
+    rule.save()
+    return before, rule
+
+
+def list_rules() -> list[CommissionRule]:
+    """Every rule, live or not — a console that hid the expired ones would
+    make "why was this booking charged 18%" unanswerable."""
+    return list(CommissionRule.objects.order_by("scope", "-priority", "id"))
+
+
+def list_payouts(*, status: str | None = None) -> list[Payout]:
+    rows = Payout.objects.prefetch_related("items").order_by("-period_end", "provider_id")
+    if status:
+        rows = rows.filter(status=status)
+    return list(rows)

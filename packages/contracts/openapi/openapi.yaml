@@ -988,6 +988,94 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/admin/commission-rules:
+    get:
+      operationId: admin_commission_rules_list
+      description: |-
+        §27.11's commercial rules. `/admin/commission-rules`, §9.3.10.
+
+        CATALOGUE_MANAGE rather than FINANCE_READ: a commission rule is a
+        commercial term somebody negotiates, and §5.2 gives that to the same
+        administrators who manage listings and tariffs. Finance approves what is
+        *paid*; the console that sets rates is the one that sets prices.
+      summary: Commission rules
+      tags:
+      - Administration
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommissionRuleRead'
+          description: ''
+    post:
+      operationId: admin_commission_rules_create
+      description: '§22.2. A rule cannot reach a booking already sold: BR-070 freezes
+        the rate on the booking at confirmation (TC-110).'
+      summary: Add a commission rule
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommissionRuleWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommissionRuleWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommissionRuleWriteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionRuleRead'
+          description: ''
+  /api/v1/admin/commission-rules/{public_id}:
+    patch:
+      operationId: admin_commission_rules_partial_update
+      description: |-
+        §5.2: `CATALOGUE_ADMIN` manages "countries, regions, destinations,
+        attractions, activities, **tariffs**, policies", globally.
+      summary: Change a commission rule
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCommissionRuleWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCommissionRuleWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCommissionRuleWriteRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommissionRuleRead'
+          description: ''
   /api/v1/admin/countries:
     post:
       operationId: admin_countries_create
@@ -1224,6 +1312,25 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/admin/finance/report:
+    get:
+      operationId: admin_finance_report_retrieve
+      description: §22.7's daily figures — from the ledger, never from the booking
+        table.
+      summary: Financial position, by account
+      parameters:
+      - in: query
+        name: currency
+        schema:
+          type: string
+        description: Narrow to one currency
+      tags:
+      - Administration
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: No response body
   /api/v1/admin/markets:
     post:
       operationId: admin_markets_create
@@ -1371,6 +1478,94 @@ paths:
                 items:
                   $ref: '#/components/schemas/AdminPayment'
           description: ''
+  /api/v1/admin/payouts:
+    get:
+      operationId: admin_payouts_list
+      description: §9.3.10's `GET /admin/payouts`.
+      summary: Payout batches
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+        description: DRAFT, APPROVED, PAID or FAILED
+      tags:
+      - Administration
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Payout'
+          description: ''
+  /api/v1/admin/payouts/{public_id}/approve:
+    post:
+      operationId: admin_payouts_approve_create
+      description: |-
+        §9.3.10's `POST /admin/payouts/{id}/approve` — BR-075.
+
+        Gated on REFUND_APPROVE's sibling, PAYOUT_APPROVE, which §5.2 gives to
+        FINANCE_OFFICER and SUPER_ADMIN alone.
+      summary: Approve a payout
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payout'
+          description: ''
+  /api/v1/admin/payouts/{public_id}/release:
+    post:
+      operationId: admin_payouts_release_create
+      description: 'No transfer is made: the payout rail is Phase 11''s, behind a
+        port with no adapter. `rail_reference` is how the transfer that was made by
+        hand can be found again.'
+      summary: Record a payout as paid
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutReleaseRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PayoutReleaseRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PayoutReleaseRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payout'
+          description: ''
   /api/v1/admin/providers:
     get:
       operationId: admin_providers_list
@@ -1495,6 +1690,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProviderRead'
+          description: ''
+  /api/v1/admin/providers/{public_id}/earnings:
+    get:
+      operationId: admin_providers_earnings_retrieve
+      description: |-
+        §26.7's figures, for an administrator.
+
+        The provider portal is Phase 11 and there is no provider principal yet, so
+        an operator asking "what am I owed" is answered by somebody at Pumba
+        reading this — which is the honest version of the screen until they can
+        read it themselves.
+      summary: What a provider has earned and been paid
+      parameters:
+      - in: path
+        name: public_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - Administration
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderEarnings'
           description: ''
   /api/v1/admin/providers/{public_id}/status:
     post:
@@ -4596,6 +4820,16 @@ components:
       - status
       - tax_amount
       - title
+    BookingTypeEnum:
+      enum:
+      - ACTIVITY
+      - TRANSFER
+      - ACCOMMODATION
+      type: string
+      description: |-
+        * `ACTIVITY` - ACTIVITY
+        * `TRANSFER` - TRANSFER
+        * `ACCOMMODATION` - ACCOMMODATION
     CancelRequestRequest:
       type: object
       description: |-
@@ -4788,6 +5022,185 @@ components:
       - code
       - name
       - tiers
+    CommissionRuleRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        scope:
+          type: string
+          readOnly: true
+        method:
+          type: string
+          readOnly: true
+        priority:
+          type: integer
+          readOnly: true
+        booking_type:
+          type: string
+          readOnly: true
+        percent:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          readOnly: true
+        flat_amount:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        tiers:
+          type: array
+          items: {}
+          readOnly: true
+        min_fee:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        max_fee:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        valid_from:
+          type:
+          - string
+          - 'null'
+          format: date
+          readOnly: true
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+      required:
+      - booking_type
+      - flat_amount
+      - id
+      - is_active
+      - max_fee
+      - method
+      - min_fee
+      - percent
+      - priority
+      - scope
+      - tiers
+      - valid_from
+      - valid_to
+    CommissionRuleWriteMethodEnum:
+      enum:
+      - PERCENT
+      - FLAT
+      - TIERED
+      type: string
+      description: |-
+        * `PERCENT` - PERCENT
+        * `FLAT` - FLAT
+        * `TIERED` - TIERED
+    CommissionRuleWriteRequest:
+      type: object
+      description: |-
+        §22.2's writable columns.
+
+        `scope` decides which identifier is read: a LISTING rule needs a listing, a
+        PROVIDER rule a provider, a TYPE rule a booking type. Validated together
+        rather than field by field, because a rule with a scope and no target
+        matches nothing and looks like a rule that matches everything.
+      properties:
+        scope:
+          $ref: '#/components/schemas/CommissionRuleWriteScopeEnum'
+        method:
+          allOf:
+          - $ref: '#/components/schemas/CommissionRuleWriteMethodEnum'
+          default: PERCENT
+        listing:
+          type:
+          - integer
+          - 'null'
+        provider:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        booking_type:
+          $ref: '#/components/schemas/BookingTypeEnum'
+        priority:
+          type: integer
+          default: 0
+        percent:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+        flat_amount:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        tiers:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        min_fee:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        max_fee:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        currency:
+          type: string
+          maxLength: 3
+        valid_from:
+          type:
+          - string
+          - 'null'
+          format: date
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_active:
+          type: boolean
+          default: true
+      required:
+      - scope
+    CommissionRuleWriteScopeEnum:
+      enum:
+      - LISTING
+      - PROVIDER
+      - TYPE
+      - GLOBAL
+      type: string
+      description: |-
+        * `LISTING` - LISTING
+        * `PROVIDER` - PROVIDER
+        * `TYPE` - TYPE
+        * `GLOBAL` - GLOBAL
     ConfigResponse:
       type: object
       properties:
@@ -6512,6 +6925,81 @@ components:
             $ref: '#/components/schemas/CancellationPolicyTierRequest'
         is_active:
           type: boolean
+    PatchedCommissionRuleWriteRequest:
+      type: object
+      description: |-
+        §22.2's writable columns.
+
+        `scope` decides which identifier is read: a LISTING rule needs a listing, a
+        PROVIDER rule a provider, a TYPE rule a booking type. Validated together
+        rather than field by field, because a rule with a scope and no target
+        matches nothing and looks like a rule that matches everything.
+      properties:
+        scope:
+          $ref: '#/components/schemas/CommissionRuleWriteScopeEnum'
+        method:
+          allOf:
+          - $ref: '#/components/schemas/CommissionRuleWriteMethodEnum'
+          default: PERCENT
+        listing:
+          type:
+          - integer
+          - 'null'
+        provider:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        booking_type:
+          $ref: '#/components/schemas/BookingTypeEnum'
+        priority:
+          type: integer
+          default: 0
+        percent:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+        flat_amount:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        tiers:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        min_fee:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        max_fee:
+          type:
+          - string
+          - 'null'
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        currency:
+          type: string
+          maxLength: 3
+        valid_from:
+          type:
+          - string
+          - 'null'
+          format: date
+        valid_to:
+          type:
+          - string
+          - 'null'
+          format: date
+        is_active:
+          type: boolean
+          default: true
     PatchedCorridorWriteRequest:
       type: object
       description: §12.4's fixed-price route, as §27.11's form submits it.
@@ -6799,7 +7287,7 @@ components:
         allowance. `apps/transport/tests/test_tariff_model.py` asserts the silence.
       properties:
         scope:
-          $ref: '#/components/schemas/ScopeEnum'
+          $ref: '#/components/schemas/TariffWriteScopeEnum'
         region:
           type:
           - string
@@ -7072,6 +7560,100 @@ components:
       description: |-
         * `CARD` - CARD
         * `MOBILE_MONEY` - MOBILE_MONEY
+    Payout:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        provider_id:
+          type: integer
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        period_start:
+          type: string
+          format: date
+          readOnly: true
+        period_end:
+          type: string
+          format: date
+          readOnly: true
+        approved_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        rail_reference:
+          type: string
+          readOnly: true
+        paid_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          readOnly: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PayoutItem'
+          readOnly: true
+      required:
+      - amount
+      - approved_at
+      - currency
+      - id
+      - items
+      - paid_at
+      - period_end
+      - period_start
+      - provider_id
+      - rail_reference
+      - status
+    PayoutItem:
+      type: object
+      properties:
+        booking_id:
+          type: integer
+          readOnly: true
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        memo:
+          type: string
+          readOnly: true
+      required:
+      - amount
+      - booking_id
+      - memo
+    PayoutReleaseRequest:
+      type: object
+      description: |-
+        §22.5's release — ADR 0028 decision 6.
+
+        The reference is required because no rail moves the money in 8b: somebody
+        made a transfer at their bank, and this is how it is found again. A release
+        with no reference would be a "paid" flag nobody could audit.
+      properties:
+        rail_reference:
+          type: string
+          minLength: 1
+          maxLength: 120
+      required:
+      - rail_reference
     PlatformEnum:
       enum:
       - IOS
@@ -7229,6 +7811,46 @@ components:
       - public_id
       - remaining
       - status
+    ProviderEarnings:
+      type: object
+      description: §26.7's figures, served to an administrator until Phase 11's portal.
+      properties:
+        balances:
+          type: array
+          items: {}
+          readOnly: true
+        accrued:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        reversed:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        compensation:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        commission:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        paid_out:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+      required:
+      - accrued
+      - balances
+      - commission
+      - compensation
+      - paid_out
+      - reversed
     ProviderRead:
       type: object
       properties:
@@ -7803,14 +8425,6 @@ components:
       required:
       - new_password
       - token
-    ScopeEnum:
-      enum:
-      - REGION
-      - COUNTRY
-      type: string
-      description: |-
-        * `REGION` - REGION
-        * `COUNTRY` - COUNTRY
     SearchHit:
       type: object
       description: |-
@@ -8069,7 +8683,7 @@ components:
         allowance. `apps/transport/tests/test_tariff_model.py` asserts the silence.
       properties:
         scope:
-          $ref: '#/components/schemas/ScopeEnum'
+          $ref: '#/components/schemas/TariffWriteScopeEnum'
         region:
           type:
           - string
@@ -8135,6 +8749,14 @@ components:
           format: date
         is_active:
           type: boolean
+    TariffWriteScopeEnum:
+      enum:
+      - REGION
+      - COUNTRY
+      type: string
+      description: |-
+        * `REGION` - REGION
+        * `COUNTRY` - COUNTRY
     TouristProfile:
       type: object
       properties:
