@@ -1330,7 +1330,11 @@ paths:
       - bearerAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinanceReport'
+          description: ''
   /api/v1/admin/markets:
     post:
       operationId: admin_markets_create
@@ -5908,6 +5912,25 @@ components:
       - price
       - seats
       - vehicle_class
+    FinanceReport:
+      type: object
+      description: §22.7's position, from the ledger and never from the booking table.
+      properties:
+        accounts:
+          type: object
+          additionalProperties:
+            type: string
+            format: decimal
+            pattern: ^-?\d{0,14}(?:\.\d{0,2})?$
+          readOnly: true
+        exceptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerException'
+          readOnly: true
+      required:
+      - accounts
+      - exceptions
     Finding:
       type: object
       description: |-
@@ -6339,6 +6362,38 @@ components:
       - travel_seconds
       - unit_price
       - vehicle_class
+    LedgerException:
+      type: object
+      description: '§21.9''s worklist: what the nightly check found, grouped by what
+        it was.'
+      properties:
+        kind:
+          type: string
+          readOnly: true
+        currency:
+          type: string
+          readOnly: true
+        difference:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        booking_id:
+          type:
+          - integer
+          - 'null'
+          readOnly: true
+        provider_id:
+          type:
+          - integer
+          - 'null'
+          readOnly: true
+      required:
+      - booking_id
+      - currency
+      - difference
+      - kind
+      - provider_id
     LegQuote:
       type: object
       description: |-
@@ -7739,6 +7794,26 @@ components:
         * `LODGE` - Lodge
         * `GUESTHOUSE` - Guesthouse
         * `APARTMENT` - Apartment
+    ProviderBalance:
+      type: object
+      properties:
+        currency:
+          type: string
+          readOnly: true
+        pending:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        available:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+      required:
+      - available
+      - currency
+      - pending
     ProviderContact:
       type: object
       description: '§9.3.5: the detail carries "provider contact".'
@@ -7813,18 +7888,24 @@ components:
       - status
     ProviderEarnings:
       type: object
-      description: §26.7's figures, served to an administrator until Phase 11's portal.
+      description: |-
+        §26.7's figures, served to an administrator until Phase 11's portal.
+
+        Every field is declared rather than passed through: the service hands back
+        a frozen DTO (§6.5 rule 5), and a `ListField` given dataclasses renders
+        objects a JSON encoder cannot take.
       properties:
         balances:
           type: array
-          items: {}
+          items:
+            $ref: '#/components/schemas/ProviderBalance'
           readOnly: true
         accrued:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
-        reversed:
+        reversed_amount:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
@@ -7850,7 +7931,7 @@ components:
       - commission
       - compensation
       - paid_out
-      - reversed
+      - reversed_amount
     ProviderRead:
       type: object
       properties:

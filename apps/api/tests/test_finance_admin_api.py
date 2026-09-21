@@ -47,17 +47,23 @@ def a_provider() -> Provider:
 
 
 def a_payout(provider_id: int, amount: str = "200.00") -> Payout:
+    """A batch, as the row behind it.
+
+    The service hands back a frozen DTO (§6.5 rule 5), and these tests assert
+    what was *stored* — so the row is read back deliberately rather than by
+    keeping a live model object around.
+    """
     ProviderBalance.objects.create(
         provider_id=provider_id, currency="USD", available_amount=Decimal(amount)
     )
-    payout = finance.build_payout_batch(
+    built = finance.build_payout_batch(
         provider_id=provider_id,
         currency="USD",
         period_start=timezone.localdate() - dt.timedelta(days=7),
         period_end=timezone.localdate(),
     )
-    assert payout is not None
-    return payout
+    assert built is not None
+    return Payout.objects.get(public_id=built.public_id)
 
 
 class TestCommissionRules:
@@ -244,7 +250,7 @@ class TestEarningsAndTheReport:
         )
 
         assert response.status_code == 200
-        assert response.data["data"]["balances"][0]["pending"] == Decimal("93.50")
+        assert response.data["data"]["balances"][0]["pending"] == "93.50"
 
     def test_the_report_comes_from_the_ledger(self) -> None:
         """§22.7: "generated from the ledger, never from the booking table"."""

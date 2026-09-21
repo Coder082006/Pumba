@@ -448,12 +448,42 @@ class PayoutReleaseSerializer(StrictSerializer):
     rail_reference = serializers.CharField(max_length=120)
 
 
-class ProviderEarningsSerializer(serializers.Serializer[Any]):
-    """§26.7's figures, served to an administrator until Phase 11's portal."""
+class ProviderBalanceSerializer(serializers.Serializer[Any]):
+    currency = serializers.CharField(read_only=True)
+    pending = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    available = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
 
-    balances = serializers.ListField(read_only=True)
+
+class ProviderEarningsSerializer(serializers.Serializer[Any]):
+    """§26.7's figures, served to an administrator until Phase 11's portal.
+
+    Every field is declared rather than passed through: the service hands back
+    a frozen DTO (§6.5 rule 5), and a `ListField` given dataclasses renders
+    objects a JSON encoder cannot take.
+    """
+
+    balances = ProviderBalanceSerializer(many=True, read_only=True)
     accrued = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
-    reversed = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    reversed_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     compensation = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     commission = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     paid_out = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+
+class LedgerExceptionSerializer(serializers.Serializer[Any]):
+    """§21.9's worklist: what the nightly check found, grouped by what it was."""
+
+    kind = serializers.CharField(read_only=True)
+    currency = serializers.CharField(read_only=True)
+    difference = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    booking_id = serializers.IntegerField(read_only=True, allow_null=True)
+    provider_id = serializers.IntegerField(read_only=True, allow_null=True)
+
+
+class FinanceReportSerializer(serializers.Serializer[Any]):
+    """§22.7's position, from the ledger and never from the booking table."""
+
+    accounts = serializers.DictField(
+        child=serializers.DecimalField(max_digits=16, decimal_places=2), read_only=True
+    )
+    exceptions = LedgerExceptionSerializer(many=True, read_only=True)

@@ -54,6 +54,15 @@ from apps.finance.domain.accounts import (
     direction_for,
     residual,
 )
+from apps.finance.dto import (
+    CommissionRuleDTO,
+    LedgerEntryDTO,
+    LedgerExceptionDTO,
+    PayoutDTO,
+    PayoutItemDTO,
+    ProviderBalanceDTO,
+    ProviderStatementDTO,
+)
 from apps.finance.models import (
     CommissionRule,
     LedgerEntry,
@@ -78,7 +87,6 @@ __all__ = [
     "provider_statement",
     "ledger_exceptions",
     "account_totals",
-    "active_rules",
     "create_rule",
     "update_rule",
     "list_rules",
@@ -97,6 +105,60 @@ _BALANCE_EFFECT = {
 }
 
 
+def _entry_dto(row: LedgerEntry) -> LedgerEntryDTO:
+    return LedgerEntryDTO(
+        id=int(row.pk),
+        account=row.account,
+        journal_id=row.journal_id,
+        entry_type=row.entry_type,
+        direction=row.direction,
+        amount=row.amount,
+        currency=row.currency,
+        booking_id=row.booking_id,
+        provider_id=row.provider_id,
+        payout_id=row.payout_id,
+        memo=row.memo,
+        occurred_at=row.occurred_at,
+    )
+
+
+def _rule_dto(row: CommissionRule) -> CommissionRuleDTO:
+    return CommissionRuleDTO(
+        public_id=row.public_id,
+        scope=row.scope,
+        method=row.method,
+        priority=row.priority,
+        booking_type=row.booking_type,
+        percent=row.percent,
+        flat_amount=row.flat_amount,
+        tiers=list(row.tiers or []),
+        min_fee=row.min_fee,
+        max_fee=row.max_fee,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        is_active=row.is_active,
+    )
+
+
+def _payout_dto(row: Payout) -> PayoutDTO:
+    return PayoutDTO(
+        public_id=row.public_id,
+        provider_id=row.provider_id,
+        currency=row.currency,
+        amount=row.amount,
+        status=row.status,
+        period_start=row.period_start,
+        period_end=row.period_end,
+        approved_at=row.approved_at,
+        rail_reference=row.rail_reference,
+        paid_at=row.paid_at,
+        items=tuple(
+            PayoutItemDTO(booking_id=item.booking_id, amount=item.amount, memo=item.memo)
+            for item in row.items.all()
+        ),
+    )
+
+
 class PayoutNotReleasableError(ConflictError):
     """BR-075: approval comes before release, and only finance approves."""
 
@@ -109,7 +171,9 @@ class PayoutNotReleasableError(ConflictError):
 
 
 @transaction.atomic
-def post_journal(legs: Sequence[Leg], *, occurred_at: datetime | None = None) -> list[LedgerEntry]:
+def post_journal(
+    legs: Sequence[Leg], *, occurred_at: datetime | None = None
+) -> list[LedgerEntryDTO]:
     """Write one event's entries — §22.3, ADR 0028.
 
     Idempotent where it matters: `(booking_id, entry_type)` is unique in the
@@ -159,7 +223,7 @@ def post_journal(legs: Sequence[Leg], *, occurred_at: datetime | None = None) ->
     if posted:
         logger.info("journal_posted", extra={"journal": str(journal), "legs": len(posted)})
         _apply_to_balances(posted)
-    return posted
+    return [_entry_dto(row) for row in posted]
 
 
 def _apply_to_balances(rows: Sequence[LedgerEntry]) -> None:
@@ -215,7 +279,7 @@ def accrue_capture(
     payment_id: int,
     lines: Sequence[CapturedLine],
     occurred_at: datetime | None = None,
-) -> list[LedgerEntry]:
+) -> list[LedgerEntryDTO]:
     """§22.3: money captured lands in clearing; the service fee is earned now.
 
     The fee is the platform's own charge to the tourist (§18.3) and is revenue
@@ -261,7 +325,7 @@ def accrue_completion(
     net: Decimal,
     currency: str,
     occurred_at: datetime | None = None,
-) -> list[LedgerEntry]:
+) -> list[LedgerEntryDTO]:
     """BR-071: the provider earns at completion, not at payment.
 
     "So that the Platform does not owe a provider for a service not yet
@@ -310,7 +374,7 @@ def reverse_for_refund(
     provider_compensation: Decimal,
     currency: str,
     occurred_at: datetime | None = None,
-) -> list[LedgerEntry]:
+) -> list[LedgerEntryDTO]:
     """§22.6: what a refund does depends on whether the money was earned yet.
 
     - **Before completion** there is no accrual, so the only entry is the
@@ -449,7 +513,7 @@ def build_payout_batch(
     currency: str,
     period_start: date,
     period_end: date,
-) -> Payout | None:
+) -> PayoutDTO | None:
     """§22.5: everything available for one provider, in one currency.
 
     `None` when there is nothing to pay — including when the balance is under
@@ -486,7 +550,7 @@ def build_payout_batch(
 
     balance.available_amount = Decimal("0")
     balance.save(update_fields=["available_amount", "updated_at"])
-    return payout
+    return _payout_dto(payout)
 
 
 def _unclaimed_items(provider_id: int, currency: str) -> dict[int, Decimal]:
@@ -526,7 +590,7 @@ def _unclaimed_items(provider_id: int, currency: str) -> dict[int, Decimal]:
 
 
 @transaction.atomic
-def approve_payout(public_id: uuid.UUID, *, approved_by_user_id: int) -> Payout:
+def approve_payout(public_id: uuid.UUID, *, approved_by_user_id: int) -> PayoutDTO:
     """BR-075: "Payouts require finance approval before release."
 
     The approver is recorded rather than the fact of approval, because "who"
@@ -542,11 +606,11 @@ def approve_payout(public_id: uuid.UUID, *, approved_by_user_id: int) -> Payout:
     payout.approved_by_user_id = approved_by_user_id
     payout.approved_at = timezone.now()
     payout.save(update_fields=["status", "approved_by_user_id", "approved_at", "updated_at"])
-    return payout
+    return _payout_dto(payout)
 
 
 @transaction.atomic
-def release_payout(public_id: uuid.UUID, *, rail_reference: str) -> Payout:
+def release_payout(public_id: uuid.UUID, *, rail_reference: str) -> PayoutDTO:
     """§22.5's release — ADR 0028 decision 6.
 
     **No money moves here.** The rail that would move it is Phase 11's, behind
@@ -590,7 +654,7 @@ def release_payout(public_id: uuid.UUID, *, rail_reference: str) -> Payout:
     payout.rail_reference = rail_reference.strip()[:120]
     payout.paid_at = now
     payout.save(update_fields=["status", "rail_reference", "paid_at", "updated_at"])
-    return payout
+    return _payout_dto(payout)
 
 
 # ---------------------------------------------------------------------------
@@ -598,7 +662,7 @@ def release_payout(public_id: uuid.UUID, *, rail_reference: str) -> Payout:
 # ---------------------------------------------------------------------------
 
 
-def provider_statement(provider_id: int, *, currency: str | None = None) -> dict[str, object]:
+def provider_statement(provider_id: int, *, currency: str | None = None) -> ProviderStatementDTO:
     """§26.7: what an operator has earned, and what they have been paid.
 
     From the ledger, never from the booking table (§22.7), so the figures
@@ -613,24 +677,24 @@ def provider_statement(provider_id: int, *, currency: str | None = None) -> dict
         totals[row.entry_type] = totals.get(row.entry_type, Decimal("0")) + row.amount
 
     balances = ProviderBalance.objects.filter(provider_id=provider_id).order_by("currency")
-    return {
-        "balances": [
-            {
-                "currency": row.currency,
-                "pending": row.pending_amount,
-                "available": row.available_amount,
-            }
+    return ProviderStatementDTO(
+        balances=tuple(
+            ProviderBalanceDTO(
+                currency=row.currency,
+                pending=row.pending_amount,
+                available=row.available_amount,
+            )
             for row in balances
-        ],
-        "accrued": totals.get(EntryType.PROVIDER_ACCRUAL.value, Decimal("0")),
-        "reversed": totals.get(EntryType.PROVIDER_ACCRUAL_REVERSAL.value, Decimal("0")),
-        "compensation": totals.get(EntryType.CANCELLATION_FEE_ACCRUAL.value, Decimal("0")),
-        "commission": totals.get(EntryType.COMMISSION_REVENUE.value, Decimal("0")),
-        "paid_out": totals.get(EntryType.PAYOUT_SETTLEMENT.value, Decimal("0")),
-    }
+        ),
+        accrued=totals.get(EntryType.PROVIDER_ACCRUAL.value, Decimal("0")),
+        reversed_amount=totals.get(EntryType.PROVIDER_ACCRUAL_REVERSAL.value, Decimal("0")),
+        compensation=totals.get(EntryType.CANCELLATION_FEE_ACCRUAL.value, Decimal("0")),
+        commission=totals.get(EntryType.COMMISSION_REVENUE.value, Decimal("0")),
+        paid_out=totals.get(EntryType.PAYOUT_SETTLEMENT.value, Decimal("0")),
+    )
 
 
-def ledger_exceptions() -> list[dict[str, object]]:
+def ledger_exceptions() -> list[LedgerExceptionDTO]:
     """BR-064's two checks, as an exception list — TC-111.
 
     1. **Per booking and currency**: nothing may be allocated out of a booking
@@ -645,7 +709,7 @@ def ledger_exceptions() -> list[dict[str, object]]:
     job whose output an operator reads — and a checker that stopped at the
     first problem would hide the second.
     """
-    problems: list[dict[str, object]] = []
+    problems: list[LedgerExceptionDTO] = []
 
     per_booking: dict[tuple[int, str], list[tuple[EntryType, Decimal]]] = {}
     for row in LedgerEntry.objects.filter(booking_id__isnull=False).only(
@@ -658,12 +722,12 @@ def ledger_exceptions() -> list[dict[str, object]]:
         left = residual(entries)
         if left < Decimal("0"):
             problems.append(
-                {
-                    "kind": "OVER_ALLOCATED",
-                    "booking_id": booking_id,
-                    "currency": currency,
-                    "difference": left,
-                }
+                LedgerExceptionDTO(
+                    kind="OVER_ALLOCATED",
+                    booking_id=booking_id,
+                    currency=currency,
+                    difference=left,
+                )
             )
 
     for balance in ProviderBalance.objects.all().order_by("provider_id", "currency"):
@@ -677,12 +741,12 @@ def ledger_exceptions() -> list[dict[str, object]]:
         held = balance.pending_amount + balance.available_amount
         if expected != held:
             problems.append(
-                {
-                    "kind": "BALANCE_DRIFT",
-                    "provider_id": balance.provider_id,
-                    "currency": balance.currency,
-                    "difference": held - expected,
-                }
+                LedgerExceptionDTO(
+                    kind="BALANCE_DRIFT",
+                    provider_id=balance.provider_id,
+                    currency=balance.currency,
+                    difference=held - expected,
+                )
             )
 
     return problems
@@ -717,7 +781,7 @@ def account_totals(*, currency: str | None = None) -> dict[str, Decimal]:
     return totals
 
 
-def active_rules() -> list[CommissionRule]:
+def _active_rule_rows() -> list[CommissionRule]:
     """Every live commission rule, for the console and the resolver."""
     today = timezone.localdate()
     return list(
@@ -745,7 +809,7 @@ def resolve_commission(facts: CommissionFacts) -> Rate:
     platform with no rules configured has always done — and `rule_id` stays
     `None`, so a booking's snapshot says plainly that no rule was matched.
     """
-    rules = [_as_domain_rule(row) for row in active_rules()]
+    rules = [_as_domain_rule(row) for row in _active_rule_rows()]
     chosen = domain_commission.select(
         rules,
         provider_id=facts.provider_id,
@@ -815,12 +879,12 @@ def _as_domain_rule(row: CommissionRule) -> domain_commission.Rule:
     )
 
 
-def create_rule(**fields: object) -> CommissionRule:
+def create_rule(**fields: object) -> CommissionRuleDTO:
     """§27.11's console, writing one §22.2 rule."""
-    return CommissionRule.objects.create(**fields)
+    return _rule_dto(CommissionRule.objects.create(**fields))
 
 
-def update_rule(public_id: uuid.UUID, **fields: object) -> tuple[dict[str, Any], CommissionRule]:
+def update_rule(public_id: uuid.UUID, **fields: object) -> tuple[dict[str, Any], CommissionRuleDTO]:
     """Change a rule, and report what it was.
 
     The before-image is what an audit entry records: a rate that moved from 15
@@ -840,17 +904,17 @@ def update_rule(public_id: uuid.UUID, **fields: object) -> tuple[dict[str, Any],
     for name, value in fields.items():
         setattr(rule, name, value)
     rule.save()
-    return before, rule
+    return before, _rule_dto(rule)
 
 
-def list_rules() -> list[CommissionRule]:
+def list_rules() -> list[CommissionRuleDTO]:
     """Every rule, live or not — a console that hid the expired ones would
     make "why was this booking charged 18%" unanswerable."""
-    return list(CommissionRule.objects.order_by("scope", "-priority", "id"))
+    return [_rule_dto(row) for row in CommissionRule.objects.order_by("scope", "-priority", "id")]
 
 
-def list_payouts(*, status: str | None = None) -> list[Payout]:
+def list_payouts(*, status: str | None = None) -> list[PayoutDTO]:
     rows = Payout.objects.prefetch_related("items").order_by("-period_end", "provider_id")
     if status:
         rows = rows.filter(status=status)
-    return list(rows)
+    return [_payout_dto(row) for row in rows]

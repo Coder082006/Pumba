@@ -280,8 +280,8 @@ class TestBr064:
 
         problems = services.ledger_exceptions()
 
-        assert [problem["kind"] for problem in problems] == ["OVER_ALLOCATED"]
-        assert problems[0]["booking_id"] == 1
+        assert [problem.kind for problem in problems] == ["OVER_ALLOCATED"]
+        assert problems[0].booking_id == 1
 
     def test_a_balance_that_drifts_from_the_ledger_is_reported(self) -> None:
         """BR-064's second half, verbatim: the balance rows must equal what the
@@ -293,4 +293,4 @@ class TestBr064:
 
         problems = services.ledger_exceptions()
 
-        assert [problem["kind"] for problem in problems] == ["BALANCE_DRIFT"]
+        assert [problem.kind for problem in problems] == ["BALANCE_DRIFT"]

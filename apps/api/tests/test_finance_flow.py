@@ -155,14 +155,13 @@ class TestFromEarnedToPaid:
         )
         assert payout is not None
         assert payout.amount == balance.available_amount
-        assert payout.items.count() == 1
+        assert len(payout.items) == 1
 
         finance.approve_payout(payout.public_id, approved_by_user_id=1)
-        finance.release_payout(payout.public_id, rail_reference="BANK-2027-0001")
+        released = finance.release_payout(payout.public_id, rail_reference="BANK-2027-0001")
 
-        payout.refresh_from_db()
         balance.refresh_from_db()
-        assert payout.status == "PAID"
+        assert released.status == "PAID"
         assert balance.available_amount == Decimal("0")
         assert LedgerEntry.objects.filter(entry_type="PAYOUT_SETTLEMENT").count() == 1
         assert finance.ledger_exceptions() == []

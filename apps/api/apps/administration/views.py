@@ -627,11 +627,11 @@ class AdminFinanceReportView(_FinanceView):
     """§22.7's daily figures — from the ledger, never from the booking table."""
 
     @extend_schema(
-        responses={200: None},
+        responses={200: ser.FinanceReportSerializer},
         summary="Financial position, by account",
         parameters=[OpenApiParameter("currency", str, description="Narrow to one currency")],
         tags=_TAGS,
     )
     def get(self, request: Request) -> Response:
         report = services.finance_report(currency=request.query_params.get("currency") or None)
-        return Response(success_envelope(report))
+        return Response(success_envelope(ser.FinanceReportSerializer(report).data))

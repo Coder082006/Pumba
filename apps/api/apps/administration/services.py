@@ -757,7 +757,7 @@ def release_payout(
     return payout
 
 
-def provider_earnings(public_id: UUID) -> dict[str, Any]:
+def provider_earnings(public_id: UUID) -> Any:
     """§26.7, for an administrator: the portal and its principal are Phase 11."""
     seller = provider.get_provider(public_id)
     if seller is None:

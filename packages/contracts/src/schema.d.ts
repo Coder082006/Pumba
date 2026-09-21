@@ -3291,6 +3291,13 @@ export interface components {
             readonly breakdown: components["schemas"]["FareBreakdown"];
             readonly match: components["schemas"]["TariffMatch"];
         };
+        /** @description §22.7's position, from the ledger and never from the booking table. */
+        FinanceReport: {
+            readonly accounts: {
+                [key: string]: string;
+            };
+            readonly exceptions: components["schemas"]["LedgerException"][];
+        };
         /** @description §10.6's `{code, severity, message, item_ids[], suggested_action}`.
          *
          *     Part of a successful response, not an error channel: §10.2 returns
@@ -3440,6 +3447,15 @@ export interface components {
             readonly line_total: string | null;
             readonly currency: string | null;
             readonly is_locked: boolean;
+        };
+        /** @description §21.9's worklist: what the nightly check found, grouped by what it was. */
+        LedgerException: {
+            readonly kind: string;
+            readonly currency: string;
+            /** Format: decimal */
+            readonly difference: string;
+            readonly booking_id: number | null;
+            readonly provider_id: number | null;
         };
         /** @description §9.4.4's response element.
          *
@@ -4067,6 +4083,13 @@ export interface components {
          * @enum {string}
          */
         PropertyTypeEnum: "HOTEL" | "RESORT" | "LODGE" | "GUESTHOUSE" | "APARTMENT";
+        ProviderBalance: {
+            readonly currency: string;
+            /** Format: decimal */
+            readonly pending: string;
+            /** Format: decimal */
+            readonly available: string;
+        };
         /** @description §9.3.5: the detail carries "provider contact". */
         ProviderContact: {
             readonly name: string;
@@ -4098,13 +4121,17 @@ export interface components {
             /** Format: decimal */
             readonly price_override: string | null;
         };
-        /** @description §26.7's figures, served to an administrator until Phase 11's portal. */
+        /** @description §26.7's figures, served to an administrator until Phase 11's portal.
+         *
+         *     Every field is declared rather than passed through: the service hands back
+         *     a frozen DTO (§6.5 rule 5), and a `ListField` given dataclasses renders
+         *     objects a JSON encoder cannot take. */
         ProviderEarnings: {
-            readonly balances: unknown[];
+            readonly balances: components["schemas"]["ProviderBalance"][];
             /** Format: decimal */
             readonly accrued: string;
             /** Format: decimal */
-            readonly reversed: string;
+            readonly reversed_amount: string;
             /** Format: decimal */
             readonly compensation: string;
             /** Format: decimal */
@@ -5737,12 +5764,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FinanceReport"];
+                };
             };
         };
     };

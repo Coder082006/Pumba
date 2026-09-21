@@ -195,7 +195,7 @@ class TestTc111TheLedgerBalances:
 
         problems = finance.ledger_exceptions()
 
-        assert [problem["kind"] for problem in problems] == ["OVER_ALLOCATED"]
+        assert [problem.kind for problem in problems] == ["OVER_ALLOCATED"]
 
 
 def finance_leg(*, entry_type: str, amount: Decimal, booking_id: int) -> Any:
