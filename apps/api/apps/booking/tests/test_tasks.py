@@ -19,6 +19,7 @@ from django.utils import timezone
 
 from apps.booking import services
 from apps.booking.tasks import (
+    advance_due_bookings,
     expire_provider_responses,
     reconcile_inventory,
     release_expired_holds,
@@ -224,4 +225,7 @@ class TestTheyAreScheduled:
             release_expired_holds.name,
             reconcile_inventory.name,
             expire_provider_responses.name,
+            # ADR 0028: nobody reports that an activity happened, so the
+            # platform notices on the clock — and BR-071 accrues there.
+            advance_due_bookings.name,
         }

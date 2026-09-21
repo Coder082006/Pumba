@@ -38,10 +38,14 @@ NET = Decimal("93.50")
 def capture(booking_id: int = 1, *, fee: Decimal = FEE) -> list[LedgerEntry]:
     return services.accrue_capture(
         payment_id=1,
-        booking_id=booking_id,
-        gross=GROSS + fee,
-        service_fee=fee,
-        currency="USD",
+        lines=[
+            services.CapturedLine(
+                booking_id=booking_id,
+                paid=GROSS + fee,
+                service_fee=fee,
+                currency="USD",
+            )
+        ],
     )
 
 

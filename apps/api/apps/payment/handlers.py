@@ -63,6 +63,7 @@ def _request_refund(
     currency: str,
     reason_code: str,
     reason: str,
+    provider_compensation: Decimal = Decimal("0"),
 ) -> Refund | None:
     if amount <= Decimal("0"):
         return None
@@ -89,6 +90,7 @@ def _request_refund(
         payment=payment,
         booking_id=booking_id,
         amount=amount,
+        provider_compensation=provider_compensation,
         currency=currency or payment.presentment_currency,
         reason_code=reason_code,
         reason=reason[:500],
@@ -111,6 +113,7 @@ def on_booking_cancelled(event: BookingCancelled) -> None:
         currency=event.currency,
         reason_code=f"CANCELLED_BY_{event.cancelled_by or 'TOURIST'}",
         reason=event.reason,
+        provider_compensation=Decimal(event.provider_compensation or "0"),
     )
     if refund is not None:
         logger.info(

@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -38,8 +39,10 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.common.commission import CommissionFacts, Rate, default_rate
 from apps.common.config import get_setting
 from apps.common.errors import ConflictError, NotFoundError
+from apps.finance.domain import commission as domain_commission
 from apps.finance.domain.accounts import (
     Account,
     Direction,
@@ -62,6 +65,7 @@ from apps.finance.models import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "CapturedLine",
     "post_journal",
     "accrue_capture",
     "accrue_completion",
@@ -74,6 +78,8 @@ __all__ = [
     "ledger_exceptions",
     "account_totals",
     "active_rules",
+    "resolve_commission",
+    "monthly_volume",
     "PayoutNotReleasableError",
 ]
 
@@ -168,11 +174,12 @@ def _apply_to_balances(rows: Sequence[LedgerEntry]) -> None:
             provider_id=row.provider_id, currency=row.currency
         )
         if EntryType(row.entry_type) is EntryType.PAYOUT_SETTLEMENT:
-            balance.available_amount += effect * row.amount
-            balance.save(update_fields=["available_amount", "updated_at"])
-        else:
-            balance.pending_amount += effect * row.amount
-            balance.save(update_fields=["pending_amount", "updated_at"])
+            # The batch already took this out of `available` when it claimed
+            # the money (§22.5). Taking it again here would pay the provider
+            # twice on paper and drive the balance negative.
+            continue
+        balance.pending_amount += effect * row.amount
+        balance.save(update_fields=["pending_amount", "updated_at"])
 
 
 # ---------------------------------------------------------------------------
@@ -180,13 +187,28 @@ def _apply_to_balances(rows: Sequence[LedgerEntry]) -> None:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CapturedLine:
+    """One booking's share of a captured payment.
+
+    **Per booking, not per payment.** A payment covers a whole trip, and
+    BR-064 reconciles per booking — so a capture recorded against the trip
+    alone would leave every component looking as though money had been
+    allocated out of it that never came in.
+    """
+
+    booking_id: int
+    #: What the tourist paid for this component: its price, the platform's fee
+    #: share and its tax (§18.3, allocated across the basket).
+    paid: Decimal
+    service_fee: Decimal
+    currency: str
+
+
 def accrue_capture(
     *,
     payment_id: int,
-    booking_id: int | None,
-    gross: Decimal,
-    service_fee: Decimal,
-    currency: str,
+    lines: Sequence[CapturedLine],
     occurred_at: datetime | None = None,
 ) -> list[LedgerEntry]:
     """§22.3: money captured lands in clearing; the service fee is earned now.
@@ -195,28 +217,33 @@ def accrue_capture(
     the moment it is taken — unlike commission, which is a share of a service
     nobody has delivered yet and which §22.4 refuses to recognise until they
     have.
+
+    What is left in clearing per booking is its tax, which belongs to neither
+    party and is nobody's revenue until §18.3's tax rules land (Appendix D-4).
     """
-    legs = [
-        Leg(
-            entry_type=EntryType.CUSTOMER_PAYMENT,
-            amount=gross,
-            currency=currency,
-            payment_id=payment_id,
-            booking_id=booking_id,
-            memo="Payment captured",
-        )
-    ]
-    if service_fee > Decimal("0"):
+    legs: list[Leg] = []
+    for line in lines:
         legs.append(
             Leg(
-                entry_type=EntryType.SERVICE_FEE_REVENUE,
-                amount=service_fee,
-                currency=currency,
+                entry_type=EntryType.CUSTOMER_PAYMENT,
+                amount=line.paid,
+                currency=line.currency,
                 payment_id=payment_id,
-                booking_id=booking_id,
-                memo="Platform service fee",
+                booking_id=line.booking_id,
+                memo="Payment captured",
             )
         )
+        if line.service_fee > Decimal("0"):
+            legs.append(
+                Leg(
+                    entry_type=EntryType.SERVICE_FEE_REVENUE,
+                    amount=line.service_fee,
+                    currency=line.currency,
+                    payment_id=payment_id,
+                    booking_id=line.booking_id,
+                    memo="Platform service fee",
+                )
+            )
     return post_journal(legs, occurred_at=occurred_at)
 
 
@@ -635,7 +662,11 @@ def ledger_exceptions() -> list[dict[str, object]]:
             )
 
     for balance in ProviderBalance.objects.all().order_by("provider_id", "currency"):
-        expected = _provider_net(balance.provider_id, balance.currency) - _paid_out(
+        # What the ledger says is owed, less what a live payout has already
+        # claimed. A FAILED payout claims nothing — §22.5 returns its balance
+        # to available — which is why this reads the status rather than the
+        # payout's existence.
+        expected = _provider_net(balance.provider_id, balance.currency) - _claimed_by_payouts(
             balance.provider_id, balance.currency
         )
         held = balance.pending_amount + balance.available_amount
@@ -652,11 +683,19 @@ def ledger_exceptions() -> list[dict[str, object]]:
     return problems
 
 
-def _paid_out(provider_id: int, currency: str) -> Decimal:
+def _claimed_by_payouts(provider_id: int, currency: str) -> Decimal:
+    """What live payouts have taken out of a provider's balance.
+
+    Claimed at assembly rather than at release, because that is when §22.5
+    commits the money to a batch — and a payout awaiting approval is money the
+    provider must not also be paid another way.
+    """
     total = Decimal("0")
-    for row in LedgerEntry.objects.filter(
-        provider_id=provider_id, currency=currency, entry_type=EntryType.PAYOUT_SETTLEMENT.value
-    ).only("amount"):
+    for row in (
+        Payout.objects.filter(provider_id=provider_id, currency=currency)
+        .exclude(status=PayoutStatus.FAILED)
+        .only("amount")
+    ):
         total += row.amount
     return total
 
@@ -681,4 +720,91 @@ def active_rules() -> list[CommissionRule]:
         .filter(Q(valid_from__isnull=True) | Q(valid_from__lte=today))
         .filter(Q(valid_to__isnull=True) | Q(valid_to__gte=today))
         .order_by("-priority", "id")
+    )
+
+
+# ---------------------------------------------------------------------------
+# §22.2 — which rule a booking is sold under
+# ---------------------------------------------------------------------------
+
+
+def resolve_commission(facts: CommissionFacts) -> Rate:
+    """The resolver `common.commission` calls, registered at start-up.
+
+    `booking` freezes the rate at basket creation (BR-070) and may not import
+    this module (§6.4), so the lookup lives in `common` and this fills it in.
+    The whole of §22.2 is behind this one function: scope order, priority,
+    method, clamps.
+
+    Falls back to the platform default when nothing matches, which is what a
+    platform with no rules configured has always done — and `rule_id` stays
+    `None`, so a booking's snapshot says plainly that no rule was matched.
+    """
+    rules = [_as_domain_rule(row) for row in active_rules()]
+    chosen = domain_commission.select(
+        rules,
+        provider_id=facts.provider_id,
+        booking_type=facts.booking_type,
+        listing_id=facts.listing_id,
+        on=timezone.localdate(),
+    )
+    if chosen is None:
+        return default_rate(facts)
+
+    amount, percent = domain_commission.compute(
+        chosen,
+        gross=facts.gross_amount,
+        monthly_volume=monthly_volume(facts.provider_id, facts.currency),
+    )
+    return Rate(percent=percent, amount=amount, rule_id=chosen.id)
+
+
+def monthly_volume(provider_id: int, currency: str, *, today: date | None = None) -> Decimal:
+    """What a provider completed in the **preceding calendar month** — §22.2.
+
+    Last month rather than this one, so a TIERED rate is "deterministic within
+    a month": two identical bookings must not cost a provider different
+    amounts because one was sold on the 2nd and one on the 30th.
+
+    Read from the ledger, because an accrual is the record that a service was
+    delivered and paid for — a booking table would count things that were
+    later refunded.
+    """
+    today = today or timezone.localdate()
+    first_of_this_month = today.replace(day=1)
+    start = (first_of_this_month - timedelta(days=1)).replace(day=1)
+
+    total = Decimal("0")
+    for row in LedgerEntry.objects.filter(
+        provider_id=provider_id,
+        currency=currency,
+        entry_type=EntryType.PROVIDER_ACCRUAL.value,
+        occurred_at__gte=start,
+        occurred_at__lt=first_of_this_month,
+    ).only("amount"):
+        total += row.amount
+    return total
+
+
+def _as_domain_rule(row: CommissionRule) -> domain_commission.Rule:
+    """A frozen copy, so nothing re-reads a rule mid-calculation."""
+    return domain_commission.Rule(
+        id=int(row.pk),
+        scope=domain_commission.Scope(row.scope),
+        method=domain_commission.Method(row.method),
+        priority=row.priority,
+        listing_id=row.listing_id,
+        provider_id=row.provider_id,
+        booking_type=row.booking_type,
+        percent=row.percent,
+        flat_amount=row.flat_amount,
+        tiers=tuple(
+            (Decimal(str(band.get("from_volume", "0"))), Decimal(str(band.get("percent", "0"))))
+            for band in (row.tiers or [])
+        ),
+        min_fee=row.min_fee,
+        max_fee=row.max_fee,
+        valid_from=row.valid_from,
+        valid_to=row.valid_to,
+        is_active=row.is_active,
     )

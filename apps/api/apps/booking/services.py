@@ -50,8 +50,9 @@ from apps.booking.domain.cancellation import Party, Refund, RefundExceedsCapture
 from apps.booking.domain.cancellation import assert_refundable as domain_assert_refundable
 from apps.booking.domain.lifecycle import ACTORS, Actor, BookingState, apply, force
 from apps.booking.domain.voucher import money_text, party_text, policy_summary, when_text
-from apps.booking.dto import BasketDTO, BookingDTO, VoucherDTO
+from apps.booking.dto import BasketDTO, BookingDTO, TripBookingFactsDTO, VoucherDTO
 from apps.booking.models import Booking, BookingActivity, BookingType, BookingVoucher
+from apps.common import commission
 from apps.common.config import get_setting
 from apps.common.errors import (
     ConflictError,
@@ -110,6 +111,7 @@ __all__ = [
     "assert_refundable",
     "RefundExceedsCapturedError",
     "booking_id_for",
+    "fee_and_provider_of_trip",
     "public_id_of_booking",
     "BookingCompleted",
     "complete_due",
@@ -321,16 +323,35 @@ def _seller_problems(
     return sellers, problems
 
 
-def _commission_rate(seller: ProviderDTO) -> Decimal:
-    """§22.2's resolution, as far as Phase 7 can take it.
+def _commission_rate(
+    seller: ProviderDTO,
+    *,
+    booking_type: str = "",
+    gross: Decimal = Decimal("0"),
+    currency: str = "",
+    listing_id: int | None = None,
+) -> Decimal:
+    """§22.2's resolution, through the lookup in `common`.
 
-    `commission_rule` is Phase 8's table, so every scope above GLOBAL is empty
-    and the rate is the global default. The snapshot is taken now all the same —
-    TC-060 — and Phase 8 changes what is resolved, not where it is stored.
+    The rule table is `finance`'s and §6.4 forbids this module from importing
+    it, so `common.commission` holds the lookup and `finance` registers a
+    resolver into it at start-up — the same split `common.audit` uses for the
+    same reason. With nothing registered the answer is the platform default,
+    which is exactly what Phase 7 did.
+
+    BR-070 freezes the result here, at basket creation, and §20.8 step 14
+    turns it into an amount at capture. A rule changed afterwards cannot reach
+    a booking already sold (TC-110).
     """
-    return Decimal(str(get_setting("commission.default_percent"))).quantize(
-        Decimal("0.01"), rounding=ROUND_HALF_UP
-    )
+    return commission.resolve(
+        commission.CommissionFacts(
+            provider_id=seller.id,
+            booking_type=booking_type,
+            gross_amount=gross,
+            currency=currency,
+            listing_id=listing_id,
+        )
+    ).percent
 
 
 def _booking_dto(row: Booking, title: str) -> BookingDTO:
@@ -443,7 +464,13 @@ def create_basket(
             fee_amount=fee,
             tax_amount=tax,
             currency=line.currency,
-            commission_rate=_commission_rate(seller),
+            commission_rate=_commission_rate(
+                seller,
+                booking_type=line.item_type,
+                gross=line.gross_amount,
+                currency=line.currency,
+                listing_id=line.activity_id,
+            ),
             cancellation_policy_id=line.cancellation_policy_id,
             cancellation_policy_snapshot=line.policy_snapshot,
         )
@@ -833,6 +860,11 @@ class BookingCancelled(DomainEvent):
     cancelled_by: str = ""
     reason: str = ""
     refund_amount: str = "0"
+    #: §20.9's `provider_compensation`: what the operator keeps of a booking
+    #: the tourist called off late. Carried because 8b's ledger accrues it
+    #: (§22.6) and recomputing it there would be a second reading of the
+    #: policy, free to disagree with the one the tourist was shown (BR-043).
+    provider_compensation: str = "0"
     currency: str = ""
 
 
@@ -915,6 +947,9 @@ def _cancel_for_supply(
             cancelled_by="PROVIDER",
             reason=code,
             refund_amount=str(row.gross_amount + row.fee_amount + row.tax_amount),
+            # BR-045: supply failure gives everything back, so the provider
+            # keeps nothing.
+            provider_compensation="0",
             currency=row.currency,
         )
     )
@@ -1200,6 +1235,7 @@ def cancel_booking(
             cancelled_by=party.value,
             reason=code,
             refund_amount=str(refund.refund_amount),
+            provider_compensation=str(refund.provider_compensation),
             currency=row.currency,
         )
     )
@@ -1553,6 +1589,27 @@ def assert_refundable(requested: Decimal, *, paid: Decimal, already_refunded: De
     domain_assert_refundable(requested, paid=paid, already_refunded=already_refunded)
 
 
+def fee_and_provider_of_trip(trip_id: int) -> list[TripBookingFactsDTO]:
+    """The figures a ledger needs about a trip's bookings.
+
+    §18.3 makes the platform's service fee a per-component charge that the
+    basket allocated by largest remainder, so the fee a capture earned is the
+    sum of what was allocated — not a percentage re-derived afterwards, which
+    would differ by a cent whenever the allocation had a remainder to give away.
+    """
+    return [
+        TripBookingFactsDTO(
+            booking_id=int(row.pk),
+            provider_id=row.provider_id,
+            fee_amount=row.fee_amount,
+            tax_amount=row.tax_amount,
+            gross_amount=row.gross_amount,
+            currency=row.currency,
+        )
+        for row in Booking.objects.filter(trip_id=trip_id).order_by("id")
+    ]
+
+
 def booking_id_for(public_id: str | UUID) -> int | None:
     """The storage id behind a public one, or `None`.
 
@@ -1723,6 +1780,12 @@ def settle_refund(
             raise NotFoundError(f"no booking {public_id}")
         if row.status == BookingState.REFUNDED.value:
             return False
+        if row.status != BookingState.CANCELLED.value:
+            # §20.2 draws CANCELLED -> REFUNDED and nothing else. A goodwill
+            # refund on a booking that happened (§27.10) is real money going
+            # back, and it must not pretend the service was called off — so
+            # the money moves and the status does not.
+            return False
 
         apply(
             BookingState(row.status),
@@ -1843,6 +1906,7 @@ def _cancel_as_platform(row: Booking, *, actor_user_id: int, reason: str, now: d
             cancelled_by="PLATFORM",
             reason="ADMIN_ACTION",
             refund_amount=str(refund.refund_amount),
+            provider_compensation=str(refund.provider_compensation),
             currency=row.currency,
         )
     )

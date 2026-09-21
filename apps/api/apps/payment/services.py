@@ -48,7 +48,7 @@ from apps.inventory import services as inventory
 from apps.payment import repositories as repo
 from apps.payment.domain.lifecycle import PaymentState, advances, is_terminal
 from apps.payment.domain.lifecycle import apply as apply_transition
-from apps.payment.dto import PaymentActionDTO, PaymentDTO, RefundDTO
+from apps.payment.dto import PaymentActionDTO, PaymentDTO, RefundDTO, RefundFactsDTO
 from apps.payment.models import (
     Payment,
     PaymentMethod,
@@ -78,6 +78,7 @@ __all__ = [
     "request_refund",
     "list_refunds",
     "list_payments",
+    "refund_facts",
     "payment_for_trip",
     "payment_detail",
     "TripNotPayableError",
@@ -924,3 +925,24 @@ def list_payments(*, status: str | None = None, limit: int = 100) -> list[Paymen
         _dto(row, trip_public_id=trip_services.public_id_of_trip(row.trip_id))
         for row in rows[:limit]
     ]
+
+
+def refund_facts(public_id: str | UUID) -> RefundFactsDTO | None:
+    """What a settled refund did, for `finance` to post against.
+
+    `finance` may import this module and not `booking`'s models, and the row
+    already holds everything §22.6 needs: which booking, how much went back,
+    and what the operator keeps under the policy the tourist was shown.
+    """
+    try:
+        row = Refund.objects.filter(public_id=UUID(str(public_id))).first()
+    except ValueError:
+        return None
+    if row is None or row.booking_id is None:
+        return None
+    return RefundFactsDTO(
+        booking_id=int(row.booking_id),
+        amount=row.amount,
+        provider_compensation=row.provider_compensation,
+        currency=row.currency,
+    )

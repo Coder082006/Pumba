@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-__all__ = ["PaymentActionDTO", "PaymentDTO", "RefundDTO"]
+__all__ = ["PaymentActionDTO", "PaymentDTO", "RefundDTO", "RefundFactsDTO"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,3 +57,18 @@ class RefundDTO:
     requested_at: datetime
     settled_at: datetime | None = None
     failure_code: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class RefundFactsDTO:
+    """What a settled refund did, for `finance` to post against (§22.6).
+
+    `provider_compensation` travels because §20.9 decided it when the tourist
+    was shown the preview (BR-043); a ledger that recomputed it would be a
+    second reading of the policy, free to disagree with the first.
+    """
+
+    booking_id: int
+    amount: Decimal
+    provider_compensation: Decimal
+    currency: str

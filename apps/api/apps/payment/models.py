@@ -265,6 +265,12 @@ class Refund(BaseModel):
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     currency = models.CharField(max_length=3)
 
+    #: §20.9's `provider_compensation`, carried from the cancellation that
+    #: decided it. 8b's ledger accrues it back to the operator (§22.6), and
+    #: recomputing it there would be a second reading of a policy the tourist
+    #: has already been shown (BR-043).
+    provider_compensation = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
     status = models.CharField(
         max_length=20, choices=RefundStatus.choices, default=RefundStatus.REQUESTED
     )

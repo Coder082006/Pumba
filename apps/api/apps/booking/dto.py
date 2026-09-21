@@ -57,3 +57,20 @@ class VoucherDTO:
     issue_number: int
     issued_at: datetime
     sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class TripBookingFactsDTO:
+    """What a ledger needs to know about one of a trip's bookings.
+
+    Narrow on purpose: `finance` is being told the figures it posts, not handed
+    a booking to read fields off — the second would make every column of this
+    module's table part of another module's interface.
+    """
+
+    booking_id: int
+    provider_id: int
+    fee_amount: Decimal
+    tax_amount: Decimal
+    gross_amount: Decimal
+    currency: str
