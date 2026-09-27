@@ -157,6 +157,15 @@ class TestRegister:
                         far enough ahead to be offered to anybody — the single
                         biggest lever on how much of the supply a scheduled
                         airport transfer can reach.
+            assignment. Appendix B registers `assignment.disclosure_hours`, so the
+                        namespace is not new; Phase 9a coins the two buffers of
+                        §11.6 rule 5, whose window the SRS defines as
+                        `[pickup_at - pre_buffer, expected_end + post_buffer]`
+                        without ever giving either a number. They decide how
+                        much of a driver's diary one transfer consumes, which
+                        is the difference between offering realistic
+                        back-to-back work and sending somebody two jobs they
+                        cannot both reach.
             map.        Phase 3, ADR 0016 / Appendix D9. The tile URL and its
                         attribution string. Held as settings so changing map
                         provider is an administrator action rather than a
@@ -191,6 +200,7 @@ class TestRegister:
                     "web.",
                     "idempotency.",
                     "dispatch.",
+                    "assignment.",
                 )
             )
         }

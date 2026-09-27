@@ -128,6 +128,23 @@ SETTINGS_REGISTER: dict[str, Setting] = {
         Setting(
             "dispatch.offline_offer_hours", 12, "Work this far ahead is offered to offline drivers"
         ),
+        # §11.6 states the anchor's freshness in prose as "< 15 min" and never
+        # names a key. It is the line between scoring a driver on where they
+        # are and scoring them on where they were before their phone lost
+        # signal — worth being able to shorten during a network incident.
+        Setting("dispatch.anchor_freshness_minutes", 15, "How recent a position must be to count"),
+        # §11.6's `utilisation_today` is a fraction, and nothing says of what.
+        # Twelve hours, not twenty-four: a driver with six hours of work booked
+        # is fully committed, not half free, and dividing by the clock would
+        # make the term almost never move a ranking.
+        Setting("dispatch.working_day_hours", 12, "The day `utilisation_today` is a fraction of"),
+        # §11.6 rule 5's window is `[pickup_at - pre_buffer, expected_end +
+        # post_buffer]` and gives neither buffer a number. These are how much
+        # of a driver's diary one transfer consumes, so they are the difference
+        # between a driver being offered realistic back-to-back work and being
+        # sent two jobs they cannot both reach.
+        Setting("assignment.pre_buffer_minutes", 30, "Diary blocked before a pickup"),
+        Setting("assignment.post_buffer_minutes", 30, "Diary blocked after a drop-off"),
         # -- Geofencing and waiting --
         Setting("geofence.pickup_m", 300, "Arrival geofence"),
         Setting("geofence.approach_m", 1500, "Nearby notification"),
