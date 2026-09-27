@@ -16,7 +16,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-__all__ = ["ProviderDTO", "StatusChangeDTO"]
+__all__ = ["ProviderDTO", "StatusChangeDTO", "DriverCandidateDTO"]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -50,3 +50,37 @@ class StatusChangeDTO:
     before: str
     steps: tuple[str, ...]
     provider: ProviderDTO
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DriverCandidateDTO:
+    """One driver-and-vehicle pair that could serve a transfer — §11.6.
+
+    A pair and not a driver, because §11.6's rules 3 and 4 are about the
+    vehicle: a driver with a saloon and a minibus is two candidates for a
+    party of two and one candidate for a party of nine.
+
+    Everything the score needs travels here except the driver's position.
+    `driver_location` is `location`'s table and `provider` may not see it
+    (§6.4), so the dispatcher joins the anchor on afterwards. What this DTO
+    carries instead is `home_destination_id`, which is the fallback §11.6
+    names when the position is missing or stale.
+    """
+
+    driver_id: int
+    driver_public_id: UUID
+    user_id: int
+    provider_id: int
+    home_destination_id: int
+    languages: tuple[str, ...]
+    is_online: bool
+
+    rating_avg: Decimal
+    acceptance_rate: Decimal
+    completed_trips: int
+
+    vehicle_id: int
+    vehicle_public_id: UUID
+    vehicle_class: str
+    seat_capacity: int
+    luggage_capacity: int

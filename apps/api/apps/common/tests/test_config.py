@@ -147,6 +147,16 @@ class TestRegister:
                         transfer pricing platform-managed, so its policy is the
                         platform's to set — as a row, so changing it for new
                         bookings needs no release.
+            dispatch.   Appendix B registers five `dispatch.` and `offer.`
+                        keys, so the namespace is not new; Phase 9a coins
+                        `dispatch.offline_offer_hours`. §11.6 rule 7 states it
+                        in prose as a bare "12 hours" and Appendix B never
+                        names the key, so it is coined here rather than left a
+                        literal. It is the line between work a driver has to be
+                        watching the app to receive and work that is planned
+                        far enough ahead to be offered to anybody — the single
+                        biggest lever on how much of the supply a scheduled
+                        airport transfer can reach.
             map.        Phase 3, ADR 0016 / Appendix D9. The tile URL and its
                         attribution string. Held as settings so changing map
                         provider is an administrator action rather than a
@@ -180,6 +190,7 @@ class TestRegister:
                     "buffer.",
                     "web.",
                     "idempotency.",
+                    "dispatch.",
                 )
             )
         }

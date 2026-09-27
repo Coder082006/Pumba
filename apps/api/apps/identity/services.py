@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -76,6 +77,7 @@ __all__ = [
     "remove_device",
     "contact_for_tourist",
     "ContactDTO",
+    "active_user_ids",
     "get_principal",
 ]
 
@@ -1024,6 +1026,25 @@ def contact_for_tourist(tourist_id: int) -> ContactDTO | None:
     if profile is None:
         return None
     return ContactDTO(email=profile.user.email, first_name=profile.first_name or "")
+
+
+def active_user_ids(user_ids: Sequence[int]) -> frozenset[int]:
+    """Which of these accounts may act — §11.6 rule 1's second half.
+
+    A set of the ones that pass, rather than a status per id, because the only
+    question a caller has is whether to exclude somebody. Handing back statuses
+    would invite a caller to interpret SUSPENDED differently from LOCKED, and
+    §11.6 does not distinguish them: neither drives.
+
+    An id that does not exist is simply absent, so a driver row pointing at a
+    deleted account fails closed.
+    """
+    if not user_ids:
+        return frozenset()
+    rows = User.objects.filter(pk__in=set(user_ids), deleted_at__isnull=True).values_list(
+        "pk", "status"
+    )
+    return frozenset(pk for pk, status in rows if status == UserStatus.ACTIVE)
 
 
 def get_principal(*, user_id: int, mfa_satisfied: bool = False) -> Principal | None:

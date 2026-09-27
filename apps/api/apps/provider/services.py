@@ -20,14 +20,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from django.contrib.gis.geos import Point
 from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 
+from apps.common.config import get_setting
 from apps.common.errors import NotFoundError, ValidationError
 from apps.common.state_machine import IllegalTransitionError
+from apps.identity import services as identity_services
 from apps.provider import repositories as repo
 from apps.provider.domain.verification import (
     VERIFY_MACHINE,
@@ -38,8 +43,8 @@ from apps.provider.domain.verification import (
     may_own,
     path_to,
 )
-from apps.provider.dto import ProviderDTO, StatusChangeDTO
-from apps.provider.models import Provider
+from apps.provider.dto import DriverCandidateDTO, ProviderDTO, StatusChangeDTO
+from apps.provider.models import Provider, Vehicle, VerifyStatus
 
 __all__ = [
     "create_provider",
@@ -50,6 +55,7 @@ __all__ = [
     "change_status",
     "require_owner_of",
     "transport_provider_for",
+    "eligible_drivers",
     "WALKABLE_TARGETS",
     "SeedResult",
     "load_provider_seed",
@@ -259,3 +265,97 @@ def load_provider_seed(
             row.refresh_from_db()
         by_name[name] = _dto(row)
     return SeedResult("provider", created, updated), by_name
+
+
+def eligible_drivers(
+    *,
+    pickup_at: datetime,
+    pickup_lat: float,
+    pickup_lng: float,
+    pax: int,
+    luggage: int,
+    vehicle_class: str,
+    now: datetime,
+) -> tuple[DriverCandidateDTO, ...]:
+    """`eligible_drivers()` from the §6.4 interface — §11.6's hard filter.
+
+    Six of §11.6's seven rules are here. **Rule 5 is not**, and cannot be:
+    "no overlapping `driver_assignment`" is a question about `transport`'s own
+    table, which this module may not see (§6.4). The dispatcher applies it to
+    what comes back, and the EXCLUDE constraint of ADR 0029 catches whatever
+    slips between the check and the write.
+
+    Applying the rest here rather than in the dispatcher is deliberate. An
+    expired insurance certificate excluding a driver (TC-091) is then true of
+    every caller that asks who can work, including a console listing a fleet,
+    rather than true only of the one code path somebody remembered.
+
+    The filter is ordered cheapest-first: the indexed columns narrow the set,
+    the spatial containment of rule 6 runs on what survives, and the account
+    check of rule 1 makes one query for the whole candidate list rather than
+    one per driver.
+    """
+    pickup_day = timezone.localdate(pickup_at)
+
+    # Rules 1 (first half), 2, 3, 4 and the vehicle's own fitness to be used.
+    pairs = (
+        Vehicle.objects.filter(
+            deleted_at__isnull=True,
+            is_active=True,
+            verify_status=VerifyStatus.VERIFIED,
+            vehicle_class=vehicle_class,
+            seat_capacity__gte=pax,
+            luggage_capacity__gte=luggage,
+            insurance_expires_on__gt=pickup_day,
+            inspection_expires_on__gt=pickup_day,
+            driver__deleted_at__isnull=True,
+            driver__verify_status=VerifyStatus.VERIFIED,
+            driver__licence_expires_on__gt=pickup_day,
+        )
+        .select_related("driver")
+        .order_by("driver_id", "id")
+    )
+
+    # Rule 7: an offline driver is still offered work that is far enough away
+    # to plan around. `dispatch.offline_offer_hours` is §11.6's bare "12".
+    horizon = timedelta(hours=int(get_setting("dispatch.offline_offer_hours")))
+    if pickup_at - now < horizon:
+        pairs = pairs.filter(driver__is_online=True)
+
+    # Rule 6: a service area that is set must contain the pickup. One that is
+    # not set excludes nobody, which is why this is not a single `contains`.
+    pickup = Point(pickup_lng, pickup_lat, srid=4326)
+    pairs = pairs.filter(
+        Q(driver__service_area__isnull=True) | Q(driver__service_area__contains=pickup)
+    )
+
+    candidates = list(pairs)
+
+    # Rule 1's second half. §6.4 lets this module see `identity`, and only
+    # through its services (§6.5 rule 1).
+    permitted = identity_services.active_user_ids([row.driver.user_id for row in candidates])
+
+    return tuple(
+        _candidate_dto(vehicle) for vehicle in candidates if vehicle.driver.user_id in permitted
+    )
+
+
+def _candidate_dto(vehicle: Vehicle) -> DriverCandidateDTO:
+    driver = vehicle.driver
+    return DriverCandidateDTO(
+        driver_id=int(driver.pk),
+        driver_public_id=driver.public_id,
+        user_id=int(driver.user_id),
+        provider_id=int(driver.provider_id),
+        home_destination_id=int(driver.home_destination_id),
+        languages=tuple(driver.languages),
+        is_online=bool(driver.is_online),
+        rating_avg=driver.rating_avg,
+        acceptance_rate=driver.acceptance_rate,
+        completed_trips=int(driver.completed_trips),
+        vehicle_id=int(vehicle.pk),
+        vehicle_public_id=vehicle.public_id,
+        vehicle_class=vehicle.vehicle_class,
+        seat_capacity=int(vehicle.seat_capacity),
+        luggage_capacity=int(vehicle.luggage_capacity),
+    )

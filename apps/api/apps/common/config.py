@@ -122,6 +122,12 @@ SETTINGS_REGISTER: dict[str, Setting] = {
             "Driver candidate scoring weights; must sum to 1.0",
         ),
         Setting("dispatch.max_radius_m", 60000, "Proximity normalisation ceiling"),
+        # Appendix B names neither, and §11.6 rule 7 states the first as a bare
+        # "12 hours" in prose. Registered so the number is tunable rather than
+        # literal, the way every other dispatch constant here is.
+        Setting(
+            "dispatch.offline_offer_hours", 12, "Work this far ahead is offered to offline drivers"
+        ),
         # -- Geofencing and waiting --
         Setting("geofence.pickup_m", 300, "Arrival geofence"),
         Setting("geofence.approach_m", 1500, "Nearby notification"),
