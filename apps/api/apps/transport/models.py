@@ -4,8 +4,9 @@
         vehicle_class, transfer_corridor, transfer_tariff,
         driver_assignment, driver_offer
 
-Phase 6 builds the first three. The two assignment tables belong to dispatch
-and arrive with it.
+Phase 6 built the first three; Phase 9a adds the two assignment tables.
+Both are invented too, and for the same reason: ADR 0029 records what §7.5
+never specified about them.
 
 **These tables are invented, and ADR 0023 records the invention.** §12.4 gives
 `transfer_corridor` and `transfer_tariff` a field name and a one-line meaning
@@ -37,7 +38,12 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.contrib.postgres.constraints import ExclusionConstraint
-from django.contrib.postgres.fields import DateRangeField, RangeBoundary, RangeOperators
+from django.contrib.postgres.fields import (
+    DateRangeField,
+    DateTimeRangeField,
+    RangeBoundary,
+    RangeOperators,
+)
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Func, Q
@@ -47,10 +53,16 @@ from apps.transport.validators import validate_iso_currency_code
 
 __all__ = [
     "DateRange",
+    "TsRange",
     "TariffScope",
     "VehicleClass",
     "TransferCorridor",
     "TransferTariff",
+    "AssignmentStatus",
+    "OfferStatus",
+    "LIVE_ASSIGNMENT_STATUSES",
+    "DriverAssignment",
+    "DriverOffer",
 ]
 
 
@@ -344,3 +356,232 @@ class TransferTariff(SoftDeleteModel):
 
     def __str__(self) -> str:
         return f"{self.scope}:{self.region_id or self.country_id} {self.vehicle_class_id}"
+
+
+class TsRange(Func):
+    """`TSTZRANGE(starts_at, ends_at, '[)')` as an index expression.
+
+    Half-open, for the reason `DateRange` is: a driver whose job ends at
+    14:00 is free to start another at 14:00. A closed upper bound would refuse
+    back-to-back work, which is how a transfer driver makes a living.
+    """
+
+    function = "TSTZRANGE"
+    output_field = DateTimeRangeField()
+
+
+class AssignmentStatus(models.TextChoices):
+    """§11.7's machine, plus the one §11.8 adds.
+
+    INCIDENT is not drawn in §11.7's diagram and is required by §11.8's
+    "Driver sets INCIDENT with a reason" — a breakdown mid-trip is neither a
+    completion nor a cancellation, and settling it pro rata needs a state that
+    says so.
+    """
+
+    PENDING = "PENDING", "Pending"
+    OFFERED = "OFFERED", "Offered"
+    ASSIGNED = "ASSIGNED", "Assigned"
+    EN_ROUTE = "EN_ROUTE", "En route"
+    ARRIVED = "ARRIVED", "Arrived"
+    STARTED = "STARTED", "Started"
+    COMPLETED = "COMPLETED", "Completed"
+    CANCELLED = "CANCELLED", "Cancelled"
+    UNFULFILLED = "UNFULFILLED", "Unfulfilled"
+    INCIDENT = "INCIDENT", "Incident"
+
+
+#: The statuses in which a driver's diary is genuinely blocked. A completed or
+#: abandoned job must stop excluding them from work, or a busy week would
+#: permanently retire them — which is what makes the EXCLUDE constraint below
+#: partial rather than absolute.
+LIVE_ASSIGNMENT_STATUSES = (
+    AssignmentStatus.ASSIGNED,
+    AssignmentStatus.EN_ROUTE,
+    AssignmentStatus.ARRIVED,
+    AssignmentStatus.STARTED,
+)
+
+
+class OfferStatus(models.TextChoices):
+    """One candidate's answer to one offer.
+
+    SUPERSEDED is for the offer that was still open when the assignment was
+    resolved another way — an administrator assigning manually under §11.8,
+    say. It is distinct from EXPIRED because a driver's acceptance rate must
+    not be penalised for an offer that was withdrawn out from under them.
+    """
+
+    SENT = "SENT", "Sent"
+    ACCEPTED = "ACCEPTED", "Accepted"
+    DECLINED = "DECLINED", "Declined"
+    EXPIRED = "EXPIRED", "Expired"
+    SUPERSEDED = "SUPERSEDED", "Superseded"
+
+
+class DriverAssignment(SoftDeleteModel):
+    """§7.3's `driver_assignment` box, R2, §11.7. Designed in ADR 0029.
+
+    **`starts_at` and `ends_at` are the driver's unavailability, not the
+    service.** §7.6 writes the exclusion constraint over
+    `tstzrange(starts_at, ends_at)` and §11.6 rule 5 defines the window as
+    `[pickup_at - pre_buffer, expected_end + post_buffer]`. Storing the
+    buffered window is the only way both are true at once. The real pickup time
+    stays on `booking_transfer.pickup_at`, which remains its single source; no
+    service here computes one from the other.
+    """
+
+    #: → `booking.id`. R2 makes it `1 : 0..1`, so one live assignment per
+    #: transfer. No FK: §6.4 forbids `transport -> booking` and a foreign key
+    #: would be that edge written in DDL (ADR 0012).
+    booking_id = models.BigIntegerField()
+
+    #: → `driver.id` and `vehicle.id` (provider). Null until somebody accepts.
+    driver_id = models.BigIntegerField(null=True, blank=True, default=None, db_index=True)
+    vehicle_id = models.BigIntegerField(null=True, blank=True, default=None)
+
+    status = models.CharField(
+        max_length=20, choices=AssignmentStatus.choices, default=AssignmentStatus.PENDING
+    )
+
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+
+    #: §11.9: "generated at assignment and stored hashed". A column that could
+    #: be read back would defeat the protocol it exists to support.
+    pickup_pin_hash = models.CharField(max_length=255, null=True, blank=True, default=None)
+
+    assigned_at = models.DateTimeField(null=True, blank=True, default=None)
+    en_route_at = models.DateTimeField(null=True, blank=True, default=None)
+    arrived_at = models.DateTimeField(null=True, blank=True, default=None)
+    started_at = models.DateTimeField(null=True, blank=True, default=None)
+    completed_at = models.DateTimeField(null=True, blank=True, default=None)
+
+    #: §13: a transition attempted outside the geofence is *permitted* with a
+    #: reason and flagged in the audit log. Stored as well as audited so the
+    #: assignment itself carries the fact — a dispute reads one row.
+    override_reason = models.CharField(max_length=200, null=True, blank=True, default=None)
+    cancellation_reason = models.CharField(max_length=200, null=True, blank=True, default=None)
+    incident_reason = models.CharField(max_length=200, null=True, blank=True, default=None)
+
+    #: §7.6 names this table for optimistic locking.
+    version = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = "driver_assignment"
+        ordering = ["starts_at", "id"]
+        indexes = [
+            models.Index(fields=["status", "starts_at"], name="assignment_due_idx"),
+            models.Index(fields=["booking_id"], name="assignment_booking_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["booking_id"],
+                condition=Q(deleted_at__isnull=True),
+                name="assignment_one_per_booking_alive",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=AssignmentStatus.values),
+                name="assignment_status_known",
+            ),
+            models.CheckConstraint(
+                condition=Q(ends_at__gt=models.F("starts_at")),
+                name="assignment_window_is_forwards",
+            ),
+            # An assignment past PENDING/OFFERED names a driver, and one that
+            # names a driver names the vehicle they are bringing. Either half
+            # alone is a row nobody can act on: a tourist cannot be told what
+            # to look for at arrivals (§11.4).
+            models.CheckConstraint(
+                condition=Q(driver_id__isnull=True, vehicle_id__isnull=True)
+                | Q(driver_id__isnull=False, vehicle_id__isnull=False),
+                name="assignment_driver_and_vehicle_together",
+            ),
+            # §7.6, verbatim: a driver cannot hold two overlapping assignments.
+            # Partial, so only live work blocks the diary — see
+            # LIVE_ASSIGNMENT_STATUSES. This is §11.6 rule 5's guarantee, and
+            # TC-084 asserts *this*, not the eligibility filter that also
+            # checks it.
+            ExclusionConstraint(
+                name="assignment_no_overlapping_work",
+                expressions=[
+                    ("driver_id", RangeOperators.EQUAL),
+                    (TsRange("starts_at", "ends_at", RangeBoundary()), RangeOperators.OVERLAPS),
+                ],
+                condition=Q(deleted_at__isnull=True, status__in=LIVE_ASSIGNMENT_STATUSES),
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.public_id} {self.status}"
+
+
+class DriverOffer(models.Model):
+    """One offer to one candidate — §11.5. Designed in ADR 0029.
+
+    Not a `SoftDeleteModel`: an offer becomes a historical record the moment it
+    is answered, and its whole lifetime is `created_at` to `responded_at`.
+
+    **`score_components` is on the row, not only in the audit entry.** §11.6
+    requires that a provider dispute "can be answered with the exact
+    computation", and a dispute is about one driver's offer. The audit entry
+    holds the whole candidate list; this holds its own arithmetic, and it
+    survives whatever retention the log has.
+    """
+
+    assignment = models.ForeignKey(
+        DriverAssignment, on_delete=models.CASCADE, related_name="offers"
+    )
+
+    #: → `driver.id` (provider). No FK; see `DriverAssignment`.
+    driver_id = models.BigIntegerField(db_index=True)
+    vehicle_id = models.BigIntegerField()
+
+    #: Where this driver came in §11.6's ranking. 1 is the top candidate.
+    rank = models.SmallIntegerField()
+    score = models.DecimalField(max_digits=6, decimal_places=5)
+    score_components = models.JSONField(default=dict, blank=True)
+
+    status = models.CharField(max_length=20, choices=OfferStatus.choices, default=OfferStatus.SENT)
+    expires_at = models.DateTimeField()
+    responded_at = models.DateTimeField(null=True, blank=True, default=None)
+    decline_reason = models.CharField(max_length=200, null=True, blank=True, default=None)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "driver_offer"
+        ordering = ["assignment_id", "rank", "id"]
+        indexes = [
+            models.Index(fields=["status", "expires_at"], name="offer_expiry_sweep_idx"),
+            models.Index(fields=["driver_id", "status"], name="offer_driver_idx"),
+        ]
+        constraints = [
+            # §11.5 offers to `candidate[i]`, singular, and advances. Two live
+            # offers would make TC-083's race a data error rather than a
+            # contended one — and would let two drivers both be told the job
+            # is theirs.
+            models.UniqueConstraint(
+                fields=["assignment"],
+                condition=Q(status=OfferStatus.SENT),
+                name="offer_one_live_per_assignment",
+            ),
+            # A driver is asked about a given job once. Re-offering after a
+            # decline is how a dispatcher loop with an off-by-one quietly
+            # harasses somebody.
+            models.UniqueConstraint(
+                fields=["assignment", "driver_id"],
+                name="offer_one_per_driver_per_assignment",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=OfferStatus.values), name="offer_status_known"
+            ),
+            models.CheckConstraint(condition=Q(rank__gte=1), name="offer_rank_is_a_place"),
+            models.CheckConstraint(
+                condition=Q(score__gte=0) & Q(score__lte=1),
+                name="offer_score_is_a_fraction",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"offer {self.pk} to driver {self.driver_id} ({self.status})"
