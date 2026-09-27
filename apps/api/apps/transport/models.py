@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.contrib.gis.db import models as gis_models
 from django.contrib.postgres.constraints import ExclusionConstraint
 from django.contrib.postgres.fields import (
     DateRangeField,
@@ -446,6 +447,19 @@ class DriverAssignment(SoftDeleteModel):
 
     starts_at = models.DateTimeField()
     ends_at = models.DateTimeField()
+
+    #: §11.7's guards are "inside geofence (300 m)" and "inside drop-off
+    #: geofence", and both centres live on `booking_transfer` — a table this
+    #: module may not read (§6.4). Snapshotted here for the same reason
+    #: `starts_at` is: the alternative is a driver's ARRIVED having to be
+    #: judged by a module that can see the booking, which would put §11.7's
+    #: machine and the thing that enforces it in two different places.
+    #:
+    #: A snapshot is also correct on its own terms. §11.8 re-times a delayed
+    #: flight but nothing moves an airport's meeting point, and an assignment
+    #: already accepted should be judged against the place the driver agreed to.
+    pickup_point = gis_models.PointField(geography=True, srid=4326, null=True, default=None)
+    dropoff_point = gis_models.PointField(geography=True, srid=4326, null=True, default=None)
 
     #: §11.9: "generated at assignment and stored hashed". A column that could
     #: be read back would defeat the protocol it exists to support.
