@@ -50,6 +50,9 @@ SPECIFIED_EDGES = {
     (A.OFFERED, A.ASSIGNED),
     (A.OFFERED, A.PENDING),
     (A.PENDING, A.UNFULFILLED),
+    # §11.7 guards OFFERED → PENDING with "candidates remain" and never says
+    # what happens when they do not; §11.5's pseudocode does. See the module.
+    (A.OFFERED, A.UNFULFILLED),
     (A.ASSIGNED, A.EN_ROUTE),
     (A.EN_ROUTE, A.ARRIVED),
     (A.ARRIVED, A.STARTED),
@@ -176,6 +179,12 @@ class TestDispatching:
         deliberate: the dispatcher having nobody left is not a condition to be
         satisfied, it is the situation."""
         assert apply(A.PENDING, A.UNFULFILLED, actor=Actor.DISPATCHER) is A.UNFULFILLED
+
+    def test_a_live_offer_running_out_with_nobody_left_is_unfulfilled(self) -> None:
+        """The edge §11.7 omits. Going back to PENDING first would mean using
+        the OFFERED → PENDING edge whose own guard has just refused, which is
+        laundering a state through a transition the table forbids."""
+        assert apply(A.OFFERED, A.UNFULFILLED, actor=Actor.DISPATCHER) is A.UNFULFILLED
 
     def test_operations_may_assign_by_hand_after_an_escalation(self) -> None:
         """§11.8: "administrator may assign manually". Not drawn in §11.7."""

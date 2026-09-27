@@ -31,6 +31,7 @@ the commercial risk this model accepts, recorded in ADR 0023.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -48,6 +49,10 @@ __all__ = [
     "FareOption",
     "LegQuote",
     "CorridorDTO",
+    "TransferFacts",
+    "AssignmentDTO",
+    "OfferDTO",
+    "DispatchOutcome",
 ]
 
 
@@ -189,3 +194,85 @@ class CorridorDTO:
     target_destination_id: int
     vehicle_class_code: str
     is_bidirectional: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TransferFacts:
+    """Everything dispatch needs about a transfer, resolved by the caller.
+
+    §6.4 forbids `transport -> booking`, so none of this can be looked up here.
+    It arrives on the `TransferBookingConfirmed` event and is passed through, in
+    the same spirit as `LegEndpoint`: there is nothing here to resolve, so there
+    is no temptation to resolve it (ADR 0012, ADR 0029).
+    """
+
+    booking_id: int
+    pickup_at: datetime
+    pickup_lat: float
+    pickup_lng: float
+    dropoff_lat: float
+    dropoff_lng: float
+    vehicle_class: str
+    pax: int
+    luggage: int
+    travel_seconds: int | None = None
+    is_airport_transfer: bool = False
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AssignmentDTO:
+    """An assignment as every caller outside this module sees it."""
+
+    id: int
+    public_id: UUID
+    booking_id: int
+    status: str
+    driver_id: int | None
+    vehicle_id: int | None
+    starts_at: datetime
+    ends_at: datetime
+    assigned_at: datetime | None
+    en_route_at: datetime | None
+    arrived_at: datetime | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    override_reason: str | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OfferDTO:
+    """One offer, as the driver's app and the admin console see it.
+
+    `pickup_at` and the rest are *not* here: an offer is a row in this module
+    and the transfer's details belong to `booking`. The API layer joins them,
+    because it is `administration`'s job to see both (§6.4).
+    """
+
+    id: int
+    assignment_public_id: UUID
+    driver_id: int
+    vehicle_id: int
+    rank: int
+    score: Decimal
+    score_components: Mapping[str, str]
+    status: str
+    expires_at: datetime
+    responded_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DispatchOutcome:
+    """What one dispatch attempt did, for the caller that has to audit it.
+
+    `considered` is the whole candidate list with each one's arithmetic, because
+    §11.6 requires that "a provider dispute can be answered with the exact
+    computation" — and the entry has to be written by a module that can reach
+    the audit sink, which this one cannot (§6.4). So it travels out.
+    """
+
+    assignment_public_id: UUID
+    status: str
+    offered_to_driver_id: int | None
+    offer_expires_at: datetime | None
+    considered: tuple[Mapping[str, str], ...]
+    reason: str = ""

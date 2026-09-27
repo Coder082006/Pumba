@@ -10,9 +10,17 @@ same discipline `booking.domain.lifecycle` applies to §20.2:
 - the **actors** are `ACTORS`;
 - the **guards** are the predicates attached to each transition.
 
-**Eleven states' worth of edges, and three of them are not in §11.7's diagram.**
-The diagram draws nine states and stops; §11.8 requires two more paths that its
-picture omits:
+**Four edges are not in §11.7's table.** The diagram draws nine states and
+stops; three more paths are required elsewhere and one is required by the table
+contradicting itself:
+
+- **OFFERED → UNFULFILLED.** §11.7 gives OFFERED → PENDING the guard
+  "candidates remain" and then never says what happens when they do not. The
+  alternative was to send the assignment back to PENDING anyway and out to
+  UNFULFILLED from there — but that first hop is exactly the edge whose guard
+  has just refused, so it would mean laundering a state through a transition
+  the table forbids. §11.5's pseudocode is unambiguous about the outcome ("no
+  acceptance -> escalate"), so the edge is declared and the round trip is not.
 
 - **UNFULFILLED → ASSIGNED.** §11.8 says an administrator "may assign manually"
   after the escalation. Without the edge, the escalation would raise a ticket
@@ -234,6 +242,7 @@ ASSIGNMENT_MACHINE: StateMachine[AssignmentState] = StateMachine(
         Transition(A.OFFERED, A.ASSIGNED, offer_live_and_no_overlap),
         Transition(A.OFFERED, A.PENDING, candidates_remain),
         Transition(A.PENDING, A.UNFULFILLED),
+        Transition(A.OFFERED, A.UNFULFILLED),
         Transition(A.ASSIGNED, A.EN_ROUTE, within_the_en_route_window),
         Transition(A.EN_ROUTE, A.ARRIVED, inside_pickup_geofence_or_override),
         Transition(A.ARRIVED, A.STARTED, tourist_present),
@@ -251,6 +260,7 @@ ACTORS: Mapping[tuple[AssignmentState, AssignmentState], frozenset[Actor]] = {
     (A.OFFERED, A.ASSIGNED): frozenset({Actor.DRIVER}),
     (A.OFFERED, A.PENDING): frozenset({Actor.DRIVER, Actor.DISPATCHER}),
     (A.PENDING, A.UNFULFILLED): frozenset({Actor.DISPATCHER}),
+    (A.OFFERED, A.UNFULFILLED): frozenset({Actor.DISPATCHER}),
     (A.ASSIGNED, A.EN_ROUTE): frozenset({Actor.DRIVER}),
     (A.EN_ROUTE, A.ARRIVED): frozenset({Actor.DRIVER}),
     (A.ARRIVED, A.STARTED): frozenset({Actor.DRIVER}),
